@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
+
+@theme {
+  --font-sans: "Inter", "system-ui", sans-serif;
+  --font-serif: "Merriweather", "Georgia", serif;
+  --font-handwriting: "Caveat", cursive;
+  
+  --color-brand-dark: #0f172a;
+  --color-brand-primary: #000B3D;
+  --color-brand-secondary: #64748b;
+  --color-brand-accent: #14b8a6;
+  --color-brand-paper: #f8fafc;
+}
+
+@layer base {
+  :root {
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+}
+
+/* Custom perspective for the study coach cards */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}

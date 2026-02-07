@@ -1,31 +1,113 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
 
 @theme {
-  --font-sans: "Inter", "system-ui", sans-serif;
-  --font-serif: "Merriweather", "Georgia", serif;
-  --font-handwriting: "Caveat", cursive;
-  
-  --color-brand-dark: #0f172a;
-  --color-brand-primary: #000B3D;
-  --color-brand-secondary: #64748b;
-  --color-brand-accent: #14b8a6;
-  --color-brand-paper: #f8fafc;
+  --font-sans: "Instrument Sans", "Trebuchet MS", sans-serif;
+  --font-serif: "Syne", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "Consolas", monospace;
+  --font-handwriting: "Syne", "Segoe UI", sans-serif;
+
+  --color-brand-dark: #17130e;
+  --color-brand-primary: #1d4eea;
+  --color-brand-secondary: #675d4d;
+  --color-brand-accent: #ff6b3d;
+  --color-brand-paper: #f6f0e5;
+
+  --color-slate-50: #f6f0e5;
+  --color-slate-100: #eee5d5;
+  --color-slate-200: #ddd1bc;
+  --color-slate-300: #b9ab92;
+  --color-slate-400: #91836d;
+  --color-slate-500: #6a5f4f;
+  --color-slate-600: #4f4638;
+  --color-slate-700: #383126;
+  --color-slate-800: #272119;
+  --color-slate-900: #17130e;
+
+  --color-blue-50: #eaf0ff;
+  --color-blue-600: #1d4eea;
+  --color-emerald-500: #0b9b72;
+  --color-amber-400: #ef9d3b;
+  --color-amber-500: #dc8124;
+  --color-orange-600: #cf5f2d;
+  --color-red-500: #cd3f33;
+  --color-indigo-50: #edf2ff;
+  --color-indigo-100: #dce6ff;
 }
 
 @layer base {
   :root {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-brand-paper);
+    color: var(--color-brand-dark);
+  }
+
+  * {
+    box-sizing: border-box;
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+    position: relative;
+    font-family: var(--font-sans);
+    background:
+      radial-gradient(circle at 10% 15%, rgba(29, 78, 234, 0.18), transparent 32%),
+      radial-gradient(circle at 86% 14%, rgba(255, 107, 61, 0.2), transparent 30%),
+      radial-gradient(circle at 50% 92%, rgba(11, 155, 114, 0.12), transparent 38%),
+      linear-gradient(140deg, #f9f4ea 0%, #f3ebdc 52%, #f8f1e6 100%);
+    color: var(--color-brand-dark);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(rgba(23, 19, 14, 0.065) 0.7px, transparent 0.7px),
+      radial-gradient(rgba(23, 19, 14, 0.05) 0.7px, transparent 0.7px);
+    background-size: 6px 6px, 6px 6px;
+    background-position: 0 0, 3px 3px;
+    opacity: 0.45;
+    z-index: 0;
+  }
+
+  #root {
+    min-height: 100vh;
+    position: relative;
+    z-index: 1;
   }
 }
 
-/* Custom perspective for the study coach cards */
+@layer components {
+  .neo-shell {
+    position: relative;
+  }
+
+  .neo-panel {
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.78), rgba(255, 250, 243, 0.62));
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 22px 52px -28px rgba(32, 23, 11, 0.5);
+  }
+
+  .neo-input {
+    border: 1px solid rgba(255, 255, 255, 0.74);
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: inset 0 0 0 1px rgba(140, 122, 95, 0.08);
+  }
+
+  .neo-input:focus {
+    outline: none;
+    border-color: rgba(29, 78, 234, 0.46);
+    box-shadow: 0 0 0 4px rgba(29, 78, 234, 0.13);
+  }
+
+  .neo-divider {
+    background: linear-gradient(90deg, transparent, rgba(106, 95, 79, 0.33), transparent);
+  }
+}
+
 .perspective-1000 {
   perspective: 1000px;
 }

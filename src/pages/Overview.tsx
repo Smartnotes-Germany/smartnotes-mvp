@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder,
@@ -11,9 +11,8 @@ import {
   Loader2,
   Search,
   ChevronLeft,
-  ChevronRight, Layers, X
+  ChevronRight, Layers
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 // --- Types ---
 type Category = 'Science' | 'History' | 'Languages' | 'Math';
@@ -28,21 +27,6 @@ interface NodeData {
   connections: string[];
   importance: number;
 }
-
-const CATEGORY_COLORS: Record<Category, string> = {
-  Science: "emerald",
-  History: "blue",
-  Languages: "amber",
-  Math: "purple"
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  All: 'Alle',
-  Science: 'Wissenschaft',
-  History: 'Geschichte',
-  Math: 'Mathe',
-  Languages: 'Sprachen'
-};
 
 // --- Sub-components ---
 
@@ -73,15 +57,14 @@ const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () =
 };
 
 export const Overview = () => {
-  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>('folders');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   
   // Graph state
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
-  const [graphFocusMode, setGraphFocusMode] = useState<'Global' | 'Focus'>('Global');
+  const [activeCategory] = useState<Category | 'All'>('All');
+  const [graphFocusMode] = useState<'Global' | 'Focus'>('Global');
 
   // Viewer state
   const [viewingFile, setViewingFile] = useState<{name: string, type: string, content: string} | null>(null);
@@ -146,10 +129,10 @@ export const Overview = () => {
   };
 
   return (
-    <div className="h-full bg-slate-50 flex flex-col overflow-hidden relative">
+    <div className="h-full flex flex-col overflow-hidden relative">
       
       {/* --- Unified Header --- */}
-      <div className="px-8 py-6 z-30 flex flex-col gap-6 bg-white border-b border-slate-200 shadow-sm">
+      <div className="neo-panel mx-5 mt-5 rounded-[1.5rem] px-8 py-6 z-30 flex flex-col gap-6 border border-white/70 shadow-[0_22px_40px_-34px_rgba(35,22,8,0.9)]">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
             {viewMode === 'viewer' && (
@@ -185,14 +168,14 @@ export const Overview = () => {
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
                 placeholder="Suchen..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-100 rounded-xl border-none outline-none text-sm focus:ring-2 focus:ring-brand-primary/10 transition-all"
+                className="neo-input w-full pl-10 pr-4 py-2 rounded-xl text-sm transition-all"
               />
             </div>
 
             <div className="h-8 w-px bg-slate-200" />
 
             {/* View Toggles */}
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex p-1 rounded-xl border border-white/80 bg-white/55">
               <button
                 onClick={() => setViewMode('folders')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -225,14 +208,14 @@ export const Overview = () => {
             <motion.div
               key="folders"
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-              className="h-full p-8 flex flex-col overflow-y-auto"
+              className="h-full p-8 pt-6 flex flex-col overflow-y-auto"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {/* Upload Card */}
                 <button 
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className="p-6 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center gap-3 hover:border-brand-primary hover:bg-blue-50/30 transition-all group"
+                  className="neo-panel p-6 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center gap-3 hover:border-brand-primary hover:bg-blue-50/50 transition-all group"
                 >
                   <div className="w-12 h-12 bg-blue-50 text-brand-primary rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
                     {isUploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} />}
@@ -259,7 +242,7 @@ export const Overview = () => {
                       });
                       setViewMode('viewer');
                     }}
-                    className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                    className="neo-panel p-6 rounded-2xl border border-white/75 hover:shadow-[0_18px_35px_-25px_rgba(30,19,6,0.8)] transition-all cursor-pointer group"
                   >
                     <div className="flex justify-between items-start mb-6">
                       <div className={`p-3 rounded-xl ${folder.bg} ${folder.color}`}>
@@ -285,7 +268,7 @@ export const Overview = () => {
             <motion.div
               key="graph"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="h-full relative overflow-hidden"
+              className="h-full relative overflow-hidden bg-[radial-gradient(circle_at_18%_20%,rgba(29,78,234,0.09),transparent_45%),radial-gradient(circle_at_80%_80%,rgba(255,107,61,0.12),transparent_40%)]"
             >
               <div className="absolute inset-0 z-10">
                 <svg className="absolute inset-0 w-full h-full pointer-events-none">
@@ -339,7 +322,7 @@ export const Overview = () => {
                   <motion.button
                     initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
                     onClick={() => setShowLeftSidebar(true)}
-                    className="absolute left-4 top-4 z-40 p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand-primary shadow-sm"
+                     className="absolute left-4 top-4 z-40 p-2 neo-panel rounded-lg text-slate-500 hover:text-brand-primary shadow-sm"
                   >
                     <Layers size={14} />
                   </motion.button>
@@ -348,7 +331,7 @@ export const Overview = () => {
                   <motion.button
                     initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}
                     onClick={() => setShowRightSidebar(true)}
-                    className="absolute right-4 top-4 z-40 p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand-primary shadow-sm"
+                     className="absolute right-4 top-4 z-40 p-2 neo-panel rounded-lg text-slate-500 hover:text-brand-primary shadow-sm"
                   >
                     <Sparkles size={14} />
                   </motion.button>
@@ -360,7 +343,7 @@ export const Overview = () => {
                 {showLeftSidebar && (
                   <motion.div 
                     initial={{ width: 0, opacity: 0 }} animate={{ width: 192, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                    className="bg-white border-r border-slate-100 flex flex-col overflow-hidden"
+                     className="neo-panel border-r border-white/70 flex flex-col overflow-hidden"
                   >
                     <div className="p-4 flex items-center justify-between">
                       <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em]">Inhalt</span>
@@ -385,8 +368,8 @@ export const Overview = () => {
               </AnimatePresence>
 
               {/* Main Reading Area */}
-              <div className="flex-1 bg-slate-200/50 overflow-y-auto p-12 flex justify-center custom-scrollbar">
-                <div className="w-full max-w-3xl bg-white shadow-2xl rounded-sm p-16 md:p-24 min-h-[1200px] relative">
+               <div className="flex-1 bg-slate-200/40 overflow-y-auto p-12 flex justify-center custom-scrollbar">
+                 <div className="neo-panel w-full max-w-3xl shadow-2xl rounded-sm p-16 md:p-24 min-h-[1200px] relative">
                   {/* Page Indicator */}
                   <div className="absolute top-8 right-8 text-[10px] font-bold text-slate-300">Seite 1 von 1</div>
                   
@@ -419,7 +402,7 @@ export const Overview = () => {
                 {showRightSidebar && (
                   <motion.div 
                     initial={{ width: 0, opacity: 0 }} animate={{ width: 240, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                    className="bg-white border-l border-slate-50 flex flex-col overflow-hidden"
+                     className="neo-panel border-l border-white/70 flex flex-col overflow-hidden"
                   >
                     <div className="p-4 border-b border-slate-50/50 flex justify-between items-center">
                       <div className="flex items-center gap-2 text-slate-300">

@@ -1,10 +1,9 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, TrendingUp, Target, Clock, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const StatCard = ({ icon: Icon, label, value, color }: any) => (
-  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between">
+  <div className="neo-panel p-6 rounded-2xl border border-white/75 flex items-start justify-between">
     <div>
       <span className="text-slate-500 text-sm font-medium block mb-1">{label}</span>
       <span className="text-2xl font-bold text-slate-900">{value}</span>
@@ -19,9 +18,9 @@ export const Progress = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="h-full bg-slate-50 p-10 overflow-y-auto">
+    <div className="h-full p-10 overflow-y-auto">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-10">
+        <div className="neo-panel mb-8 rounded-[1.5rem] border border-white/75 p-7">
           <h2 className="text-3xl font-serif font-bold text-slate-900 mb-2">Dein Lernfortschritt</h2>
           <p className="text-slate-500">Du entwickelst dich großartig! Hier ist deine Wochenübersicht.</p>
         </div>
@@ -35,7 +34,7 @@ export const Progress = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Chart Area (Visualized as Skills) */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
+          <div className="neo-panel lg:col-span-2 rounded-2xl border border-white/75 p-8">
             <h3 className="font-bold text-lg mb-6">Wissenslücken Analyse</h3>
             
             <div className="space-y-6">
@@ -72,7 +71,7 @@ export const Progress = () => {
           </div>
 
           {/* AI Coach Suggestion */}
-          <div className="bg-gradient-to-b from-brand-primary to-brand-primary rounded-2xl p-8 text-white flex flex-col justify-between">
+          <div className="rounded-2xl p-8 text-white flex flex-col justify-between bg-[linear-gradient(170deg,#1d4eea_0%,#1437ad_58%,#102c86_100%)] shadow-[0_22px_48px_-24px_rgba(21,40,120,0.85)]">
             <div>
               <div className="flex items-center gap-2 mb-4 opacity-80">
                 <Sparkles size={20} />

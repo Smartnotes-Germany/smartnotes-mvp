@@ -5,11 +5,6 @@ import { FlowMode } from './pages/FlowMode';
 import { StudyCoach } from './pages/StudyCoach';
 import { Progress } from './pages/Progress';
 
-// Placeholder components until real ones are created
-const Placeholder = ({ title }: { title: string }) => (
-  <div className="flex items-center justify-center h-full text-2xl text-slate-400 font-serif">{title} - Wird geladen...</div>
-);
-
 function App() {
   return (
     <BrowserRouter>

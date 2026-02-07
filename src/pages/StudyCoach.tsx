@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Check, 
-  HelpCircle, 
   BookOpen, 
   ArrowRight, 
   Sparkles, 
-  ChevronDown,
-  Info,
   RotateCcw,
   Lightbulb
 } from 'lucide-react';
@@ -55,10 +52,10 @@ export const StudyCoach = () => {
   };
 
   return (
-    <div className="h-full bg-white flex flex-col items-center justify-center font-sans selection:bg-brand-primary/10">
+    <div className="h-full flex flex-col items-center justify-center font-sans selection:bg-brand-primary/10 relative overflow-hidden">
       
       {/* Top Navigation / Progress */}
-      <div className="absolute top-0 w-full p-8 flex justify-between items-center text-slate-400">
+      <div className="absolute top-5 w-[calc(100%-2.5rem)] neo-panel rounded-[1.5rem] px-8 py-5 flex justify-between items-center text-slate-400">
         <div className="flex items-center gap-6">
           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-dark">Smart Training</span>
           <div className="flex gap-1">
@@ -67,12 +64,12 @@ export const StudyCoach = () => {
             ))}
           </div>
         </div>
-        <button onClick={() => window.location.reload()} className="hover:text-slate-600 transition-colors">
+        <button onClick={() => window.location.reload()} className="hover:text-slate-600 transition-colors rounded-xl p-2 hover:bg-white/70">
           <RotateCcw size={18} />
         </button>
       </div>
 
-      <main className="w-full max-w-2xl px-6 flex flex-col items-center">
+      <main className="neo-panel w-full max-w-2xl mx-5 rounded-[2rem] px-8 py-14 md:px-10 flex flex-col items-center">
         
         {/* Topic Badge */}
         <motion.span 
@@ -166,7 +163,7 @@ export const StudyCoach = () => {
         {showNote && (
           <motion.div
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            className="absolute bottom-0 w-full max-w-xl bg-white border-t border-slate-100 rounded-t-[40px] shadow-2xl z-30 p-10 pb-16"
+            className="neo-panel absolute bottom-0 w-full max-w-xl border-t border-white/80 rounded-t-[40px] shadow-2xl z-30 p-10 pb-16"
           >
             <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8" />
             <div className="flex items-center gap-3 mb-6">
@@ -190,7 +187,7 @@ export const StudyCoach = () => {
 
       {/* Background Decor */}
       <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-slate-50 rounded-full blur-[120px] opacity-50" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[880px] h-[880px] bg-blue-50 rounded-full blur-[120px] opacity-70" />
       </div>
     </div>
   );

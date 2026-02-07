@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileUp, 
@@ -55,10 +55,10 @@ export const FlowMode = () => {
   };
 
   return (
-    <div className="h-full bg-white flex flex-col overflow-hidden font-sans selection:bg-brand-primary selection:text-white">
+    <div className="h-full flex flex-col overflow-hidden font-sans selection:bg-brand-primary selection:text-white">
       
       {/* 1. Header & Toolbar */}
-      <header className="h-14 px-8 flex items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md z-30">
+      <header className="neo-panel h-16 mt-5 mx-5 px-8 flex items-center justify-between rounded-[1.4rem] border border-white/75 z-30">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg text-slate-500 font-medium text-xs">
             <Type size={14} /> Fokus-Modus
@@ -90,8 +90,8 @@ export const FlowMode = () => {
       <div className="flex-1 flex relative">
         
         {/* 2. Main Typing Canvas */}
-        <main className="flex-1 relative overflow-y-auto bg-slate-50/30 flex justify-center">
-          <div className="w-full max-w-3xl min-h-full bg-white shadow-sm border-x border-slate-50 p-16 md:p-24 flex flex-col">
+        <main className="flex-1 relative overflow-y-auto bg-slate-50/20 flex justify-center px-5 pb-5 pt-4">
+          <div className="neo-panel w-full max-w-3xl min-h-full rounded-[1.5rem] p-16 md:p-24 flex flex-col">
             <input 
               type="text"
               placeholder="Titel der Mitschrift..."
@@ -127,7 +127,7 @@ export const FlowMode = () => {
         </main>
 
         {/* 3. Entity & Keyword Sidebar */}
-        <aside className="w-80 bg-white border-l border-slate-100 p-8 flex flex-col z-20">
+          <aside className="neo-panel w-80 border-l border-white/75 p-8 flex flex-col z-20 mr-5 mb-5 mt-4 rounded-[1.5rem]">
           <div className="flex items-center gap-2 text-brand-primary mb-8">
             <BrainCircuit size={20} />
             <h4 className="text-xs font-black uppercase tracking-[0.2em]">Erkennung</h4>

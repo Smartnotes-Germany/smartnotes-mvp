@@ -74,3 +74,4 @@ export default defineConfig([
 # smartnotes-mockup
 # smartnotes-mockup
 # smartnotes-mockup
+# smartnotes-mockup

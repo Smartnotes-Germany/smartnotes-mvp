@@ -70,7 +70,7 @@ export const IntelligentEditor = () => {
         <div className="w-96 bg-slate-50 border-l border-slate-100 p-8 flex flex-col gap-8 overflow-y-auto">
           <div>
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Lightbulb size={14} className="text-amber-500" /> Smart Begriffe
+              <Lightbulb size={14} className="text-amber-500" /> Smart Begriffe.
             </h4>
             <div className="space-y-3">
               <AnimatePresence>

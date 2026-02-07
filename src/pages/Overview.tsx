@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder,
@@ -11,9 +11,9 @@ import {
   Loader2,
   Search,
   ChevronLeft,
-  ChevronRight, Layers, X
+  ChevronRight, 
+  Layers
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 // --- Types ---
 type Category = 'Science' | 'History' | 'Languages' | 'Math';
@@ -29,25 +29,19 @@ interface NodeData {
   importance: number;
 }
 
-const CATEGORY_COLORS: Record<Category, string> = {
-  Science: "emerald",
-  History: "blue",
-  Languages: "amber",
-  Math: "purple"
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  All: 'Alle',
-  Science: 'Wissenschaft',
-  History: 'Geschichte',
-  Math: 'Mathe',
-  Languages: 'Sprachen'
+const CATEGORY_STYLES: Record<Category, { text: string, bg: string, border: string, hex: string }> = {
+  Science: { text: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-100", hex: "#047857" },
+  History: { text: "text-amber-700", bg: "bg-amber-50", border: "border-amber-100", hex: "#b45309" },
+  Languages: { text: "text-rose-700", bg: "bg-rose-50", border: "border-rose-100", hex: "#be123c" },
+  Math: { text: "text-slate-700", bg: "bg-slate-100", border: "border-slate-200", hex: "#334155" }
 };
 
 // --- Sub-components ---
 
 const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () => void, active: boolean, dimmed: boolean }) => {
   const scale = 0.8 + (node.importance * 0.2);
+  const style = CATEGORY_STYLES[node.category];
+  
   return (
     <motion.div
       initial={{ scale: 0 }}
@@ -57,15 +51,15 @@ const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () =
       }}
       whileHover={{ scale: scale * 1.1, opacity: 1 }}
       onClick={onClick}
-      className={`absolute px-4 py-2 rounded-2xl border-2 shadow-sm cursor-pointer z-10 font-bold text-sm transition-all duration-500
+      className={`absolute px-4 py-2 rounded-full border shadow-sm cursor-pointer z-10 font-medium text-xs tracking-wide transition-all duration-500
         ${active 
-          ? `bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-500/30` 
-          : `bg-white text-slate-700 border-slate-100 hover:border-blue-400`
+          ? `bg-brand-dark text-white border-brand-dark shadow-xl` 
+          : `bg-white ${style.text} ${style.border} hover:border-brand-dark hover:shadow-md`
         }`}
       style={{ left: `${node.x}%`, top: `${node.y}%`, transform: 'translate(-50%, -50%)' }}
     >
       <div className="flex items-center gap-2">
-        {active && <Sparkles size={14} className="animate-pulse" />}
+        {active && <Sparkles size={12} className="animate-pulse text-amber-300" />}
         {node.label}
       </div>
     </motion.div>
@@ -73,15 +67,14 @@ const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () =
 };
 
 export const Overview = () => {
-  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>('folders');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   
   // Graph state
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
-  const [graphFocusMode, setGraphFocusMode] = useState<'Global' | 'Focus'>('Global');
+  const [activeCategory] = useState<Category | 'All'>('All');
+  const [graphFocusMode] = useState<'Global' | 'Focus'>('Global');
 
   // Viewer state
   const [viewingFile, setViewingFile] = useState<{name: string, type: string, content: string} | null>(null);
@@ -105,15 +98,9 @@ export const Overview = () => {
   // Helper to get color for a connection
   const getLineColor = (node1: NodeData, node2: NodeData) => {
     if (node1.category === node2.category) {
-      const colors: Record<string, string> = {
-        Science: '#10b981', // emerald-500
-        History: '#3b82f6', // blue-500
-        Languages: '#f59e0b', // amber-500
-        Math: '#a855f7' // purple-500
-      };
-      return colors[node1.category] || '#cbd5e1';
+      return CATEGORY_STYLES[node1.category].hex;
     }
-    return '#f43f5e'; // rose-500 for cross-disciplinary links
+    return '#cbd5e1'; // slate-300 for cross-disciplinary
   };
 
   const visibleNodeIds = useMemo(() => {
@@ -146,36 +133,35 @@ export const Overview = () => {
   };
 
   return (
-    <div className="h-full bg-slate-50 flex flex-col overflow-hidden relative">
+    <div className="h-full bg-brand-paper flex flex-col overflow-hidden relative">
       
       {/* --- Unified Header --- */}
-      <div className="px-8 py-6 z-30 flex flex-col gap-6 bg-white border-b border-slate-200 shadow-sm">
+      <div className="px-10 py-8 z-30 flex flex-col gap-6 bg-brand-paper/80 backdrop-blur-md sticky top-0">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
             {viewMode === 'viewer' && (
               <button 
                 onClick={() => setViewMode('folders')}
-                className="p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
+                className="p-2 hover:bg-white rounded-full border border-transparent hover:border-slate-200 text-slate-500 transition-all shadow-sm hover:shadow"
               >
-                <ChevronLeft size={24} />
+                <ChevronLeft size={20} />
               </button>
             )}
             <div>
-              <h1 className="text-2xl font-serif font-bold text-slate-900">
-                {viewMode === 'viewer' ? viewingFile?.name : 'Meine Wissenswelt'}
+              <h1 className="text-3xl font-serif font-bold text-brand-dark tracking-tight">
+                {viewMode === 'viewer' ? viewingFile?.name : 'Wissenswelt'}
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-sm text-slate-500 font-medium mt-1">
                 {viewMode === 'viewer' ? 'Dokumenten-Analyse aktiv' : 'Organisiere und entdecke deine Notizen.'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className={viewMode === 'viewer' ? 'hidden sm:block h-8 w-px bg-slate-200' : 'h-8 w-px bg-slate-200'} />
-
+          <div className="flex items-center gap-6">
+            
             {/* Search Bar */}
-            <div className={`relative w-64 transition-all duration-300 ${isSearchFocused ? 'w-80' : ''}`}>
-              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+            <div className={`relative transition-all duration-300 ${isSearchFocused ? 'w-96' : 'w-64'}`}>
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400">
                 <Search size={16} />
               </div>
               <input
@@ -184,19 +170,19 @@ export const Overview = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
-                placeholder="Suchen..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-100 rounded-xl border-none outline-none text-sm focus:ring-2 focus:ring-brand-primary/10 transition-all"
+                placeholder="Suche..."
+                className="w-full pl-11 pr-4 py-2.5 bg-white rounded-full border border-slate-200 text-sm font-medium focus:ring-2 focus:ring-brand-primary/10 focus:border-brand-primary/50 transition-all shadow-sm"
               />
             </div>
 
-            <div className="h-8 w-px bg-slate-200" />
+            <div className="h-8 w-px bg-slate-200/50" />
 
             {/* View Toggles */}
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex bg-slate-100/50 p-1 rounded-full border border-slate-200/50">
               <button
                 onClick={() => setViewMode('folders')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'folders' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                  viewMode === 'folders' ? 'bg-white text-brand-dark shadow-sm ring-1 ring-slate-100' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
                 <LayoutGrid size={14} />
@@ -204,8 +190,8 @@ export const Overview = () => {
               </button>
               <button
                 onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'graph' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                  viewMode === 'graph' ? 'bg-white text-brand-dark shadow-sm ring-1 ring-slate-100' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
                 <Network size={14} />
@@ -225,29 +211,30 @@ export const Overview = () => {
             <motion.div
               key="folders"
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-              className="h-full p-8 flex flex-col overflow-y-auto"
+              className="h-full px-10 pb-10 flex flex-col overflow-y-auto"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {/* Upload Card */}
                 <button 
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className="p-6 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center gap-3 hover:border-brand-primary hover:bg-blue-50/30 transition-all group"
+                  className="group relative p-8 rounded-xl border border-dashed border-slate-300 hover:border-brand-primary bg-slate-50/50 hover:bg-white transition-all flex flex-col items-center justify-center text-center gap-4 overflow-hidden"
                 >
-                  <div className="w-12 h-12 bg-blue-50 text-brand-primary rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                    {isUploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} />}
+                  <div className="absolute inset-0 bg-brand-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="w-14 h-14 bg-white shadow-sm border border-slate-100 text-brand-primary rounded-full flex items-center justify-center group-hover:scale-110 group-hover:shadow-md transition-all z-10">
+                    {isUploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} strokeWidth={1.5} />}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">{isUploading ? 'Importiere...' : 'Datei importieren'}</h3>
-                    <p className="text-[10px] text-slate-500">PDF, Bilder oder Texte</p>
+                  <div className="z-10">
+                    <h3 className="font-bold text-brand-dark text-sm">{isUploading ? 'Importiere...' : 'Datei importieren'}</h3>
+                    <p className="text-xs text-slate-500 mt-1">PDF, Bilder oder Texte</p>
                   </div>
                 </button>
 
                 {[
-                  { label: "Biologie", color: "text-emerald-600", bg: "bg-emerald-50", count: 12 },
-                  { label: "Geschichte", color: "text-orange-600", bg: "bg-orange-50", count: 8 },
-                  { label: "Mathematik", color: "text-blue-600", bg: "bg-blue-50", count: 7 },
-                  { label: "Informatik", color: "text-slate-600", bg: "bg-slate-50", count: 4 },
+                  { label: "Biologie", style: CATEGORY_STYLES.Science, count: 12 },
+                  { label: "Geschichte", style: CATEGORY_STYLES.History, count: 8 },
+                  { label: "Mathematik", style: CATEGORY_STYLES.Math, count: 7 },
+                  { label: "Sprachen", style: CATEGORY_STYLES.Languages, count: 4 },
                 ].map((folder) => (
                   <div 
                     key={folder.label}
@@ -259,20 +246,27 @@ export const Overview = () => {
                       });
                       setViewMode('viewer');
                     }}
-                    className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                    className="group relative p-8 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 hover:-translate-y-1 transition-all cursor-pointer overflow-hidden"
                   >
-                    <div className="flex justify-between items-start mb-6">
-                      <div className={`p-3 rounded-xl ${folder.bg} ${folder.color}`}>
-                        <Folder size={24} />
+                    <div className={`absolute top-0 left-0 w-1 h-full ${folder.style.bg.replace('bg-', 'bg-').replace('50', '400')}`} />
+                    
+                    <div className="flex justify-between items-start mb-8">
+                      <div className={`p-3.5 rounded-xl ${folder.style.bg} ${folder.style.text}`}>
+                        <Folder size={24} strokeWidth={1.5} />
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400">{folder.count} Notizen</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{folder.count} Notizen</span>
                     </div>
-                    <h3 className="font-bold text-slate-900 group-hover:text-brand-primary transition-colors">{folder.label}</h3>
-                    <div className="mt-4 flex items-center gap-2">
-                       <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-400 w-3/4" />
+                    
+                    <h3 className="font-serif text-xl font-bold text-brand-dark group-hover:text-brand-primary transition-colors">{folder.label}</h3>
+                    
+                    <div className="mt-6">
+                       <div className="flex justify-between items-end mb-2">
+                          <span className="text-[10px] font-bold text-slate-400">Fortschritt</span>
+                          <span className="text-[10px] font-bold text-slate-900">75%</span>
                        </div>
-                       <span className="text-[9px] font-bold text-slate-400">75%</span>
+                       <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full ${folder.style.bg.replace('bg-', 'bg-').replace('50', '500')} w-3/4`} />
+                       </div>
                     </div>
                   </div>
                 ))}
@@ -292,7 +286,7 @@ export const Overview = () => {
                   {nodes.map(node => 
                     node.connections.map(targetId => {
                       const target = nodes.find(n => n.id === targetId);
-                      if (!target || parseInt(node.id) > parseInt(target.id)) return null; // Avoid duplicate lines
+                      if (!target || parseInt(node.id) > parseInt(target.id)) return null; 
                       
                       const isHighlighted = selectedNodeId === node.id || selectedNodeId === target.id;
                       const isDimmed = selectedNodeId && !isHighlighted;
@@ -303,9 +297,9 @@ export const Overview = () => {
                           key={`${node.id}-${target.id}`}
                           initial={{ opacity: 0 }} 
                           animate={{ 
-                            opacity: isDimmed ? 0.05 : (isHighlighted ? 0.8 : 0.3),
-                            stroke: isHighlighted ? '#1e293b' : lineColor,
-                            strokeWidth: isHighlighted ? 3 : 1.5
+                            opacity: isDimmed ? 0.1 : (isHighlighted ? 1 : 0.4),
+                            stroke: isHighlighted ? '#1A1C19' : lineColor,
+                            strokeWidth: isHighlighted ? 2 : 1
                           }}
                           x1={`${node.x}%`} y1={`${node.y}%`}
                           x2={`${target.x}%`} y2={`${target.y}%`}
@@ -326,54 +320,54 @@ export const Overview = () => {
             </motion.div>
           )}
 
-          {/* 3. Real Viewer View (Full Page Split) */}
+          {/* 3. Real Viewer View */}
           {viewMode === 'viewer' && viewingFile && (
             <motion.div
               key="viewer"
               initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
               className="h-full flex overflow-hidden relative"
             >
-              {/* Floating Toggle Buttons (when sidebars are closed) */}
+              {/* Floating Toggles */}
               <AnimatePresence>
                 {!showLeftSidebar && (
                   <motion.button
                     initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
                     onClick={() => setShowLeftSidebar(true)}
-                    className="absolute left-4 top-4 z-40 p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand-primary shadow-sm"
+                    className="absolute left-6 top-6 z-40 p-3 bg-white border border-slate-200 rounded-full text-slate-400 hover:text-brand-primary shadow-md hover:scale-105 transition-all"
                   >
-                    <Layers size={14} />
+                    <Layers size={16} />
                   </motion.button>
                 )}
                 {!showRightSidebar && (
                   <motion.button
                     initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}
                     onClick={() => setShowRightSidebar(true)}
-                    className="absolute right-4 top-4 z-40 p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand-primary shadow-sm"
+                    className="absolute right-6 top-6 z-40 p-3 bg-white border border-slate-200 rounded-full text-slate-400 hover:text-brand-primary shadow-md hover:scale-105 transition-all"
                   >
-                    <Sparkles size={14} />
+                    <Sparkles size={16} />
                   </motion.button>
                 )}
               </AnimatePresence>
 
-              {/* Document Sidebar (Simplified File/Outline List) */}
+              {/* Document Sidebar */}
               <AnimatePresence>
                 {showLeftSidebar && (
                   <motion.div 
-                    initial={{ width: 0, opacity: 0 }} animate={{ width: 192, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                    className="bg-white border-r border-slate-100 flex flex-col overflow-hidden"
+                    initial={{ width: 0, opacity: 0 }} animate={{ width: 240, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+                    className="bg-white border-r border-slate-100 flex flex-col overflow-hidden shadow-lg z-20"
                   >
-                    <div className="p-4 flex items-center justify-between">
-                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em]">Inhalt</span>
-                      <button onClick={() => setShowLeftSidebar(false)} className="p-1 hover:bg-slate-50 rounded text-slate-300">
-                        <ChevronLeft size={12} />
+                    <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inhalt</span>
+                      <button onClick={() => setShowLeftSidebar(false)} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 transition-colors">
+                        <ChevronLeft size={14} />
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
+                    <div className="flex-1 overflow-y-auto p-3 space-y-1">
                       {['Übersicht', 'Kernkonzept', 'Analyse', 'Quellen'].map((item, i) => (
                         <div 
                           key={item} 
-                          className={`px-3 py-2 rounded-lg text-[11px] cursor-pointer transition-colors whitespace-nowrap ${
-                            i === 0 ? 'bg-slate-50 text-brand-primary font-bold' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                          className={`px-4 py-3 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                            i === 0 ? 'bg-brand-primary/5 text-brand-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                           }`}
                         >
                           {item}
@@ -385,103 +379,115 @@ export const Overview = () => {
               </AnimatePresence>
 
               {/* Main Reading Area */}
-              <div className="flex-1 bg-slate-200/50 overflow-y-auto p-12 flex justify-center custom-scrollbar">
-                <div className="w-full max-w-3xl bg-white shadow-2xl rounded-sm p-16 md:p-24 min-h-[1200px] relative">
-                  {/* Page Indicator */}
-                  <div className="absolute top-8 right-8 text-[10px] font-bold text-slate-300">Seite 1 von 1</div>
+              <div className="flex-1 bg-brand-surface overflow-y-auto p-8 md:p-12 flex justify-center custom-scrollbar">
+                <div className="w-full max-w-3xl bg-white shadow-2xl shadow-slate-200/50 rounded-lg min-h-[1000px] relative mx-auto">
                   
-                  <div className="mb-12">
-                    <div className="flex items-center gap-2 mb-4">
-                       <span className="px-2 py-0.5 bg-brand-primary/10 text-brand-primary text-[9px] font-black uppercase tracking-tighter rounded">Geprüftes Dokument</span>
-                       <span className="text-slate-300 text-[10px]">Zuletzt bearbeitet: Heute</span>
-                    </div>
-                    <h1 className="text-4xl font-serif font-bold text-slate-900 mb-4">{viewingFile.name}</h1>
-                    <div className="h-1 w-20 bg-brand-primary rounded-full" />
-                  </div>
+                  {/* Paper Texture Overlay */}
+                  <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-multiply bg-[url('https://www.transparenttextures.com/patterns/cream-paper.png')]"></div>
 
-                  <div className="prose prose-slate max-w-none">
-                    <p className="text-xl leading-relaxed text-slate-700 font-sans selection:bg-brand-primary selection:text-white">
-                      {viewingFile.content}
-                    </p>
-                    <p className="mt-8 text-xl leading-relaxed text-slate-700 font-sans">
-                      Die Energiegewinnung erfolgt in mehreren Schritten. Zunächst wird in der Glykolyse Glucose abgebaut. Dieser Prozess findet im Cytoplasma statt. Die Produkte werden dann in die Mitochondrien transportiert, wo der Citratzyklus und die Atmungskette ablaufen. 
-                    </p>
-                    <div className="mt-12 p-8 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center gap-4">
-                       <Sparkles size={24} className="text-brand-primary animate-pulse" />
-                       <p className="text-sm text-slate-400 italic">KI generiert zusätzliche Erläuterungen für diesen Abschnitt...</p>
+                  <div className="p-16 md:p-24 relative z-10">
+                    <div className="absolute top-12 right-12 text-[10px] font-bold text-slate-300 font-mono">SEITE 1 / 1</div>
+                    
+                    <div className="mb-16 border-b border-slate-100 pb-8">
+                      <div className="flex items-center gap-3 mb-6">
+                         <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider rounded-full">Verifiziert</span>
+                         <span className="text-slate-300 text-[10px] font-mono">UPDATED: TODAY</span>
+                      </div>
+                      <h1 className="text-5xl font-serif font-bold text-brand-dark mb-6 leading-tight">{viewingFile.name}</h1>
+                      <div className="h-1.5 w-24 bg-brand-primary" />
+                    </div>
+
+                    <div className="prose prose-slate prose-lg max-w-none">
+                      <p className="text-xl leading-8 text-slate-700 font-serif selection:bg-brand-secondary/20 selection:text-brand-dark first-letter:text-5xl first-letter:font-bold first-letter:text-brand-primary first-letter:mr-1 first-letter:float-left">
+                        {viewingFile.content}
+                      </p>
+                      <p className="mt-8 text-xl leading-8 text-slate-700 font-serif">
+                        Die Energiegewinnung erfolgt in mehreren Schritten. Zunächst wird in der Glykolyse Glucose abgebaut. Dieser Prozess findet im Cytoplasma statt. Die Produkte werden dann in die Mitochondrien transportiert, wo der Citratzyklus und die Atmungskette ablaufen. 
+                      </p>
+                      
+                      <blockquote className="my-10 pl-6 border-l-4 border-brand-secondary italic text-slate-600 font-serif text-lg">
+                        "Die Mitochondrien sind die Kraftwerke der Zelle." – Ein oft zitierter Satz, der die fundamentale Bedeutung dieser Organellen unterstreicht.
+                      </blockquote>
+
+                      <div className="mt-16 p-8 bg-brand-primary/5 rounded-2xl border border-brand-primary/10 flex flex-col gap-4 relative overflow-hidden">
+                         <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Sparkles size={64} />
+                         </div>
+                         <div className="flex items-center gap-3 text-brand-primary">
+                            <Sparkles size={20} className="animate-pulse" />
+                            <span className="text-xs font-bold uppercase tracking-widest">KI-Analyse</span>
+                         </div>
+                         <p className="text-sm text-slate-600 leading-relaxed max-w-lg">
+                            Basierend auf Ihren Notizen scheint dieser Abschnitt besonders relevant für die kommende Klausur zu sein. Ich empfehle, die Strukturformeln der Glykolyse zusätzlich zu wiederholen.
+                         </p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Ultra-Subtle AI Assistant Sidebar */}
+              {/* AI Assistant Sidebar */}
               <AnimatePresence>
                 {showRightSidebar && (
                   <motion.div 
-                    initial={{ width: 0, opacity: 0 }} animate={{ width: 240, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                    className="bg-white border-l border-slate-50 flex flex-col overflow-hidden"
+                    initial={{ width: 0, opacity: 0 }} animate={{ width: 300, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+                    className="bg-white border-l border-slate-100 flex flex-col overflow-hidden shadow-lg z-20"
                   >
-                    <div className="p-4 border-b border-slate-50/50 flex justify-between items-center">
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <Sparkles size={12} />
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Assistent</span>
+                    <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                      <div className="flex items-center gap-2 text-brand-primary">
+                        <Sparkles size={16} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">Co-Pilot</span>
                       </div>
-                      <button onClick={() => setShowRightSidebar(false)} className="p-1 hover:bg-slate-50 rounded text-slate-300">
-                        <ChevronRight size={12} />
+                      <button onClick={() => setShowRightSidebar(false)} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 transition-colors">
+                        <ChevronRight size={14} />
                       </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-8 custom-scrollbar">
-                       {/* Insights */}
-                       <div className="whitespace-nowrap">
-                          <div className="space-y-4">
-                             {[
-                               { t: 'Mitochondrien', d: 'Zellatmung' },
-                               { t: 'ATP', d: 'Energie' },
-                               { t: 'Glykolyse', d: 'Abbau' }
-                             ].map(f => (
-                               <div key={f.t} className="group cursor-pointer">
-                                 <div className="flex justify-between items-center">
-                                   <span className="text-[10px] font-bold text-slate-500 group-hover:text-brand-primary transition-colors">{f.t}</span>
-                                   <div className="w-1 h-1 rounded-full bg-slate-100 group-hover:bg-brand-primary" />
-                                 </div>
-                                 <p className="text-[9px] text-slate-400">{f.d}</p>
-                               </div>
-                             ))}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                       {/* Context Cards */}
+                       <div className="space-y-4">
+                          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Verwandte Begriffe</h3>
+                          {[
+                            { t: 'Mitochondrien', d: 'Ort der Zellatmung', color: 'bg-emerald-500' },
+                            { t: 'ATP', d: 'Energieträger', color: 'bg-amber-500' },
+                            { t: 'Glykolyse', d: 'Glucose-Abbau', color: 'bg-blue-500' }
+                          ].map(f => (
+                            <div key={f.t} className="group p-3 rounded-xl border border-slate-100 hover:border-brand-primary/30 hover:shadow-md transition-all cursor-pointer bg-white">
+                              <div className="flex justify-between items-start mb-1">
+                                <span className="text-xs font-bold text-slate-700 group-hover:text-brand-primary transition-colors">{f.t}</span>
+                                <div className={`w-1.5 h-1.5 rounded-full ${f.color}`} />
+                              </div>
+                              <p className="text-[10px] text-slate-400 leading-relaxed">{f.d}</p>
+                            </div>
+                          ))}
+                       </div>
+
+                       {/* Interactive Modules */}
+                       <div>
+                          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Aktionen</h3>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button className="p-3 bg-amber-50 rounded-xl border border-amber-100 hover:border-amber-200 transition-all text-left group">
+                               <Zap size={16} className="text-amber-500 mb-2 group-hover:scale-110 transition-transform" />
+                               <span className="block text-[10px] font-bold text-amber-900">Quiz starten</span>
+                            </button>
+                            <button className="p-3 bg-purple-50 rounded-xl border border-purple-100 hover:border-purple-200 transition-all text-left group">
+                               <BookOpen size={16} className="text-purple-500 mb-2 group-hover:scale-110 transition-transform" />
+                               <span className="block text-[10px] font-bold text-purple-900">Lernkarten</span>
+                            </button>
                           </div>
-                       </div>
-
-                       {/* Minimal Link */}
-                       <div className="py-4 border-y border-slate-50 whitespace-nowrap overflow-hidden">
-                          <p className="text-[9px] text-slate-400 leading-tight mb-2">
-                            Passend zu <strong>"Zellbiologie"</strong>.
-                          </p>
-                          <button className="text-[9px] font-bold text-brand-primary/60 hover:text-brand-primary flex items-center gap-1">
-                            Verknüpfen <ChevronRight size={8} />
-                          </button>
-                       </div>
-
-                       {/* Minimal Actions */}
-                       <div className="space-y-1">
-                          <button className="w-full p-1.5 text-left hover:bg-slate-50 rounded-lg transition-all flex items-center gap-2 text-slate-400 hover:text-brand-primary group">
-                             <Zap size={10} className="text-slate-200 group-hover:text-amber-400" />
-                             <span className="text-[9px] font-medium">Quiz</span>
-                          </button>
-                          <button className="w-full p-1.5 text-left hover:bg-slate-50 rounded-lg transition-all flex items-center gap-2 text-slate-400 hover:text-brand-primary group">
-                             <BookOpen size={10} className="text-slate-200 group-hover:text-purple-400" />
-                             <span className="text-[9px] font-medium">Karten</span>
-                          </button>
                        </div>
                     </div>
 
-                    <div className="p-3 bg-slate-50/30">
+                    <div className="p-4 bg-slate-50 border-t border-slate-100">
                       <div className="relative">
                         <input 
                           type="text"
-                          placeholder="Frage..."
-                          className="w-full pl-2 pr-6 py-1.5 bg-white border border-slate-100 rounded-md text-[9px] outline-none focus:border-brand-primary/20 transition-all placeholder:text-slate-200"
+                          placeholder="Frage an den Co-Pilot..."
+                          className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all placeholder:text-slate-400 shadow-sm"
                         />
-                        <Search size={8} className="absolute right-2 top-2 text-slate-200" />
+                        <button className="absolute right-2 top-2 p-1 bg-brand-dark text-white rounded-lg hover:bg-brand-primary transition-colors">
+                           <Search size={10} />
+                        </button>
                       </div>
                     </div>
                   </motion.div>

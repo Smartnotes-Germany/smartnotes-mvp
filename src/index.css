@@ -1,27 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,100..900,0..100&family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
 
 @theme {
-  --font-sans: "Inter", "system-ui", sans-serif;
-  --font-serif: "Merriweather", "Georgia", serif;
-  --font-handwriting: "Caveat", cursive;
+  --font-sans: "Hanken Grotesk", "Inter", sans-serif;
+  --font-serif: "Fraunces", "Georgia", serif;
+  --font-mono: "JetBrains Mono", monospace;
   
-  --color-brand-dark: #0f172a;
-  --color-brand-primary: #000B3D;
-  --color-brand-secondary: #64748b;
-  --color-brand-accent: #14b8a6;
-  --color-brand-paper: #f8fafc;
+  /* Deep Forest & Paper Palette */
+  --color-brand-dark: #1A1C19;
+  --color-brand-primary: #2D4F1E;    /* Deep Green */
+  --color-brand-primary-light: #4A7A3A;
+  --color-brand-secondary: #D4A373;  /* Sand */
+  --color-brand-accent: #BC4749;     /* Muted Red */
+  --color-brand-paper: #FDFCF8;      /* Warm White */
+  --color-brand-surface: #F2F0E9;    /* Warm Grey/Beige */
+  --color-brand-border: #E2E0D6;
+  
+  /* Semantic mappings for easier refactoring */
+  --color-slate-50: var(--color-brand-paper);
+  --color-slate-100: var(--color-brand-surface);
+  --color-slate-200: var(--color-brand-border);
+  --color-slate-300: #C0BEB4;
+  --color-slate-400: #8C8A82;
+  --color-slate-500: #5C5E5A;
+  --color-slate-600: #464844;
+  --color-slate-700: #323430;
+  --color-slate-800: #1A1C19;
+  --color-slate-900: #0D0E0C;
+  
+  --color-blue-50: #E6F0E4; /* Tint of green */
+  --color-blue-600: var(--color-brand-primary); /* Map blue to primary green */
+  --color-blue-500: var(--color-brand-primary-light);
 }
 
 @layer base {
   :root {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-brand-paper);
+    color: var(--color-brand-dark);
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+  
+  /* Noise Texture */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.4;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-serif);
+    font-variation-settings: "SOFT" 50;
+    letter-spacing: -0.02em;
   }
 }
 
@@ -36,4 +79,20 @@
 
 .backface-hidden {
   backface-visibility: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-slate-300);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-slate-400);
 }

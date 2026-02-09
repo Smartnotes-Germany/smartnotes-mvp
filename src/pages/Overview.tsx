@@ -30,11 +30,11 @@ interface NodeData {
 }
 
 // --- Color style map (explicit classes so Tailwind can detect them at build time) ---
-const folderColorStyles: Record<string, { bg: string; text: string; bar: string; glow: string }> = {
-  teal:     { bg: 'bg-teal/10',     text: 'text-teal',     bar: 'bg-teal',     glow: 'bg-teal/10' },
-  sky:      { bg: 'bg-sky/10',      text: 'text-sky',      bar: 'bg-sky',      glow: 'bg-sky/10' },
-  amethyst: { bg: 'bg-amethyst/10', text: 'text-amethyst', bar: 'bg-amethyst', glow: 'bg-amethyst/10' },
-  amber:    { bg: 'bg-amber/10',    text: 'text-amber',    bar: 'bg-amber',    glow: 'bg-amber/10' },
+const folderColorStyles: Record<string, { bg: string; text: string; bar: string; glow: string; hoverText: string }> = {
+  teal:     { bg: 'bg-teal/10',     text: 'text-teal',     bar: 'bg-teal',     glow: 'bg-teal/10',     hoverText: 'group-hover:text-teal' },
+  sky:      { bg: 'bg-sky/10',      text: 'text-sky',      bar: 'bg-sky',      glow: 'bg-sky/10',      hoverText: 'group-hover:text-sky' },
+  amethyst: { bg: 'bg-amethyst/10', text: 'text-amethyst', bar: 'bg-amethyst', glow: 'bg-amethyst/10', hoverText: 'group-hover:text-amethyst' },
+  amber:    { bg: 'bg-amber/10',    text: 'text-amber',    bar: 'bg-amber',    glow: 'bg-amber/10',    hoverText: 'group-hover:text-amber' },
 };
 
 // --- Sub-components ---
@@ -275,7 +275,7 @@ export const Overview = () => {
                         </div>
                         <span className="text-[10px] font-semibold text-text-ghost">{folder.count} Notizen</span>
                       </div>
-                      <h3 className="font-semibold text-text-primary group-hover:text-gold transition-colors">{folder.label}</h3>
+                      <h3 className={`font-semibold text-text-primary ${folderColorStyles[folder.color].hoverText} transition-colors`}>{folder.label}</h3>
                       <div className="mt-4 flex items-center gap-2">
                         <div className="h-1 flex-1 bg-elevated rounded-full overflow-hidden">
                           <motion.div

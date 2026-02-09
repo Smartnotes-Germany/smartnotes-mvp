@@ -1,39 +1,148 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
 
 @theme {
-  --font-sans: "Inter", "system-ui", sans-serif;
-  --font-serif: "Merriweather", "Georgia", serif;
+  /* Typography — distinctive, characterful choices */
+  --font-sans: "Outfit", sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
   --font-handwriting: "Caveat", cursive;
-  
-  --color-brand-dark: #0f172a;
-  --color-brand-primary: #000B3D;
-  --color-brand-secondary: #64748b;
-  --color-brand-accent: #14b8a6;
-  --color-brand-paper: #f8fafc;
+
+  /* Midnight Library palette */
+  --color-void: #08090f;
+  --color-deep: #0d0f18;
+  --color-surface: #131623;
+  --color-elevated: #1a1e30;
+  --color-raised: #222840;
+  --color-hover: #2b3352;
+
+  /* Border tones */
+  --color-border-subtle: #1e2235;
+  --color-border-visible: #2a3050;
+  --color-border-strong: #3a4168;
+
+  /* Gold accent — the soul of the design */
+  --color-gold: #d4a853;
+  --color-gold-light: #e8c97a;
+  --color-gold-muted: #a88a3e;
+  --color-gold-dim: #7a6530;
+
+  /* Text tones — warm cream to muted lavender */
+  --color-text-primary: #e8e4d9;
+  --color-text-secondary: #9994b8;
+  --color-text-muted: #5e5a72;
+  --color-text-ghost: #3a384a;
+
+  /* Semantic accents */
+  --color-teal: #3dbda7;
+  --color-teal-muted: #2a8a78;
+  --color-coral: #e86b6b;
+  --color-coral-muted: #a84e4e;
+  --color-sky: #5b8def;
+  --color-sky-muted: #3d6abf;
+  --color-amethyst: #9b7aef;
+  --color-amethyst-muted: #7055b8;
+  --color-amber: #e8a84c;
+  --color-amber-muted: #b8852e;
 }
 
 @layer base {
   :root {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-void);
+    color: var(--color-text-primary);
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+    font-family: "Outfit", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Selection colors */
+  ::selection {
+    background-color: var(--color-gold);
+    color: var(--color-void);
+  }
+
+  /* Custom scrollbar — dark, elegant, thin */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-visible);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-strong);
   }
 }
 
-/* Custom perspective for the study coach cards */
+/* 3D card utilities for StudyCoach */
 .perspective-1000 {
   perspective: 1000px;
 }
-
 .preserve-3d {
   transform-style: preserve-3d;
 }
-
 .backface-hidden {
   backface-visibility: hidden;
+}
+
+/* Atmospheric grain overlay */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* Glow utilities */
+.glow-gold {
+  box-shadow: 0 0 20px rgba(212, 168, 83, 0.15), 0 0 60px rgba(212, 168, 83, 0.05);
+}
+.glow-gold-strong {
+  box-shadow: 0 0 30px rgba(212, 168, 83, 0.25), 0 0 80px rgba(212, 168, 83, 0.08);
+}
+.glow-teal {
+  box-shadow: 0 0 20px rgba(61, 189, 167, 0.15), 0 0 60px rgba(61, 189, 167, 0.05);
+}
+
+/* Gradient border utility */
+.border-gradient-gold {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.border-gradient-gold::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--color-gold-dim), transparent 60%);
+  z-index: -1;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+/* Decorative line — used for section dividers */
+.line-gold {
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-gold), transparent);
+  border-radius: 999px;
+}
+
+/* Input styling for dark theme */
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-ghost);
 }

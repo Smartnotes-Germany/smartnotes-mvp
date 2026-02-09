@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Zap, ListTree, Lightbulb, Type } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -6,20 +6,17 @@ import { useNavigate } from 'react-router-dom';
 export const IntelligentEditor = () => {
   const [text, setText] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
 
   // Simulate AI analyzing text as user "types"
   useEffect(() => {
-    if (text.length > 20 && text.includes("DNA")) {
-      setIsProcessing(true);
+    if (text.length > 20 && text.includes("DNA") && suggestions.length === 0) {
       const timer = setTimeout(() => {
         setSuggestions(["Doppelhelix", "Nukleotide", "Watson-Crick-Modell"]);
-        setIsProcessing(false);
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [text]);
+  }, [text, suggestions.length]);
 
   return (
     <div className="h-full bg-white flex flex-col overflow-hidden">
@@ -37,11 +34,11 @@ export const IntelligentEditor = () => {
         </div>
         <div className="flex items-center gap-2">
           <motion.div 
-            animate={{ opacity: isProcessing ? 1 : 0.5 }}
+            animate={{ opacity: 1 }}
             className="flex items-center gap-2 text-xs font-bold text-brand-primary"
           >
-            <Sparkles size={14} className={isProcessing ? "animate-pulse" : ""} />
-            {isProcessing ? "KI analysiert..." : "KI bereit"}
+            <Sparkles size={14} />
+            KI bereit
           </motion.div>
         </div>
       </div>
@@ -89,7 +86,7 @@ export const IntelligentEditor = () => {
                   </motion.div>
                 ))}
               </AnimatePresence>
-              {suggestions.length === 0 && !isProcessing && (
+              {suggestions.length === 0 && (
                 <p className="text-sm text-slate-400 italic">Schreibe über ein Thema, um KI-Einsichten zu erhalten.</p>
               )}
             </div>

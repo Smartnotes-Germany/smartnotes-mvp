@@ -1,39 +1,389 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
+
+/* === EDITORIAL DARK ACADEMIA DESIGN SYSTEM === */
+
+/* Distinctive Typography - No Generic Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap');
 
 @theme {
-  --font-sans: "Inter", "system-ui", sans-serif;
-  --font-serif: "Merriweather", "Georgia", serif;
-  --font-handwriting: "Caveat", cursive;
+  /* === TYPOGRAPHY === */
+  --font-display: "Playfair Display", "Georgia", serif;
+  --font-body: "Crimson Pro", "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
   
-  --color-brand-dark: #0f172a;
-  --color-brand-primary: #000B3D;
-  --color-brand-secondary: #64748b;
-  --color-brand-accent: #14b8a6;
-  --color-brand-paper: #f8fafc;
+  /* === COLOR PALETTE - Dark Academia === */
+  --color-ink: #0a0a0f;
+  --color-ink-light: #141419;
+  --color-ink-muted: #1e1e26;
+  
+  --color-ivory: #faf8f5;
+  --color-ivory-warm: #f5f1eb;
+  --color-ivory-muted: #ebe7e0;
+  
+  --color-accent-burnt: #c73e1d;
+  --color-accent-gold: #c9a227;
+  --color-accent-forest: #1a2f23;
+  --color-accent-slate: #4a4a52;
+  --color-accent-warm: #8b5a3c;
+  
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #5a5a5a;
+  --color-text-muted: #8a8a8a;
+  --color-text-inverse: #faf8f5;
 }
 
 @layer base {
   :root {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-ivory);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+    font-feature-settings: "liga" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Selection styling */
+  ::selection {
+    background-color: var(--color-accent-gold);
+    color: var(--color-ink);
+  }
+  
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-accent-slate);
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink);
   }
 }
 
-/* Custom perspective for the study coach cards */
-.perspective-1000 {
-  perspective: 1000px;
+@layer components {
+  /* === TYPOGRAPHY UTILITIES === */
+  .font-display {
+    font-family: var(--font-display);
+  }
+  
+  .font-body {
+    font-family: var(--font-body);
+  }
+  
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+  
+  /* Dramatic scale typography */
+  .text-display-xl {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 8vw, 6rem);
+    font-weight: 600;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+  }
+  
+  .text-display-lg {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  
+  .text-display-md {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 3vw, 2.25rem);
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+  
+  .text-body-lg {
+    font-family: var(--font-body);
+    font-size: 1.25rem;
+    line-height: 1.6;
+    font-weight: 400;
+  }
+  
+  .text-body-md {
+    font-family: var(--font-body);
+    font-size: 1.125rem;
+    line-height: 1.6;
+    font-weight: 400;
+  }
+  
+  .text-ui {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  
+  .text-caption {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  
+  /* === COLOR UTILITIES === */
+  .bg-ink {
+    background-color: var(--color-ink);
+  }
+  
+  .bg-ink-light {
+    background-color: var(--color-ink-light);
+  }
+  
+  .bg-ink-muted {
+    background-color: var(--color-ink-muted);
+  }
+  
+  .bg-ivory {
+    background-color: var(--color-ivory);
+  }
+  
+  .bg-ivory-warm {
+    background-color: var(--color-ivory-warm);
+  }
+  
+  .text-ink {
+    color: var(--color-ink);
+  }
+  
+  .text-ivory {
+    color: var(--color-ivory);
+  }
+  
+  .text-accent-burnt {
+    color: var(--color-accent-burnt);
+  }
+  
+  .text-accent-gold {
+    color: var(--color-accent-gold);
+  }
+  
+  /* === EDITORIAL LAYOUT UTILITIES === */
+  .border-editorial {
+    border-color: var(--color-ink);
+    border-width: 1px;
+  }
+  
+  .border-editorial-light {
+    border-color: var(--color-ivory-muted);
+    border-width: 1px;
+  }
+  
+  /* === BUTTONS === */
+  .btn-primary {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 1rem 2rem;
+    background-color: var(--color-ink);
+    color: var(--color-ivory);
+    border: 1px solid var(--color-ink);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--color-accent-burnt);
+    border-color: var(--color-accent-burnt);
+    transform: translateY(-1px);
+  }
+  
+  .btn-secondary {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 1rem 2rem;
+    background-color: transparent;
+    color: var(--color-ink);
+    border: 1px solid var(--color-ink);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--color-ink);
+    color: var(--color-ivory);
+  }
+  
+  .btn-ghost {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.75rem 1.5rem;
+    background-color: transparent;
+    color: var(--color-text-secondary);
+    border: none;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+  
+  .btn-ghost:hover {
+    color: var(--color-ink);
+  }
+  
+  /* === CARDS === */
+  .card-editorial {
+    background-color: var(--color-ivory);
+    border: 1px solid var(--color-ivory-muted);
+    padding: 2rem;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .card-editorial:hover {
+    border-color: var(--color-ink);
+    transform: translateY(-2px);
+    box-shadow: 0 20px 40px -15px rgba(10, 10, 15, 0.15);
+  }
+  
+  .card-dark {
+    background-color: var(--color-ink);
+    color: var(--color-ivory);
+    padding: 2rem;
+  }
+  
+  /* === INPUTS === */
+  .input-editorial {
+    font-family: var(--font-body);
+    font-size: 1rem;
+    padding: 1rem 1.25rem;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid var(--color-ivory-muted);
+    outline: none;
+    transition: border-color 0.3s ease;
+    width: 100%;
+  }
+  
+  .input-editorial:focus {
+    border-color: var(--color-ink);
+  }
+  
+  .input-editorial::placeholder {
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+  
+  /* === DECORATIVE ELEMENTS === */
+  .divider-editorial {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-ink), transparent);
+    opacity: 0.2;
+  }
+  
+  .divider-vertical {
+    width: 1px;
+    background-color: var(--color-ivory-muted);
+  }
+  
+  /* === NOISE TEXTURE OVERLAY === */
+  .noise-overlay {
+    position: relative;
+  }
+  
+  .noise-overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 1;
+  }
+  
+  /* === GLOW EFFECTS === */
+  .glow-gold {
+    box-shadow: 0 0 60px -15px var(--color-accent-gold);
+  }
+  
+  .glow-burnt {
+    box-shadow: 0 0 60px -15px var(--color-accent-burnt);
+  }
+  
+  /* === ASYMMETRIC GRID HELPERS === */
+  .grid-asymmetric {
+    display: grid;
+    grid-template-columns: 1fr 1.618fr;
+    gap: 2rem;
+  }
+  
+  .grid-asymmetric-reverse {
+    display: grid;
+    grid-template-columns: 1.618fr 1fr;
+    gap: 2rem;
+  }
 }
 
-.preserve-3d {
-  transform-style: preserve-3d;
-}
-
-.backface-hidden {
-  backface-visibility: hidden;
+@layer utilities {
+  /* === ANIMATIONS === */
+  .animate-fade-in {
+    animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* === TEXT EFFECTS === */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, var(--color-accent-gold), #d4af37);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* === HOVER EFFECTS === */
+  .hover-lift {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .hover-lift:hover {
+    transform: translateY(-4px);
+  }
 }

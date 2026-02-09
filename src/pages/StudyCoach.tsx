@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Check, 
-  HelpCircle, 
   BookOpen, 
   ArrowRight, 
   Sparkles, 
-  ChevronDown,
-  Info,
   RotateCcw,
-  Lightbulb
+  Lightbulb,
+  ChevronLeft,
+  ChevronRight,
+  Trophy
 } from 'lucide-react';
 
 // --- Types ---
@@ -18,7 +18,7 @@ interface Question {
   topic: string;
   question: string;
   answer: string;
-  simpleExplanation: string; // "ELI5" - Explain like I'm 5
+  simpleExplanation: string;
   sourceNote: string;
 }
 
@@ -36,7 +36,7 @@ const MOCK_QUESTIONS: Question[] = [
     topic: "Physik",
     question: "Was besagt der Energieerhaltungssatz?",
     answer: "In einem abgeschlossenen System ist die Gesamtenergie konstant. Energie kann weder erzeugt noch vernichtet, sondern nur in andere Formen umgewandelt werden.",
-    simpleExplanation: "Energie verschwindet nie. Wenn du einen Ball wirfst, wird deine Muskelkraft in Bewegung (kinetische Energie) umgewandelt. Wenn er liegen bleibt, wurde die Bewegung in Wärme (Reibung) umgewandelt. Die Summe bleibt gleich.",
+    simpleExplanation: "Energie verschwindet nie. Wenn du einen Ball wirfst, wird deine Muskelkraft in Bewegung umgewandelt. Wenn er liegen bleibt, wurde die Bewegung in Wärme umgewandelt. Die Summe bleibt gleich.",
     sourceNote: "Energieerhaltung: E_ges = E_pot + E_kin + ... = const."
   }
 ];
@@ -54,104 +54,153 @@ export const StudyCoach = () => {
     setIndex((prev) => (prev + 1) % MOCK_QUESTIONS.length);
   };
 
+  const handlePrev = () => {
+    setMode('question');
+    setShowNote(false);
+    setIndex((prev) => (prev - 1 + MOCK_QUESTIONS.length) % MOCK_QUESTIONS.length);
+  };
+
   return (
-    <div className="h-full bg-white flex flex-col items-center justify-center font-sans selection:bg-brand-primary/10">
+    <div className="h-full bg-ivory flex flex-col font-body relative overflow-hidden">
       
-      {/* Top Navigation / Progress */}
-      <div className="absolute top-0 w-full p-8 flex justify-between items-center text-slate-400">
-        <div className="flex items-center gap-6">
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-dark">Smart Training</span>
+      {/* === EDITORIAL HEADER === */}
+      <div className="px-10 py-6 flex justify-between items-center border-b border-ivory-muted z-20">
+        <div className="flex items-center gap-8">
+          <span className="text-caption text-accent-slate">Lernmodus</span>
           <div className="flex gap-1">
             {MOCK_QUESTIONS.map((_, i) => (
-              <div key={i} className={`h-1 w-6 rounded-full transition-colors ${i === index ? 'bg-brand-primary' : 'bg-slate-100'}`} />
+              <div 
+                key={i} 
+                className={`h-0.5 w-8 transition-all ${i === index ? 'bg-accent-gold' : 'bg-ivory-muted'}`} 
+              />
             ))}
           </div>
         </div>
-        <button onClick={() => window.location.reload()} className="hover:text-slate-600 transition-colors">
-          <RotateCcw size={18} />
-        </button>
+        
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-caption text-text-muted">
+            <Trophy size={14} className="text-accent-gold" />
+            <span>Frage {index + 1} von {MOCK_QUESTIONS.length}</span>
+          </div>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="p-2 text-text-muted hover:text-ink transition-colors"
+          >
+            <RotateCcw size={18} />
+          </button>
+        </div>
       </div>
 
-      <main className="w-full max-w-2xl px-6 flex flex-col items-center">
-        
-        {/* Topic Badge */}
-        <motion.span 
-          key={current.topic}
-          initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-          className="text-[10px] font-bold text-brand-primary bg-blue-50 px-3 py-1 rounded-full mb-8 uppercase tracking-widest"
-        >
-          {current.topic}
-        </motion.span>
+      {/* === MAIN CONTENT === */}
+      <main className="flex-1 flex items-center justify-center px-10">
+        <div className="w-full max-w-4xl">
+          
+          {/* Topic Badge */}
+          <motion.div 
+            key={current.topic}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-3 mb-8"
+          >
+            <span className="text-caption px-3 py-1 border border-accent-gold text-accent-gold">
+              {current.topic}
+            </span>
+          </motion.div>
 
-        {/* The Question Area */}
-        <div className="w-full text-center space-y-12">
+          {/* Question */}
           <motion.h2 
             key={current.question}
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="text-4xl md:text-5xl font-serif font-bold text-slate-900 leading-tight"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-display-lg text-ink mb-12 leading-tight"
           >
             {current.question}
           </motion.h2>
 
-          <div className="h-px w-24 bg-slate-100 mx-auto" />
+          {/* Divider */}
+          <div className="h-px bg-ivory-muted mb-12" />
 
-          {/* Dynamic Content Area */}
-          <div className="min-h-[200px] flex flex-col items-center justify-center">
+          {/* Dynamic Content */}
+          <div className="min-h-[300px]">
             <AnimatePresence mode="wait">
               {mode === 'question' ? (
-                <motion.button
-                  key="check-btn"
-                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
-                  onClick={() => setMode('answer')}
-                  className="group flex flex-col items-center gap-4 outline-none"
+                <motion.div
+                  key="question-view"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="flex flex-col items-center"
                 >
-                  <div className="w-16 h-16 rounded-full bg-slate-900 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-xl shadow-slate-200">
-                    <ArrowRight size={24} />
-                  </div>
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">Antwort prüfen</span>
-                </motion.button>
+                  <motion.button
+                    onClick={() => setMode('answer')}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="group flex flex-col items-center gap-4"
+                  >
+                    <div className="w-20 h-20 bg-ink text-ivory flex items-center justify-center group-hover:bg-accent-burnt transition-colors">
+                      <ArrowRight size={28} />
+                    </div>
+                    <span className="text-caption text-text-muted group-hover:text-ink transition-colors">
+                      Antwort anzeigen
+                    </span>
+                  </motion.button>
+                </motion.div>
               ) : (
                 <motion.div 
-                  key="answer-content"
-                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                  className="w-full space-y-8"
+                  key="answer-view"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="space-y-8"
                 >
-                  <div className="text-xl text-slate-600 leading-relaxed max-w-xl mx-auto italic font-serif">
+                  {/* Answer or Explanation */}
+                  <div className="text-body-lg text-text-primary leading-relaxed">
                     {mode === 'explain' ? (
-                      <div className="bg-amber-50/50 p-8 rounded-3xl border border-amber-100 relative">
-                        <div className="absolute -top-3 -left-3 w-8 h-8 bg-amber-400 rounded-lg flex items-center justify-center text-white shadow-lg">
-                          <Lightbulb size={18} />
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="p-8 bg-ivory-warm border border-ivory-muted relative"
+                      >
+                        <div className="absolute -top-3 -left-3 w-10 h-10 bg-accent-gold flex items-center justify-center text-ink">
+                          <Lightbulb size={20} />
                         </div>
-                        <span className="block text-[10px] font-black text-amber-600 uppercase mb-4 tracking-widest">Einfache Erklärung</span>
-                        {current.simpleExplanation}
-                      </div>
+                        <span className="text-caption text-accent-gold block mb-4">Einfache Erklärung</span>
+                        <p className="font-body text-lg leading-relaxed">{current.simpleExplanation}</p>
+                      </motion.div>
                     ) : (
-                      <p>"{current.answer}"</p>
+                      <p className="font-body text-xl leading-relaxed italic text-text-primary">
+                        "{current.answer}"
+                      </p>
                     )}
                   </div>
 
-                  <div className="flex flex-wrap justify-center gap-3">
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-4 pt-4">
                     <button 
                       onClick={handleNext}
-                      className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                      className="px-8 py-4 bg-ink text-ivory text-caption hover:bg-accent-burnt transition-all flex items-center gap-3"
                     >
-                      <Check size={16} /> Verstanden
+                      <Check size={16} /> 
+                      <span>Verstanden</span>
                     </button>
                     
                     {mode !== 'explain' && (
                       <button 
                         onClick={() => setMode('explain')}
-                        className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl text-xs font-bold flex items-center gap-2 hover:border-brand-primary hover:text-brand-primary transition-all shadow-sm"
+                        className="px-8 py-4 border border-ink text-ink text-caption hover:bg-ink hover:text-ivory transition-all flex items-center gap-3"
                       >
-                        <Sparkles size={16} /> Erklär es mir einfach
+                        <Sparkles size={16} /> 
+                        <span>Einfacher erklären</span>
                       </button>
                     )}
 
                     <button 
                       onClick={() => setShowNote(!showNote)}
-                      className="px-6 py-3 bg-slate-50 text-slate-400 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-100 transition-all"
+                      className="px-8 py-4 border border-ivory-muted text-text-secondary text-caption hover:border-ink hover:text-ink transition-all flex items-center gap-3"
                     >
-                      <BookOpen size={16} /> {showNote ? 'Notiz ausblenden' : 'In meine Notizen schauen'}
+                      <BookOpen size={16} /> 
+                      <span>{showNote ? 'Notiz ausblenden' : 'Meine Notizen'}</span>
                     </button>
                   </div>
                 </motion.div>
@@ -161,36 +210,66 @@ export const StudyCoach = () => {
         </div>
       </main>
 
-      {/* Slide-up Note Panel */}
+      {/* === NAVIGATION CONTROLS === */}
+      <div className="absolute bottom-10 left-10 right-10 flex justify-between items-center">
+        <button 
+          onClick={handlePrev}
+          className="flex items-center gap-2 text-caption text-text-muted hover:text-ink transition-colors"
+        >
+          <ChevronLeft size={16} />
+          <span>Vorherige</span>
+        </button>
+        
+        <button 
+          onClick={handleNext}
+          className="flex items-center gap-2 text-caption text-text-muted hover:text-ink transition-colors"
+        >
+          <span>Nächste</span>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      {/* === NOTE PANEL === */}
       <AnimatePresence>
         {showNote && (
           <motion.div
-            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            className="absolute bottom-0 w-full max-w-xl bg-white border-t border-slate-100 rounded-t-[40px] shadow-2xl z-30 p-10 pb-16"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="absolute bottom-0 left-0 right-0 bg-ink text-ivory z-30"
           >
-            <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8" />
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-blue-50 text-brand-primary rounded-lg flex items-center justify-center">
-                <BookOpen size={16} />
+            <div className="max-w-4xl mx-auto p-10">
+              <div className="flex items-start justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 border border-ivory/20 flex items-center justify-center">
+                    <BookOpen size={18} className="text-accent-gold" />
+                  </div>
+                  <div>
+                    <h4 className="text-caption text-ivory/60 mb-1">Aus deiner Mitschrift</h4>
+                    <p className="font-display text-xl">{current.topic}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowNote(false)}
+                  className="text-ivory/40 hover:text-ivory transition-colors text-2xl"
+                >
+                  ×
+                </button>
               </div>
-              <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Kontext aus deiner Mitschrift</h4>
+              
+              <p className="text-body-lg text-ivory/80 leading-relaxed border-l-2 border-accent-gold pl-6">
+                {current.sourceNote}
+              </p>
             </div>
-            <p className="text-lg text-slate-700 leading-relaxed font-serif">
-              "{current.sourceNote}"
-            </p>
-            <button 
-              onClick={() => setShowNote(false)}
-              className="mt-8 w-full py-4 text-slate-400 text-xs font-bold hover:text-slate-600"
-            >
-              Schließen
-            </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Background Decor */}
+      {/* === DECORATIVE BACKGROUND === */}
       <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-slate-50 rounded-full blur-[120px] opacity-50" />
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-accent-gold/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-accent-burnt/5 rounded-full blur-[120px]" />
       </div>
     </div>
   );

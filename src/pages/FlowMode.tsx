@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileUp, 
@@ -10,7 +10,9 @@ import {
   MoreHorizontal, 
   ChevronRight,
   Search,
-  CheckCircle2
+  CheckCircle2,
+  ListTree,
+  Zap
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -22,7 +24,6 @@ export const FlowMode = () => {
   const navigate = useNavigate();
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
-  // Simulation der Entitätserkennung beim Tippen
   useEffect(() => {
     const lastWord = content.trim().split(/\s+/).pop()?.toLowerCase();
     
@@ -55,47 +56,47 @@ export const FlowMode = () => {
   };
 
   return (
-    <div className="h-full bg-white flex flex-col overflow-hidden font-sans selection:bg-brand-primary selection:text-white">
+    <div className="h-full bg-cream flex flex-col overflow-hidden font-sans">
       
-      {/* 1. Header & Toolbar */}
-      <header className="h-14 px-8 flex items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md z-30">
+      {/* Header & Toolbar */}
+      <header className="h-14 px-8 flex items-center justify-between border-b border-cream-border z-30">
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg text-slate-500 font-medium text-xs">
-            <Type size={14} /> Fokus-Modus
+          <div className="flex items-center gap-2 px-3.5 py-1.5 border border-cream-border rounded-sm text-ink-secondary text-[0.75rem] font-medium">
+            <Type size={13} /> Fokus-Modus
           </div>
           <button 
             onClick={handleImport}
-            className="flex items-center gap-2 text-xs font-bold text-brand-primary hover:text-brand-primary/80 transition-colors"
+            className="flex items-center gap-2 text-[0.75rem] font-semibold text-accent hover:text-accent-dark transition-colors"
           >
-            <FileUp size={16} /> Notizen importieren
+            <FileUp size={14} /> Notizen importieren
           </button>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-[0.6875rem] font-medium text-ink-muted tracking-wider uppercase">
             {isAnalyzing ? (
-              <span className="flex items-center gap-2 text-brand-primary">
-                <Sparkles size={12} className="animate-pulse" /> KI analysiert...
+              <span className="flex items-center gap-2 text-accent">
+                <Sparkles size={11} className="animate-pulse" /> KI analysiert...
               </span>
             ) : (
-              <span className="flex items-center gap-2 italic">
-                <CheckCircle2 size={12} className="text-emerald-500" /> Gesichert
+              <span className="flex items-center gap-2">
+                <CheckCircle2 size={11} className="text-accent" /> Gesichert
               </span>
             )}
           </div>
-          <MoreHorizontal size={20} className="text-slate-300 cursor-pointer" />
+          <MoreHorizontal size={16} className="text-ink-muted cursor-pointer hover:text-ink transition-colors" />
         </div>
       </header>
 
       <div className="flex-1 flex relative">
         
-        {/* 2. Main Typing Canvas */}
-        <main className="flex-1 relative overflow-y-auto bg-slate-50/30 flex justify-center">
-          <div className="w-full max-w-3xl min-h-full bg-white shadow-sm border-x border-slate-50 p-16 md:p-24 flex flex-col">
+        {/* Main Typing Canvas */}
+        <main className="flex-1 relative overflow-y-auto flex justify-center custom-scrollbar">
+          <div className="w-full max-w-3xl min-h-full bg-surface-white border-x border-cream-border p-16 md:p-24 flex flex-col">
             <input 
               type="text"
               placeholder="Titel der Mitschrift..."
-              className="w-full text-4xl font-serif font-bold text-slate-900 border-none outline-none mb-8 placeholder:text-slate-200"
+              className="w-full text-[2.5rem] font-serif font-bold text-ink border-none outline-none mb-8 placeholder:text-ink-faint leading-[1.15] tracking-tight"
             />
             
             <textarea
@@ -103,77 +104,75 @@ export const FlowMode = () => {
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Schreibe deine Gedanken auf oder importiere Dokumente... (Tippe z.B. 'DNA' oder 'Rom')"
-              className="flex-1 w-full text-xl leading-relaxed text-slate-700 border-none outline-none resize-none placeholder:text-slate-200 font-sans"
+              className="flex-1 w-full text-[1.0625rem] leading-[1.85] text-ink-secondary border-none outline-none resize-none placeholder:text-ink-muted font-sans"
             />
           </div>
 
-          {/* Import Overlay Animation */}
+          {/* Import Overlay */}
           <AnimatePresence>
             {isImporting && (
               <motion.div 
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-white/80 backdrop-blur-sm z-40 flex flex-col items-center justify-center text-brand-primary"
+                className="absolute inset-0 bg-cream/90 backdrop-blur-sm z-40 flex flex-col items-center justify-center"
               >
-                <div className="w-64 h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
+                <div className="w-48 h-[2px] bg-cream-dark rounded-full overflow-hidden mb-5">
                   <motion.div 
-                    initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ duration: 2 }}
-                    className="h-full bg-brand-primary" 
+                    initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ duration: 2, ease: "easeInOut" }}
+                    className="h-full bg-accent" 
                   />
                 </div>
-                <p className="text-sm font-bold uppercase tracking-widest animate-pulse">Analysiere Handschrift...</p>
+                <p className="text-[0.75rem] font-semibold text-ink-secondary tracking-[0.2em] uppercase">Analysiere Handschrift...</p>
               </motion.div>
             )}
           </AnimatePresence>
         </main>
 
-        {/* 3. Entity & Keyword Sidebar */}
-        <aside className="w-80 bg-white border-l border-slate-100 p-8 flex flex-col z-20">
-          <div className="flex items-center gap-2 text-brand-primary mb-8">
-            <BrainCircuit size={20} />
-            <h4 className="text-xs font-black uppercase tracking-[0.2em]">Erkennung</h4>
+        {/* Entity & Keyword Sidebar */}
+        <aside className="w-80 bg-cream-light border-l border-cream-border p-7 flex flex-col z-20">
+          <div className="flex items-center gap-2.5 text-accent mb-7">
+            <BrainCircuit size={16} />
+            <h4 className="section-label">Erkennung</h4>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-8 custom-scrollbar">
             {/* Detected Entities Section */}
             <div>
-              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center justify-between">
-                <span className="flex items-center gap-2"><Tag size={12} /> Erkannte Konzepte</span>
-                <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded">{entities.length}</span>
+              <h5 className="text-[0.625rem] font-semibold text-ink-muted uppercase tracking-[0.15em] mb-5 flex items-center justify-between">
+                <span className="flex items-center gap-2"><Tag size={11} /> Erkannte Konzepte</span>
+                <span className="text-[0.5625rem] bg-cream-dark/50 px-1.5 py-0.5 rounded-sm">{entities.length}</span>
               </h5>
               
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <AnimatePresence mode="popLayout">
                   {entities.map((entity, i) => (
                     <motion.div
                       key={entity.name}
-                      initial={{ x: 20, opacity: 0 }}
+                      initial={{ x: 16, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                      className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-brand-primary hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+                      transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                      className="p-4 bg-surface-white border border-cream-border rounded-sm hover:border-accent transition-all cursor-pointer group relative overflow-hidden"
                     >
-                      {/* Category Badge */}
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[8px] font-black uppercase tracking-tighter px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full group-hover:bg-brand-primary group-hover:text-white transition-colors">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[0.5625rem] font-semibold uppercase tracking-[0.1em] text-ink-muted group-hover:text-accent transition-colors">
                           {entity.type}
                         </span>
-                        <ChevronRight size={12} className="text-slate-300 group-hover:text-brand-primary group-hover:translate-x-1 transition-all" />
+                        <ChevronRight size={11} className="text-ink-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
                       </div>
 
-                      <h6 className="font-bold text-slate-900 group-hover:text-brand-primary transition-colors">
+                      <h6 className="font-serif font-semibold text-ink text-[0.9375rem] group-hover:text-accent transition-colors">
                         {entity.name}
                       </h6>
                       
-                      <p className="text-[10px] text-slate-500 leading-relaxed mt-1 opacity-0 group-hover:opacity-100 h-0 group-hover:h-auto transition-all duration-300">
+                      <p className="text-[0.625rem] text-ink-muted leading-relaxed mt-1 opacity-0 group-hover:opacity-100 h-0 group-hover:h-auto transition-all duration-300">
                         Klicke für KI-Zusammenfassung und Verknüpfungen im Wissensnetz.
                       </p>
 
-                      {/* Accent Pulse for new items */}
                       {i === 0 && (
                         <motion.div 
-                          initial={{ opacity: 0.5, scale: 0.8 }}
-                          animate={{ opacity: 0, scale: 1.5 }}
+                          initial={{ opacity: 0.3, scale: 0.9 }}
+                          animate={{ opacity: 0, scale: 1.3 }}
                           transition={{ duration: 1, repeat: 2 }}
-                          className="absolute inset-0 bg-brand-primary/5 pointer-events-none"
+                          className="absolute inset-0 bg-accent/5 pointer-events-none"
                         />
                       )}
                     </motion.div>
@@ -181,34 +180,34 @@ export const FlowMode = () => {
                 </AnimatePresence>
                 
                 {entities.length === 0 && (
-                  <div className="py-20 text-center">
-                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Search size={20} className="text-slate-200" />
+                  <div className="py-16 text-center">
+                    <div className="w-10 h-10 border border-cream-border rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Search size={16} className="text-ink-muted" />
                     </div>
-                    <p className="text-[11px] text-slate-400 italic leading-relaxed px-4">
-                      Tippe wichtige Begriffe wie <span className="text-slate-600 font-bold">"DNA"</span> oder <span className="text-slate-600 font-bold">"Napoloen"</span>, um die KI-Analyse zu starten.
+                    <p className="text-[0.6875rem] text-ink-muted leading-relaxed px-4">
+                      Tippe wichtige Begriffe wie <span className="text-ink font-medium">"DNA"</span> oder <span className="text-ink font-medium">"Napoleon"</span>, um die KI-Analyse zu starten.
                     </p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Smart Suggestions Based on Entities */}
+            {/* Smart Suggestions */}
             {entities.length > 0 && (
               <motion.div 
-                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                className="p-5 bg-brand-primary/5 rounded-2xl border border-brand-primary/10"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                className="p-5 bg-cream-dark/20 border border-cream-border rounded-sm"
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <Sparkles size={14} className="text-brand-primary" />
-                  <span className="text-[10px] font-bold text-brand-primary uppercase">Empfehlung</span>
+                  <Sparkles size={12} className="text-accent" />
+                  <span className="section-label text-[0.5625rem]">Empfehlung</span>
                 </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
-                  Ich habe <strong>{entities[0].name}</strong> erkannt. Möchtest du dazu eine bestehende Zusammenfassung laden?
+                <p className="text-[0.6875rem] text-ink-secondary leading-relaxed mb-4">
+                  Ich habe <strong className="text-ink">{entities[0].name}</strong> erkannt. Möchtest du dazu eine bestehende Zusammenfassung laden?
                 </p>
                 <button 
                   onClick={() => navigate('/1')}
-                  className="w-full py-2.5 bg-brand-primary text-white rounded-xl text-[10px] font-bold shadow-lg shadow-brand-primary/20 hover:opacity-90 transition-opacity"
+                  className="w-full py-2.5 bg-ink text-cream rounded-sm text-[0.6875rem] font-semibold hover:bg-ink/90 transition-colors"
                 >
                   Im Wissensnetz ansehen
                 </button>
@@ -216,19 +215,44 @@ export const FlowMode = () => {
             )}
           </div>
 
-          {/* Quick Stats at Bottom */}
-          <div className="mt-auto pt-8 border-t border-slate-50 space-y-3">
-             <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                <span className="flex items-center gap-1"><Clock size={12} /> Lesezeit</span>
-                <span>~ 2 Min</span>
+          {/* Quick Stats */}
+          <div className="mt-auto pt-7 border-t border-cream-border space-y-3">
+             <div className="flex items-center justify-between text-[0.6875rem] font-medium text-ink-muted">
+                <span className="flex items-center gap-1.5"><Clock size={11} /> Lesezeit</span>
+                <span className="text-ink-secondary">~ 2 Min</span>
              </div>
-             <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                <span className="flex items-center gap-1"><Search size={12} /> Komplexität</span>
-                <span className="text-brand-primary">Mittel</span>
+             <div className="flex items-center justify-between text-[0.6875rem] font-medium text-ink-muted">
+                <span className="flex items-center gap-1.5"><Search size={11} /> Komplexität</span>
+                <span className="text-accent font-semibold">Mittel</span>
              </div>
           </div>
         </aside>
       </div>
+      
+      {/* Floating Action Bar */}
+      <motion.div 
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-ink text-cream px-6 py-3 rounded-sm shadow-lg flex items-center gap-6 z-30"
+      >
+        <button className="flex items-center gap-2 text-[0.75rem] font-semibold hover:text-accent transition-colors">
+          <Sparkles size={14} /> Zusammenfassen
+        </button>
+        <div className="w-px h-4 bg-ink-secondary" />
+        <button 
+          onClick={() => navigate('/4')}
+          className="flex items-center gap-2 text-[0.75rem] font-semibold hover:text-cream-dark transition-colors"
+        >
+          <Zap size={14} /> Quiz erstellen
+        </button>
+        <div className="w-px h-4 bg-ink-secondary" />
+        <button 
+          onClick={() => navigate('/5')}
+          className="flex items-center gap-2 text-[0.75rem] font-semibold hover:text-accent transition-colors"
+        >
+          <ListTree size={14} /> Mindmap
+        </button>
+      </motion.div>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder,
@@ -11,9 +11,9 @@ import {
   Loader2,
   Search,
   ChevronLeft,
-  ChevronRight, Layers, X
+  ChevronRight,
+  Layers,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 // --- Types ---
 type Category = 'Science' | 'History' | 'Languages' | 'Math';
@@ -29,21 +29,6 @@ interface NodeData {
   importance: number;
 }
 
-const CATEGORY_COLORS: Record<Category, string> = {
-  Science: "emerald",
-  History: "blue",
-  Languages: "amber",
-  Math: "purple"
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  All: 'Alle',
-  Science: 'Wissenschaft',
-  History: 'Geschichte',
-  Math: 'Mathe',
-  Languages: 'Sprachen'
-};
-
 // --- Sub-components ---
 
 const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () => void, active: boolean, dimmed: boolean }) => {
@@ -53,19 +38,19 @@ const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () =
       initial={{ scale: 0 }}
       animate={{ 
         scale: active ? scale * 1.2 : scale,
-        opacity: dimmed ? 0.3 : 1,
+        opacity: dimmed ? 0.25 : 1,
       }}
       whileHover={{ scale: scale * 1.1, opacity: 1 }}
       onClick={onClick}
-      className={`absolute px-4 py-2 rounded-2xl border-2 shadow-sm cursor-pointer z-10 font-bold text-sm transition-all duration-500
+      className={`absolute px-4 py-2.5 rounded-sm border cursor-pointer z-10 text-[0.8125rem] font-medium transition-all duration-500 font-sans
         ${active 
-          ? `bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-500/30` 
-          : `bg-white text-slate-700 border-slate-100 hover:border-blue-400`
+          ? `bg-ink text-cream border-ink shadow-lg` 
+          : `bg-surface-white text-ink-secondary border-cream-border hover:border-accent hover:text-ink`
         }`}
       style={{ left: `${node.x}%`, top: `${node.y}%`, transform: 'translate(-50%, -50%)' }}
     >
       <div className="flex items-center gap-2">
-        {active && <Sparkles size={14} className="animate-pulse" />}
+        {active && <Sparkles size={12} className="text-accent animate-pulse" />}
         {node.label}
       </div>
     </motion.div>
@@ -73,15 +58,12 @@ const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () =
 };
 
 export const Overview = () => {
-  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>('folders');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   
   // Graph state
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<Category | 'All'>('All');
-  const [graphFocusMode, setGraphFocusMode] = useState<'Global' | 'Focus'>('Global');
 
   // Viewer state
   const [viewingFile, setViewingFile] = useState<{name: string, type: string, content: string} | null>(null);
@@ -106,31 +88,23 @@ export const Overview = () => {
   const getLineColor = (node1: NodeData, node2: NodeData) => {
     if (node1.category === node2.category) {
       const colors: Record<string, string> = {
-        Science: '#10b981', // emerald-500
-        History: '#3b82f6', // blue-500
-        Languages: '#f59e0b', // amber-500
-        Math: '#a855f7' // purple-500
+        Science: '#1a7a6d',
+        History: '#8b6914',
+        Languages: '#7a5a1a',
+        Math: '#57534e'
       };
-      return colors[node1.category] || '#cbd5e1';
+      return colors[node1.category] || '#d6d3d1';
     }
-    return '#f43f5e'; // rose-500 for cross-disciplinary links
+    return '#c2746b'; // warm rose for cross-disciplinary
   };
 
-  const visibleNodeIds = useMemo(() => {
-    if (graphFocusMode === 'Global' || !selectedNodeId) return nodes.map(n => n.id);
-    const selected = nodes.find(n => n.id === selectedNodeId);
-    return selected ? [selectedNodeId, ...selected.connections] : [];
-  }, [selectedNodeId, graphFocusMode, nodes]);
+  const selectedNode = nodes.find(n => n.id === selectedNodeId);
 
   const filteredNodes = useMemo(() => {
     return nodes.filter(n => 
-      visibleNodeIds.includes(n.id) &&
-      (activeCategory === 'All' || n.category === activeCategory) &&
-      (n.label.toLowerCase().includes(searchQuery.toLowerCase()))
+      n.label.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery, activeCategory, visibleNodeIds, nodes]);
-
-  const selectedNode = nodes.find(n => n.id === selectedNodeId);
+  }, [searchQuery, nodes]);
 
   const handleUpload = () => {
     setIsUploading(true);
@@ -146,37 +120,35 @@ export const Overview = () => {
   };
 
   return (
-    <div className="h-full bg-slate-50 flex flex-col overflow-hidden relative">
+    <div className="h-full bg-cream flex flex-col overflow-hidden relative">
       
       {/* --- Unified Header --- */}
-      <div className="px-8 py-6 z-30 flex flex-col gap-6 bg-white border-b border-slate-200 shadow-sm">
+      <div className="px-10 py-7 z-30 flex flex-col gap-6 border-b border-cream-border">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
             {viewMode === 'viewer' && (
               <button 
                 onClick={() => setViewMode('folders')}
-                className="p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
+                className="p-2 hover:bg-cream-dark/40 rounded-sm text-ink-muted transition-colors"
               >
-                <ChevronLeft size={24} />
+                <ChevronLeft size={20} />
               </button>
             )}
             <div>
-              <h1 className="text-2xl font-serif font-bold text-slate-900">
+              <h1 className="editorial-heading text-[1.75rem] mb-1">
                 {viewMode === 'viewer' ? viewingFile?.name : 'Meine Wissenswelt'}
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-[0.75rem] text-ink-muted font-medium">
                 {viewMode === 'viewer' ? 'Dokumenten-Analyse aktiv' : 'Organisiere und entdecke deine Notizen.'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className={viewMode === 'viewer' ? 'hidden sm:block h-8 w-px bg-slate-200' : 'h-8 w-px bg-slate-200'} />
-
+          <div className="flex items-center gap-5">
             {/* Search Bar */}
-            <div className={`relative w-64 transition-all duration-300 ${isSearchFocused ? 'w-80' : ''}`}>
-              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
-                <Search size={16} />
+            <div className={`relative transition-all duration-300 ${isSearchFocused ? 'w-72' : 'w-56'}`}>
+              <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-ink-muted">
+                <Search size={14} />
               </div>
               <input
                 type="text"
@@ -185,30 +157,30 @@ export const Overview = () => {
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
                 placeholder="Suchen..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-100 rounded-xl border-none outline-none text-sm focus:ring-2 focus:ring-brand-primary/10 transition-all"
+                className="w-full pl-9 pr-4 py-2 bg-cream-dark/30 border border-cream-border rounded-sm text-[0.8125rem] text-ink outline-none focus:border-accent/40 transition-all placeholder:text-ink-muted font-sans"
               />
             </div>
 
-            <div className="h-8 w-px bg-slate-200" />
+            <div className="h-6 w-px bg-cream-border" />
 
             {/* View Toggles */}
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex gap-1 p-1 border border-cream-border rounded-sm">
               <button
                 onClick={() => setViewMode('folders')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'folders' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-sm text-[0.75rem] font-medium transition-all ${
+                  viewMode === 'folders' ? 'bg-ink text-cream' : 'text-ink-secondary hover:text-ink'
                 }`}
               >
-                <LayoutGrid size={14} />
+                <LayoutGrid size={13} />
                 Ordner
               </button>
               <button
                 onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'graph' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-sm text-[0.75rem] font-medium transition-all ${
+                  viewMode === 'graph' ? 'bg-ink text-cream' : 'text-ink-secondary hover:text-ink'
                 }`}
               >
-                <Network size={14} />
+                <Network size={13} />
                 Graph
               </button>
             </div>
@@ -224,30 +196,34 @@ export const Overview = () => {
           {viewMode === 'folders' && (
             <motion.div
               key="folders"
-              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-              className="h-full p-8 flex flex-col overflow-y-auto"
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="h-full p-10 flex flex-col overflow-y-auto custom-scrollbar"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {/* Section label */}
+              <div className="section-label mb-8">01 &mdash; Deine Fächer</div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {/* Upload Card */}
                 <button 
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className="p-6 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center gap-3 hover:border-brand-primary hover:bg-blue-50/30 transition-all group"
+                  className="p-7 border border-dashed border-cream-border rounded-sm flex flex-col items-center justify-center text-center gap-3.5 hover:border-accent hover:bg-accent/5 transition-all group"
                 >
-                  <div className="w-12 h-12 bg-blue-50 text-brand-primary rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                    {isUploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} />}
+                  <div className="w-10 h-10 border border-cream-border text-ink-muted rounded-full flex items-center justify-center group-hover:border-accent group-hover:text-accent transition-all">
+                    {isUploading ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />}
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-sm">{isUploading ? 'Importiere...' : 'Datei importieren'}</h3>
-                    <p className="text-[10px] text-slate-500">PDF, Bilder oder Texte</p>
+                    <h3 className="font-semibold text-ink text-[0.875rem]">{isUploading ? 'Importiere...' : 'Datei importieren'}</h3>
+                    <p className="text-[0.6875rem] text-ink-muted mt-0.5">PDF, Bilder oder Texte</p>
                   </div>
                 </button>
 
                 {[
-                  { label: "Biologie", color: "text-emerald-600", bg: "bg-emerald-50", count: 12 },
-                  { label: "Geschichte", color: "text-orange-600", bg: "bg-orange-50", count: 8 },
-                  { label: "Mathematik", color: "text-blue-600", bg: "bg-blue-50", count: 7 },
-                  { label: "Informatik", color: "text-slate-600", bg: "bg-slate-50", count: 4 },
+                  { label: "Biologie", accent: "bg-accent", count: 12, progress: 75 },
+                  { label: "Geschichte", accent: "bg-[#8b6914]", count: 8, progress: 62 },
+                  { label: "Mathematik", accent: "bg-ink-secondary", count: 7, progress: 80 },
+                  { label: "Informatik", accent: "bg-ink-muted", count: 4, progress: 45 },
                 ].map((folder) => (
                   <div 
                     key={folder.label}
@@ -259,20 +235,20 @@ export const Overview = () => {
                       });
                       setViewMode('viewer');
                     }}
-                    className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                    className="p-7 bg-surface-white border border-cream-border rounded-sm hover:border-ink-muted transition-all cursor-pointer group"
                   >
-                    <div className="flex justify-between items-start mb-6">
-                      <div className={`p-3 rounded-xl ${folder.bg} ${folder.color}`}>
-                        <Folder size={24} />
+                    <div className="flex justify-between items-start mb-7">
+                      <div className="p-2.5 rounded-sm bg-cream-dark/30 text-ink-secondary group-hover:text-ink transition-colors">
+                        <Folder size={20} />
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400">{folder.count} Notizen</span>
+                      <span className="text-[0.625rem] font-semibold text-ink-muted tracking-wider uppercase">{folder.count} Notizen</span>
                     </div>
-                    <h3 className="font-bold text-slate-900 group-hover:text-brand-primary transition-colors">{folder.label}</h3>
-                    <div className="mt-4 flex items-center gap-2">
-                       <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-400 w-3/4" />
+                    <h3 className="font-serif text-[1.125rem] font-semibold text-ink group-hover:text-accent transition-colors">{folder.label}</h3>
+                    <div className="mt-5 flex items-center gap-2.5">
+                       <div className="h-[3px] flex-1 bg-cream-dark rounded-full overflow-hidden">
+                          <div className={`h-full ${folder.accent} rounded-full`} style={{ width: `${folder.progress}%` }} />
                        </div>
-                       <span className="text-[9px] font-bold text-slate-400">75%</span>
+                       <span className="text-[0.625rem] font-semibold text-ink-muted">{folder.progress}%</span>
                     </div>
                   </div>
                 ))}
@@ -285,6 +261,7 @@ export const Overview = () => {
             <motion.div
               key="graph"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
               className="h-full relative overflow-hidden"
             >
               <div className="absolute inset-0 z-10">
@@ -292,7 +269,7 @@ export const Overview = () => {
                   {nodes.map(node => 
                     node.connections.map(targetId => {
                       const target = nodes.find(n => n.id === targetId);
-                      if (!target || parseInt(node.id) > parseInt(target.id)) return null; // Avoid duplicate lines
+                      if (!target || parseInt(node.id) > parseInt(target.id)) return null;
                       
                       const isHighlighted = selectedNodeId === node.id || selectedNodeId === target.id;
                       const isDimmed = selectedNodeId && !isHighlighted;
@@ -303,12 +280,13 @@ export const Overview = () => {
                           key={`${node.id}-${target.id}`}
                           initial={{ opacity: 0 }} 
                           animate={{ 
-                            opacity: isDimmed ? 0.05 : (isHighlighted ? 0.8 : 0.3),
-                            stroke: isHighlighted ? '#1e293b' : lineColor,
-                            strokeWidth: isHighlighted ? 3 : 1.5
+                            opacity: isDimmed ? 0.06 : (isHighlighted ? 0.6 : 0.2),
+                            stroke: isHighlighted ? '#1c1917' : lineColor,
+                            strokeWidth: isHighlighted ? 2 : 1
                           }}
                           x1={`${node.x}%`} y1={`${node.y}%`}
                           x2={`${target.x}%`} y2={`${target.y}%`}
+                          strokeDasharray={isHighlighted ? "none" : "4 4"}
                         />
                       );
                     })
@@ -326,54 +304,56 @@ export const Overview = () => {
             </motion.div>
           )}
 
-          {/* 3. Real Viewer View (Full Page Split) */}
+          {/* 3. Viewer View */}
           {viewMode === 'viewer' && viewingFile && (
             <motion.div
               key="viewer"
-              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+              initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
               className="h-full flex overflow-hidden relative"
             >
-              {/* Floating Toggle Buttons (when sidebars are closed) */}
+              {/* Floating Toggle Buttons */}
               <AnimatePresence>
                 {!showLeftSidebar && (
                   <motion.button
-                    initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
+                    initial={{ x: -12, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -12, opacity: 0 }}
                     onClick={() => setShowLeftSidebar(true)}
-                    className="absolute left-4 top-4 z-40 p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand-primary shadow-sm"
+                    className="absolute left-4 top-4 z-40 p-2 bg-surface-white border border-cream-border rounded-sm text-ink-muted hover:text-accent transition-colors"
                   >
                     <Layers size={14} />
                   </motion.button>
                 )}
                 {!showRightSidebar && (
                   <motion.button
-                    initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}
+                    initial={{ x: 12, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 12, opacity: 0 }}
                     onClick={() => setShowRightSidebar(true)}
-                    className="absolute right-4 top-4 z-40 p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-brand-primary shadow-sm"
+                    className="absolute right-4 top-4 z-40 p-2 bg-surface-white border border-cream-border rounded-sm text-ink-muted hover:text-accent transition-colors"
                   >
                     <Sparkles size={14} />
                   </motion.button>
                 )}
               </AnimatePresence>
 
-              {/* Document Sidebar (Simplified File/Outline List) */}
+              {/* Document Sidebar */}
               <AnimatePresence>
                 {showLeftSidebar && (
                   <motion.div 
-                    initial={{ width: 0, opacity: 0 }} animate={{ width: 192, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                    className="bg-white border-r border-slate-100 flex flex-col overflow-hidden"
+                    initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+                    className="bg-cream-light border-r border-cream-border flex flex-col overflow-hidden"
                   >
-                    <div className="p-4 flex items-center justify-between">
-                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em]">Inhalt</span>
-                      <button onClick={() => setShowLeftSidebar(false)} className="p-1 hover:bg-slate-50 rounded text-slate-300">
+                    <div className="p-5 flex items-center justify-between">
+                      <span className="section-label text-[0.5625rem]">Inhalt</span>
+                      <button onClick={() => setShowLeftSidebar(false)} className="p-1 hover:bg-cream-dark/30 rounded-sm text-ink-muted">
                         <ChevronLeft size={12} />
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
+                    <div className="h-px bg-cream-border mx-4" />
+                    <div className="flex-1 overflow-y-auto px-3 pt-3 space-y-0.5 custom-scrollbar">
                       {['Übersicht', 'Kernkonzept', 'Analyse', 'Quellen'].map((item, i) => (
                         <div 
                           key={item} 
-                          className={`px-3 py-2 rounded-lg text-[11px] cursor-pointer transition-colors whitespace-nowrap ${
-                            i === 0 ? 'bg-slate-50 text-brand-primary font-bold' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                          className={`px-3 py-2.5 rounded-sm text-[0.75rem] cursor-pointer transition-colors whitespace-nowrap ${
+                            i === 0 ? 'bg-cream-dark/30 text-ink font-medium border-l-2 border-accent' : 'text-ink-muted hover:bg-cream-dark/20 hover:text-ink-secondary border-l-2 border-transparent'
                           }`}
                         >
                           {item}
@@ -385,53 +365,54 @@ export const Overview = () => {
               </AnimatePresence>
 
               {/* Main Reading Area */}
-              <div className="flex-1 bg-slate-200/50 overflow-y-auto p-12 flex justify-center custom-scrollbar">
-                <div className="w-full max-w-3xl bg-white shadow-2xl rounded-sm p-16 md:p-24 min-h-[1200px] relative">
+              <div className="flex-1 bg-cream-dark/20 overflow-y-auto p-12 flex justify-center custom-scrollbar">
+                <div className="w-full max-w-3xl bg-surface-white border border-cream-border rounded-sm p-16 md:p-24 min-h-[1200px] relative">
                   {/* Page Indicator */}
-                  <div className="absolute top-8 right-8 text-[10px] font-bold text-slate-300">Seite 1 von 1</div>
+                  <div className="absolute top-8 right-8 text-[0.625rem] font-medium text-ink-muted tracking-wider">Seite 1 von 1</div>
                   
-                  <div className="mb-12">
-                    <div className="flex items-center gap-2 mb-4">
-                       <span className="px-2 py-0.5 bg-brand-primary/10 text-brand-primary text-[9px] font-black uppercase tracking-tighter rounded">Geprüftes Dokument</span>
-                       <span className="text-slate-300 text-[10px]">Zuletzt bearbeitet: Heute</span>
+                  <div className="mb-14">
+                    <div className="flex items-center gap-3 mb-5">
+                       <span className="section-label text-[0.5625rem]">Geprüftes Dokument</span>
+                       <span className="text-ink-faint text-[0.6875rem]">&middot;</span>
+                       <span className="text-ink-muted text-[0.6875rem]">Zuletzt bearbeitet: Heute</span>
                     </div>
-                    <h1 className="text-4xl font-serif font-bold text-slate-900 mb-4">{viewingFile.name}</h1>
-                    <div className="h-1 w-20 bg-brand-primary rounded-full" />
+                    <h1 className="editorial-heading text-[2.5rem] mb-5">{viewingFile.name}</h1>
+                    <div className="h-px w-16 bg-accent" />
                   </div>
 
-                  <div className="prose prose-slate max-w-none">
-                    <p className="text-xl leading-relaxed text-slate-700 font-sans selection:bg-brand-primary selection:text-white">
+                  <div className="space-y-8">
+                    <p className="text-[1.125rem] leading-[1.8] text-ink-secondary font-sans">
                       {viewingFile.content}
                     </p>
-                    <p className="mt-8 text-xl leading-relaxed text-slate-700 font-sans">
+                    <p className="text-[1.125rem] leading-[1.8] text-ink-secondary font-sans">
                       Die Energiegewinnung erfolgt in mehreren Schritten. Zunächst wird in der Glykolyse Glucose abgebaut. Dieser Prozess findet im Cytoplasma statt. Die Produkte werden dann in die Mitochondrien transportiert, wo der Citratzyklus und die Atmungskette ablaufen. 
                     </p>
-                    <div className="mt-12 p-8 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center gap-4">
-                       <Sparkles size={24} className="text-brand-primary animate-pulse" />
-                       <p className="text-sm text-slate-400 italic">KI generiert zusätzliche Erläuterungen für diesen Abschnitt...</p>
+                    <div className="mt-14 p-8 bg-cream-light border border-cream-border rounded-sm flex flex-col items-center gap-4">
+                       <Sparkles size={20} className="text-accent" />
+                       <p className="text-[0.8125rem] text-ink-muted italic font-serif">KI generiert zusätzliche Erläuterungen für diesen Abschnitt...</p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Ultra-Subtle AI Assistant Sidebar */}
+              {/* AI Assistant Sidebar */}
               <AnimatePresence>
                 {showRightSidebar && (
                   <motion.div 
                     initial={{ width: 0, opacity: 0 }} animate={{ width: 240, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-                    className="bg-white border-l border-slate-50 flex flex-col overflow-hidden"
+                    className="bg-cream-light border-l border-cream-border flex flex-col overflow-hidden"
                   >
-                    <div className="p-4 border-b border-slate-50/50 flex justify-between items-center">
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <Sparkles size={12} />
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Assistent</span>
+                    <div className="p-5 border-b border-cream-border flex justify-between items-center">
+                      <div className="flex items-center gap-2 text-ink-muted">
+                        <Sparkles size={12} className="text-accent" />
+                        <span className="section-label text-[0.5625rem]">Assistent</span>
                       </div>
-                      <button onClick={() => setShowRightSidebar(false)} className="p-1 hover:bg-slate-50 rounded text-slate-300">
+                      <button onClick={() => setShowRightSidebar(false)} className="p-1 hover:bg-cream-dark/30 rounded-sm text-ink-muted">
                         <ChevronRight size={12} />
                       </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-8 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-5 space-y-8 custom-scrollbar">
                        {/* Insights */}
                        <div className="whitespace-nowrap">
                           <div className="space-y-4">
@@ -442,46 +423,46 @@ export const Overview = () => {
                              ].map(f => (
                                <div key={f.t} className="group cursor-pointer">
                                  <div className="flex justify-between items-center">
-                                   <span className="text-[10px] font-bold text-slate-500 group-hover:text-brand-primary transition-colors">{f.t}</span>
-                                   <div className="w-1 h-1 rounded-full bg-slate-100 group-hover:bg-brand-primary" />
+                                   <span className="text-[0.6875rem] font-medium text-ink-secondary group-hover:text-accent transition-colors">{f.t}</span>
+                                   <div className="w-1.5 h-1.5 rounded-full bg-cream-dark group-hover:bg-accent transition-colors" />
                                  </div>
-                                 <p className="text-[9px] text-slate-400">{f.d}</p>
+                                 <p className="text-[0.625rem] text-ink-muted mt-0.5">{f.d}</p>
                                </div>
                              ))}
                           </div>
                        </div>
 
                        {/* Minimal Link */}
-                       <div className="py-4 border-y border-slate-50 whitespace-nowrap overflow-hidden">
-                          <p className="text-[9px] text-slate-400 leading-tight mb-2">
-                            Passend zu <strong>"Zellbiologie"</strong>.
+                       <div className="py-4 border-y border-cream-border whitespace-nowrap overflow-hidden">
+                          <p className="text-[0.625rem] text-ink-muted leading-tight mb-2">
+                            Passend zu <strong className="text-ink-secondary">"Zellbiologie"</strong>.
                           </p>
-                          <button className="text-[9px] font-bold text-brand-primary/60 hover:text-brand-primary flex items-center gap-1">
-                            Verknüpfen <ChevronRight size={8} />
+                           <button className="text-[0.625rem] font-semibold text-accent hover:text-accent-dark flex items-center gap-1 transition-colors">
+                             Verknüpfen <ChevronRight size={8} />
                           </button>
                        </div>
 
                        {/* Minimal Actions */}
                        <div className="space-y-1">
-                          <button className="w-full p-1.5 text-left hover:bg-slate-50 rounded-lg transition-all flex items-center gap-2 text-slate-400 hover:text-brand-primary group">
-                             <Zap size={10} className="text-slate-200 group-hover:text-amber-400" />
-                             <span className="text-[9px] font-medium">Quiz</span>
+                          <button className="w-full p-2 text-left hover:bg-cream-dark/30 rounded-sm transition-all flex items-center gap-2.5 text-ink-muted hover:text-accent group">
+                             <Zap size={11} />
+                             <span className="text-[0.6875rem] font-medium">Quiz</span>
                           </button>
-                          <button className="w-full p-1.5 text-left hover:bg-slate-50 rounded-lg transition-all flex items-center gap-2 text-slate-400 hover:text-brand-primary group">
-                             <BookOpen size={10} className="text-slate-200 group-hover:text-purple-400" />
-                             <span className="text-[9px] font-medium">Karten</span>
+                          <button className="w-full p-2 text-left hover:bg-cream-dark/30 rounded-sm transition-all flex items-center gap-2.5 text-ink-muted hover:text-accent group">
+                             <BookOpen size={11} />
+                             <span className="text-[0.6875rem] font-medium">Karten</span>
                           </button>
                        </div>
                     </div>
 
-                    <div className="p-3 bg-slate-50/30">
+                    <div className="p-4 border-t border-cream-border">
                       <div className="relative">
                         <input 
                           type="text"
                           placeholder="Frage..."
-                          className="w-full pl-2 pr-6 py-1.5 bg-white border border-slate-100 rounded-md text-[9px] outline-none focus:border-brand-primary/20 transition-all placeholder:text-slate-200"
+                          className="w-full pl-3 pr-7 py-2 bg-surface-white border border-cream-border rounded-sm text-[0.6875rem] text-ink outline-none focus:border-accent/40 transition-all placeholder:text-ink-muted font-sans"
                         />
-                        <Search size={8} className="absolute right-2 top-2 text-slate-200" />
+                        <Search size={10} className="absolute right-2.5 top-2.5 text-ink-muted" />
                       </div>
                     </div>
                   </motion.div>

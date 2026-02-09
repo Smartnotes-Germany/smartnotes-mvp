@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Check, 
-  HelpCircle, 
   BookOpen, 
   ArrowRight, 
   Sparkles, 
-  ChevronDown,
-  Info,
   RotateCcw,
   Lightbulb
 } from 'lucide-react';
@@ -18,7 +15,7 @@ interface Question {
   topic: string;
   question: string;
   answer: string;
-  simpleExplanation: string; // "ELI5" - Explain like I'm 5
+  simpleExplanation: string;
   sourceNote: string;
 }
 
@@ -55,30 +52,30 @@ export const StudyCoach = () => {
   };
 
   return (
-    <div className="h-full bg-white flex flex-col items-center justify-center font-sans selection:bg-brand-primary/10">
+    <div className="h-full bg-cream flex flex-col items-center justify-center font-sans relative">
       
       {/* Top Navigation / Progress */}
-      <div className="absolute top-0 w-full p-8 flex justify-between items-center text-slate-400">
-        <div className="flex items-center gap-6">
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-dark">Smart Training</span>
-          <div className="flex gap-1">
+      <div className="absolute top-0 w-full px-10 py-7 flex justify-between items-center">
+        <div className="flex items-center gap-7">
+          <span className="section-label">Smart Training</span>
+          <div className="flex gap-1.5">
             {MOCK_QUESTIONS.map((_, i) => (
-              <div key={i} className={`h-1 w-6 rounded-full transition-colors ${i === index ? 'bg-brand-primary' : 'bg-slate-100'}`} />
+              <div key={i} className={`h-[3px] w-7 rounded-full transition-all duration-500 ${i === index ? 'bg-accent' : 'bg-cream-dark'}`} />
             ))}
           </div>
         </div>
-        <button onClick={() => window.location.reload()} className="hover:text-slate-600 transition-colors">
-          <RotateCcw size={18} />
+        <button onClick={() => window.location.reload()} className="text-ink-muted hover:text-ink transition-colors">
+          <RotateCcw size={16} />
         </button>
       </div>
 
-      <main className="w-full max-w-2xl px-6 flex flex-col items-center">
+      <main className="w-full max-w-2xl px-8 flex flex-col items-center">
         
         {/* Topic Badge */}
         <motion.span 
           key={current.topic}
-          initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-          className="text-[10px] font-bold text-brand-primary bg-blue-50 px-3 py-1 rounded-full mb-8 uppercase tracking-widest"
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="section-label mb-10"
         >
           {current.topic}
         </motion.span>
@@ -88,12 +85,13 @@ export const StudyCoach = () => {
           <motion.h2 
             key={current.question}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="text-4xl md:text-5xl font-serif font-bold text-slate-900 leading-tight"
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            className="editorial-heading text-[2.75rem] md:text-[3.25rem] leading-[1.12] italic"
           >
             {current.question}
           </motion.h2>
 
-          <div className="h-px w-24 bg-slate-100 mx-auto" />
+          <div className="h-px w-20 bg-cream-border mx-auto" />
 
           {/* Dynamic Content Area */}
           <div className="min-h-[200px] flex flex-col items-center justify-center">
@@ -101,57 +99,58 @@ export const StudyCoach = () => {
               {mode === 'question' ? (
                 <motion.button
                   key="check-btn"
-                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+                  initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
                   onClick={() => setMode('answer')}
-                  className="group flex flex-col items-center gap-4 outline-none"
+                  className="group flex flex-col items-center gap-5 outline-none"
                 >
-                  <div className="w-16 h-16 rounded-full bg-slate-900 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-xl shadow-slate-200">
-                    <ArrowRight size={24} />
+                  <div className="w-14 h-14 rounded-full bg-ink text-cream flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <ArrowRight size={20} />
                   </div>
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">Antwort prüfen</span>
+                  <span className="text-[0.6875rem] font-semibold text-ink-muted uppercase tracking-[0.2em] group-hover:text-ink transition-colors">Antwort prüfen</span>
                 </motion.button>
               ) : (
                 <motion.div 
                   key="answer-content"
-                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                  className="w-full space-y-8"
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                  className="w-full space-y-10"
                 >
-                  <div className="text-xl text-slate-600 leading-relaxed max-w-xl mx-auto italic font-serif">
+                  <div className="text-[1.1875rem] text-ink-secondary leading-[1.8] max-w-xl mx-auto font-serif">
                     {mode === 'explain' ? (
-                      <div className="bg-amber-50/50 p-8 rounded-3xl border border-amber-100 relative">
-                        <div className="absolute -top-3 -left-3 w-8 h-8 bg-amber-400 rounded-lg flex items-center justify-center text-white shadow-lg">
-                          <Lightbulb size={18} />
+                      <div className="bg-surface-white p-8 border border-cream-border rounded-sm relative">
+                        <div className="absolute -top-3 -left-3 w-7 h-7 bg-accent rounded-sm flex items-center justify-center text-cream">
+                          <Lightbulb size={14} />
                         </div>
-                        <span className="block text-[10px] font-black text-amber-600 uppercase mb-4 tracking-widest">Einfache Erklärung</span>
-                        {current.simpleExplanation}
+                        <span className="section-label text-[0.5625rem] block mb-5">Einfache Erklärung</span>
+                        <p className="italic">{current.simpleExplanation}</p>
                       </div>
                     ) : (
-                      <p>"{current.answer}"</p>
+                      <p className="italic">"{current.answer}"</p>
                     )}
                   </div>
 
                   <div className="flex flex-wrap justify-center gap-3">
                     <button 
                       onClick={handleNext}
-                      className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                      className="px-7 py-3 bg-ink text-cream rounded-sm text-[0.75rem] font-semibold flex items-center gap-2 hover:bg-ink/90 transition-all tracking-wide"
                     >
-                      <Check size={16} /> Verstanden
+                      <Check size={14} /> Verstanden
                     </button>
                     
                     {mode !== 'explain' && (
                       <button 
                         onClick={() => setMode('explain')}
-                        className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl text-xs font-bold flex items-center gap-2 hover:border-brand-primary hover:text-brand-primary transition-all shadow-sm"
+                        className="px-7 py-3 bg-surface-white border border-cream-border text-ink-secondary rounded-sm text-[0.75rem] font-semibold flex items-center gap-2 hover:border-accent hover:text-accent transition-all"
                       >
-                        <Sparkles size={16} /> Erklär es mir einfach
+                         <Sparkles size={14} /> Erklär es mir einfach
                       </button>
                     )}
 
                     <button 
                       onClick={() => setShowNote(!showNote)}
-                      className="px-6 py-3 bg-slate-50 text-slate-400 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-100 transition-all"
+                      className="px-7 py-3 bg-cream-dark/30 text-ink-muted rounded-sm text-[0.75rem] font-semibold flex items-center gap-2 hover:bg-cream-dark/50 hover:text-ink-secondary transition-all"
                     >
-                      <BookOpen size={16} /> {showNote ? 'Notiz ausblenden' : 'In meine Notizen schauen'}
+                      <BookOpen size={14} /> {showNote ? 'Notiz ausblenden' : 'In meine Notizen schauen'}
                     </button>
                   </div>
                 </motion.div>
@@ -166,21 +165,22 @@ export const StudyCoach = () => {
         {showNote && (
           <motion.div
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            className="absolute bottom-0 w-full max-w-xl bg-white border-t border-slate-100 rounded-t-[40px] shadow-2xl z-30 p-10 pb-16"
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="absolute bottom-0 w-full max-w-xl left-1/2 -translate-x-1/2 bg-surface-white border border-cream-border border-b-0 rounded-t-sm z-30 p-10 pb-14"
           >
-            <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8" />
+            <div className="w-10 h-[2px] bg-cream-dark rounded-full mx-auto mb-8" />
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-blue-50 text-brand-primary rounded-lg flex items-center justify-center">
-                <BookOpen size={16} />
+              <div className="w-7 h-7 bg-cream-dark/30 text-accent rounded-sm flex items-center justify-center">
+                <BookOpen size={14} />
               </div>
-              <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Kontext aus deiner Mitschrift</h4>
+              <h4 className="section-label text-[0.5625rem]">Kontext aus deiner Mitschrift</h4>
             </div>
-            <p className="text-lg text-slate-700 leading-relaxed font-serif">
+            <p className="text-[1.0625rem] text-ink-secondary leading-[1.8] font-serif italic">
               "{current.sourceNote}"
             </p>
             <button 
               onClick={() => setShowNote(false)}
-              className="mt-8 w-full py-4 text-slate-400 text-xs font-bold hover:text-slate-600"
+              className="mt-8 w-full py-3 text-ink-muted text-[0.75rem] font-semibold hover:text-ink transition-colors tracking-wider uppercase"
             >
               Schließen
             </button>
@@ -188,9 +188,9 @@ export const StudyCoach = () => {
         )}
       </AnimatePresence>
 
-      {/* Background Decor */}
+      {/* Background Decor -- subtle warm radial */}
       <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-slate-50 rounded-full blur-[120px] opacity-50" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-cream-dark/30 rounded-full blur-[150px]" />
       </div>
     </div>
   );

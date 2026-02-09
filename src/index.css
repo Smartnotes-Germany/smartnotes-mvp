@@ -1,27 +1,49 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
 
 @theme {
-  --font-sans: "Inter", "system-ui", sans-serif;
-  --font-serif: "Merriweather", "Georgia", serif;
-  --font-handwriting: "Caveat", cursive;
-  
-  --color-brand-dark: #0f172a;
-  --color-brand-primary: #000B3D;
-  --color-brand-secondary: #64748b;
-  --color-brand-accent: #14b8a6;
-  --color-brand-paper: #f8fafc;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-serif: "Playfair Display", Georgia, serif;
+
+  /* Warm cream palette inspired by the Smartnotes landing page */
+  --color-cream: #f0ebe3;
+  --color-cream-light: #f5f1eb;
+  --color-cream-dark: #e8e2d8;
+  --color-cream-border: #ddd6cb;
+
+  /* Deep teal accent */
+  --color-accent: #1a7a6d;
+  --color-accent-light: #2a9e8e;
+  --color-accent-dark: #0f5f54;
+
+  /* Warm text hierarchy */
+  --color-ink: #1c1917;
+  --color-ink-secondary: #57534e;
+  --color-ink-muted: #a8a29e;
+  --color-ink-faint: #d6d3d1;
+
+  /* Editorial surface colors */
+  --color-surface: #f7f3ee;
+  --color-surface-elevated: #faf8f5;
+  --color-surface-white: #fffefa;
 }
 
 @layer base {
   :root {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     margin: 0;
     min-height: 100vh;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: white;
   }
 }
 
@@ -36,4 +58,64 @@
 
 .backface-hidden {
   backface-visibility: hidden;
+}
+
+/* Editorial section label style (like "01 -- DAS PROBLEM") */
+.section-label {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+/* Large editorial headline */
+.editorial-heading {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-ink);
+  letter-spacing: -0.02em;
+}
+
+/* Thin elegant separator matching the landing page */
+.editorial-separator {
+  height: 1px;
+  background-color: var(--color-cream-border);
+  border: none;
+}
+
+/* Warm scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-cream-dark);
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-muted);
+}
+
+/* Smooth page transitions */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }

@@ -1,48 +1,71 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import {LayoutDashboard, PenTool, Network, GraduationCap, TrendingUp, Zap} from 'lucide-react';
+import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const SidebarItem = ({ to, icon: Icon, label }: { to: string; icon: any; label: string }) => (
+const SidebarItem = ({ to, icon: Icon, label }: { to: string; icon: React.ComponentType<{ size?: number; className?: string }>; label: string }) => (
   <NavLink
     to={to}
     className={({ isActive }) =>
-      `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+      `flex items-center gap-3.5 px-5 py-3 transition-all duration-300 border-l-2 ${
         isActive
-          ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/30'
-          : 'text-brand-secondary hover:bg-white hover:text-brand-dark'
+          ? 'border-accent text-ink bg-cream-dark/40'
+          : 'border-transparent text-ink-secondary hover:text-ink hover:border-cream-dark hover:bg-cream-dark/20'
       }`
     }
   >
-    <Icon size={20} />
-    <span className="font-medium">{label}</span>
+    <Icon size={16} />
+    <span className="text-[0.8125rem] font-medium tracking-wide">{label}</span>
   </NavLink>
 );
 
 export const Layout = () => {
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex h-screen bg-cream overflow-hidden font-sans">
       {/* Sidebar */}
       <motion.aside 
-        initial={{ x: -20, opacity: 0 }}
+        initial={{ x: -10, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        className="w-64 bg-slate-100/50 backdrop-blur-xl border-r border-slate-200 p-6 flex flex-col justify-between"
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        className="w-[260px] bg-cream-light border-r border-cream-border flex flex-col"
       >
-        <div>
-          <div className="flex items-center gap-2 mb-10 px-2 text-brand-dark">
-              <img alt="Smartnotes" src={"src/Images/logo.png"} className="rounded-lg" width={35} height={35}/>
-            <h1 className="text-xl font-bold font-serif tracking-tight">Smartnotes</h1>
+        {/* Brand */}
+        <div className="px-7 pt-8 pb-6">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-[0.8125rem] font-semibold tracking-[0.25em] uppercase text-ink">
+              Smartnotes
+            </h1>
+            <span className="text-accent text-lg leading-none font-serif font-bold">.</span>
           </div>
+        </div>
 
-          <nav className="space-y-2">
-            <SidebarItem to="/1" icon={LayoutDashboard} label="Wissenwelt" />
-            <SidebarItem to="/4" icon={GraduationCap} label="Lern-Coach" />
-            <SidebarItem to="/5" icon={TrendingUp} label="Fortschritt" />
-          </nav>
+        {/* Thin separator */}
+        <div className="mx-6 h-px bg-cream-border" />
+
+        {/* Navigation */}
+        <nav className="mt-6 flex flex-col gap-0.5">
+          <SidebarItem to="/1" icon={LayoutDashboard} label="Wissenswelt" />
+          <SidebarItem to="/2" icon={PenTool} label="Flow-Modus" />
+          <SidebarItem to="/4" icon={GraduationCap} label="Lern-Coach" />
+          <SidebarItem to="/5" icon={TrendingUp} label="Fortschritt" />
+        </nav>
+
+        {/* Bottom section */}
+        <div className="mt-auto px-6 pb-8">
+          <div className="h-px bg-cream-border mb-6" />
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="w-7 h-7 rounded-full bg-ink flex items-center justify-center">
+              <Sparkles size={12} className="text-cream" />
+            </div>
+            <div>
+              <span className="text-[0.6875rem] font-semibold text-ink block leading-tight">Smartnotes Pro</span>
+              <span className="text-[0.625rem] text-ink-muted">Beta-Zugang</span>
+            </div>
+          </div>
         </div>
       </motion.aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto relative">
+      <main className="flex-1 overflow-y-auto relative custom-scrollbar">
         <Outlet />
       </main>
     </div>

@@ -123,9 +123,9 @@ export const Overview = () => {
     <div className="h-full bg-cream flex flex-col overflow-hidden relative">
       
       {/* --- Unified Header --- */}
-      <div className="px-10 py-7 z-30 flex flex-col gap-6 border-b border-cream-border">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
+      <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 xl:px-10 xl:py-7 z-30 flex flex-col gap-4 sm:gap-5 xl:gap-6 border-b border-cream-border">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             {viewMode === 'viewer' && (
               <button 
                 onClick={() => setViewMode('folders')}
@@ -134,8 +134,8 @@ export const Overview = () => {
                 <ChevronLeft size={20} />
               </button>
             )}
-            <div>
-              <h1 className="editorial-heading text-[1.75rem] mb-1">
+            <div className="min-w-0">
+              <h1 className="editorial-heading text-[1.25rem] sm:text-[1.5rem] lg:text-[1.75rem] leading-tight mb-1 break-words">
                 {viewMode === 'viewer' ? viewingFile?.name : 'Meine Wissenswelt'}
               </h1>
               <p className="text-[0.75rem] text-ink-muted font-medium">
@@ -144,9 +144,9 @@ export const Overview = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-5">
+          <div className="flex w-full flex-wrap items-center gap-3 sm:gap-4 xl:w-auto xl:flex-nowrap xl:justify-end xl:gap-5">
             {/* Search Bar */}
-            <div className={`relative transition-all duration-300 ${isSearchFocused ? 'w-72' : 'w-56'}`}>
+            <div className={`relative transition-all duration-300 w-full sm:flex-1 sm:min-w-[14rem] sm:max-w-[24rem] xl:min-w-0 xl:max-w-none ${isSearchFocused ? 'xl:w-72' : 'xl:w-56'}`}>
               <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-ink-muted">
                 <Search size={14} />
               </div>
@@ -161,13 +161,13 @@ export const Overview = () => {
               />
             </div>
 
-            <div className="h-6 w-px bg-cream-border" />
+            <div className="hidden xl:block h-6 w-px bg-cream-border" />
 
             {/* View Toggles */}
-            <div className="flex gap-1 p-1 border border-cream-border rounded-sm">
+            <div className="flex w-full sm:w-auto justify-between gap-1 p-1 border border-cream-border rounded-sm">
               <button
                 onClick={() => setViewMode('folders')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-sm text-[0.75rem] font-medium transition-all ${
+                className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 py-1.5 rounded-sm text-[0.75rem] font-medium transition-all ${
                   viewMode === 'folders' ? 'bg-ink text-cream' : 'text-ink-secondary hover:text-ink'
                 }`}
               >
@@ -176,7 +176,7 @@ export const Overview = () => {
               </button>
               <button
                 onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-sm text-[0.75rem] font-medium transition-all ${
+                className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 py-1.5 rounded-sm text-[0.75rem] font-medium transition-all ${
                   viewMode === 'graph' ? 'bg-ink text-cream' : 'text-ink-secondary hover:text-ink'
                 }`}
               >

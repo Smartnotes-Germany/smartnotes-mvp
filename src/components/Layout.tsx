@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, Sparkles, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { APP_ROUTES } from '../routes';
 
@@ -12,6 +12,13 @@ const sidebarItems = [
   { id: '03', to: APP_ROUTES.studyCoach, icon: GraduationCap, label: 'Lern-Coach' },
   { id: '04', to: APP_ROUTES.progress, icon: TrendingUp, label: 'Fortschritt' },
 ] as const;
+
+const account = {
+  name: 'Jakob S.',
+  plan: 'Aktives Abo',
+  avatarUrl:
+    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=240&q=80',
+} as const;
 
 const SidebarItem = ({
   id,
@@ -139,19 +146,21 @@ export const Layout = () => {
           <AnimatePresence initial={false}>
             {!isCollapsed && (
               <motion.div
-                key="pro-label"
+                key="account-card"
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 4 }}
                 transition={{ duration: 0.2 }}
-                className="flex items-center gap-2.5 px-1 mb-5"
+                className="mb-5"
               >
-                <div className="w-7 h-7 rounded-full bg-ink flex items-center justify-center">
-                  <Sparkles size={12} className="text-cream" />
-                </div>
-                <div>
-                  <span className="text-[0.6875rem] font-semibold text-ink block leading-tight">Smartnotes Pro</span>
-                  <span className="text-[0.625rem] text-ink-muted">Beta-Zugang</span>
+                <div className="flex items-center gap-3 rounded-2xl border border-cream-border bg-surface-white px-3 py-3 shadow-[0_6px_18px_rgba(30,24,18,0.08)]">
+                  <div className="w-11 h-11 shrink-0 rounded-full overflow-hidden border border-cream-border bg-cream">
+                    <img src={account.avatarUrl} alt={`${account.name} avatar`} className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[0.9rem] font-semibold text-ink block leading-tight truncate">{account.name}</span>
+                    <span className="text-[0.7rem] text-ink-muted tracking-wide">{account.plan}</span>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -159,8 +168,8 @@ export const Layout = () => {
 
           {isCollapsed && (
             <div className="flex justify-center mb-5">
-              <div className="w-7 h-7 rounded-full bg-ink flex items-center justify-center">
-                <Sparkles size={12} className="text-cream" />
+              <div className="w-10 h-10 rounded-full overflow-hidden border border-cream-border bg-surface-white shadow-[0_4px_12px_rgba(30,24,18,0.08)]">
+                <img src={account.avatarUrl} alt={`${account.name} avatar`} className="w-full h-full object-cover" loading="lazy" />
               </div>
             </div>
           )}

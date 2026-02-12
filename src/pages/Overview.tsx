@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder,
@@ -220,13 +220,14 @@ export const Overview = () => {
                 </button>
 
                 {[
-                  { label: "Biologie", accent: "bg-accent", count: 12, progress: 75 },
-                  { label: "Geschichte", accent: "bg-[#8b6914]", count: 8, progress: 62 },
-                  { label: "Mathematik", accent: "bg-ink-secondary", count: 7, progress: 80 },
-                  { label: "Informatik", accent: "bg-ink-muted", count: 4, progress: 45 },
+                  { label: "Biologie", color: "#1a7a6d", count: 12, progress: 75 },
+                  { label: "Geschichte", color: "#8b6914", count: 8, progress: 62 },
+                  { label: "Mathematik", color: "#57534e", count: 7, progress: 80 },
+                  { label: "Informatik", color: "#a8a29e", count: 4, progress: 45 },
                 ].map((folder) => (
                   <div 
                     key={folder.label}
+                    style={{ '--folder-color': folder.color } as CSSProperties}
                     onClick={() => {
                       setViewingFile({
                         name: `${folder.label}-Zusammenfassung`,
@@ -235,18 +236,18 @@ export const Overview = () => {
                       });
                       setViewMode('viewer');
                     }}
-                    className="p-7 bg-surface-white border border-cream-border rounded-sm hover:border-ink-muted transition-all cursor-pointer group"
+                    className="p-7 bg-surface-white border border-cream-border rounded-sm hover:border-[var(--folder-color)] transition-all cursor-pointer group"
                   >
                     <div className="flex justify-between items-start mb-7">
-                      <div className="p-2.5 rounded-sm bg-cream-dark/30 text-ink-secondary group-hover:text-ink transition-colors">
+                      <div className="p-2.5 rounded-sm bg-cream-dark/30 text-[var(--folder-color)] group-hover:text-[var(--folder-color)] transition-colors">
                         <Folder size={20} />
                       </div>
                       <span className="text-[0.625rem] font-semibold text-ink-muted tracking-wider uppercase">{folder.count} Notizen</span>
                     </div>
-                    <h3 className="font-serif text-[1.125rem] font-semibold text-ink group-hover:text-accent transition-colors">{folder.label}</h3>
+                    <h3 className="font-serif text-[1.125rem] font-semibold text-ink group-hover:text-[var(--folder-color)] transition-colors">{folder.label}</h3>
                     <div className="mt-5 flex items-center gap-2.5">
                        <div className="h-[3px] flex-1 bg-cream-dark rounded-full overflow-hidden">
-                          <div className={`h-full ${folder.accent} rounded-full`} style={{ width: `${folder.progress}%` }} />
+                          <div className="h-full rounded-full" style={{ width: `${folder.progress}%`, backgroundColor: folder.color }} />
                        </div>
                        <span className="text-[0.625rem] font-semibold text-ink-muted">{folder.progress}%</span>
                     </div>

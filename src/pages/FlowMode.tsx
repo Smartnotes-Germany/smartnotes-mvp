@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import {
   FileUp, 
   Sparkles, 
   BrainCircuit, 
@@ -15,37 +15,68 @@ import {
   Zap
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { APP_ROUTES } from '../routes';
+
+const MOCK_ENTITIES: Record<string, { name: string; type: string }> = {
+  dna: { name: 'DNA', type: 'Biologie' },
+  rom: { name: 'Römisches Reich', type: 'Geschichte' },
+  atp: { name: 'ATP', type: 'Biochemie' },
+  napoleon: { name: 'Napoleon', type: 'Person' },
+  zelle: { name: 'Pflanzenzelle', type: 'Struktur' },
+};
 
 export const FlowMode = () => {
   const [content, setContent] = useState("");
   const [isImporting, setIsImporting] = useState(false);
-  const [entities, setEntities] = useState<{name: string, type: string}[]>([]);
+  const [entities, setEntities] = useState<{ name: string; type: string }[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const navigate = useNavigate();
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const analysisTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const lastWord = content.trim().split(/\s+/).pop()?.toLowerCase();
-    
-    if (lastWord && lastWord.length > 3) {
-      setIsAnalyzing(true);
-      const timer = setTimeout(() => {
-        const mockEntities: Record<string, {name: string, type: string}> = {
-          'dna': { name: 'DNA', type: 'Biologie' },
-          'rom': { name: 'Römisches Reich', type: 'Geschichte' },
-          'atp': { name: 'ATP', type: 'Biochemie' },
-          'napoleon': { name: 'Napoleon', type: 'Person' },
-          'zelle': { name: 'Pflanzenzelle', type: 'Struktur' }
-        };
+    return () => {
+      if (analysisTimerRef.current) {
+        clearTimeout(analysisTimerRef.current);
+      }
+    };
+  }, []);
 
-        if (mockEntities[lastWord] && !entities.find(e => e.name === mockEntities[lastWord].name)) {
-          setEntities(prev => [mockEntities[lastWord], ...prev].slice(0, 8));
-        }
-        setIsAnalyzing(false);
-      }, 600);
-      return () => clearTimeout(timer);
+  const scheduleAnalysis = (nextContent: string) => {
+    if (analysisTimerRef.current) {
+      clearTimeout(analysisTimerRef.current);
     }
-  }, [content]);
+
+    const lastWord = nextContent.trim().split(/\s+/).pop()?.toLowerCase();
+
+    if (!lastWord || lastWord.length <= 3) {
+      setIsAnalyzing(false);
+      return;
+    }
+
+    setIsAnalyzing(true);
+    analysisTimerRef.current = window.setTimeout(() => {
+      const detectedEntity = MOCK_ENTITIES[lastWord];
+
+      if (detectedEntity) {
+        setEntities((prev) => {
+          if (prev.some((entity) => entity.name === detectedEntity.name)) {
+            return prev;
+          }
+
+          return [detectedEntity, ...prev].slice(0, 8);
+        });
+      }
+
+      setIsAnalyzing(false);
+      analysisTimerRef.current = null;
+    }, 600);
+  };
+
+  const handleContentChange = (nextContent: string) => {
+    setContent(nextContent);
+    scheduleAnalysis(nextContent);
+  };
 
   const handleImport = () => {
     setIsImporting(true);
@@ -102,7 +133,7 @@ export const FlowMode = () => {
             <textarea
               ref={editorRef}
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => handleContentChange(e.target.value)}
               placeholder="Schreibe deine Gedanken auf oder importiere Dokumente... (Tippe z.B. 'DNA' oder 'Rom')"
               className="flex-1 w-full text-[1.0625rem] leading-[1.85] text-ink-secondary border-none outline-none resize-none placeholder:text-ink-muted font-sans"
             />
@@ -206,7 +237,7 @@ export const FlowMode = () => {
                   Ich habe <strong className="text-ink">{entities[0].name}</strong> erkannt. Möchtest du dazu eine bestehende Zusammenfassung laden?
                 </p>
                 <button 
-                  onClick={() => navigate('/1')}
+                  onClick={() => navigate(APP_ROUTES.overview)}
                   className="w-full py-2.5 bg-ink text-cream rounded-sm text-[0.6875rem] font-semibold hover:bg-ink/90 transition-colors"
                 >
                   Im Wissensnetz ansehen
@@ -240,14 +271,14 @@ export const FlowMode = () => {
         </button>
         <div className="w-px h-4 bg-ink-secondary" />
         <button 
-          onClick={() => navigate('/4')}
+          onClick={() => navigate(APP_ROUTES.studyCoach)}
           className="flex items-center gap-2 text-[0.75rem] font-semibold hover:text-cream-dark transition-colors"
         >
           <Zap size={14} /> Quiz erstellen
         </button>
         <div className="w-px h-4 bg-ink-secondary" />
         <button 
-          onClick={() => navigate('/5')}
+          onClick={() => navigate(APP_ROUTES.progress)}
           className="flex items-center gap-2 text-[0.75rem] font-semibold hover:text-accent transition-colors"
         >
           <ListTree size={14} /> Mindmap

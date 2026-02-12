@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { APP_ROUTES } from '../routes';
 
 const SidebarItem = ({ to, icon: Icon, label }: { to: string; icon: React.ComponentType<{ size?: number; className?: string }>; label: string }) => (
   <NavLink
@@ -43,10 +44,10 @@ export const Layout = () => {
 
         {/* Navigation */}
         <nav className="mt-6 flex flex-col gap-0.5">
-          <SidebarItem to="/1" icon={LayoutDashboard} label="Wissenswelt" />
-          <SidebarItem to="/2" icon={PenTool} label="Flow-Modus" />
-          <SidebarItem to="/4" icon={GraduationCap} label="Lern-Coach" />
-          <SidebarItem to="/5" icon={TrendingUp} label="Fortschritt" />
+          <SidebarItem to={APP_ROUTES.overview} icon={LayoutDashboard} label="Wissenswelt" />
+          <SidebarItem to={APP_ROUTES.flowMode} icon={PenTool} label="Flow-Modus" />
+          <SidebarItem to={APP_ROUTES.studyCoach} icon={GraduationCap} label="Lern-Coach" />
+          <SidebarItem to={APP_ROUTES.progress} icon={TrendingUp} label="Fortschritt" />
         </nav>
 
         {/* Bottom section */}

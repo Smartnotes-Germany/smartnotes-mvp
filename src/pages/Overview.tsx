@@ -1,4 +1,4 @@
-import { useState, useMemo, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder,
@@ -100,11 +100,7 @@ export const Overview = () => {
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
 
-  const filteredNodes = useMemo(() => {
-    return nodes.filter(n => 
-      n.label.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [searchQuery, nodes]);
+  const filteredNodes = nodes.filter((node) => node.label.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const handleUpload = () => {
     setIsUploading(true);
@@ -201,7 +197,7 @@ export const Overview = () => {
               className="h-full p-10 flex flex-col overflow-y-auto custom-scrollbar"
             >
               {/* Section label */}
-              <div className="section-label mb-8">01 &mdash; Deine Fächer</div>
+              <div className="section-label mb-8">Deine Fächer</div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {/* Upload Card */}

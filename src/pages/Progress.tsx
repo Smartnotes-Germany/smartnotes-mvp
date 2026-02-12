@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Trophy, TrendingUp, Target, Clock, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { APP_ROUTES } from '../routes';
 
 const StatCard = ({ icon: Icon, label, value }: { icon: React.ComponentType<{ size?: number; className?: string }>; label: string; value: string }) => (
   <div className="bg-surface-white border border-cream-border rounded-sm p-6 flex items-start justify-between group hover:border-ink-muted transition-colors">
@@ -22,7 +23,7 @@ export const Progress = () => {
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="mb-10">
-          <div className="section-label mb-4">05 &mdash; Fortschritt</div>
+          <div className="section-label mb-4">Fortschritt</div>
           <h2 className="editorial-heading text-[2rem] mb-2">Dein Lernfortschritt</h2>
           <p className="text-[0.875rem] text-ink-muted font-medium">Du entwickelst dich großartig. Hier ist deine Wochenübersicht.</p>
         </div>
@@ -71,7 +72,7 @@ export const Progress = () => {
                   {item.progress < 50 && (
                     <p 
                       className="text-[0.6875rem] text-[#c2746b] mt-1.5 flex items-center gap-1.5 cursor-pointer hover:underline font-medium"
-                      onClick={() => navigate('/4')}
+                      onClick={() => navigate(APP_ROUTES.studyCoach)}
                     >
                       <Target size={11} /> Fokus empfohlen
                     </p>
@@ -97,7 +98,7 @@ export const Progress = () => {
             </div>
             
             <button 
-              onClick={() => navigate('/4')}
+              onClick={() => navigate(APP_ROUTES.studyCoach)}
               className="w-full py-3 bg-cream text-ink rounded-sm font-semibold text-[0.8125rem] mt-8 hover:bg-cream-light transition-colors tracking-wide"
             >
               Training starten

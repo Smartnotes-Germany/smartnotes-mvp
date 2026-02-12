@@ -88,7 +88,7 @@ export const Overview = () => {
   const getLineColor = (node1: NodeData, node2: NodeData) => {
     if (node1.category === node2.category) {
       const colors: Record<string, string> = {
-        Science: '#1a7a6d',
+        Science: '#000b3d',
         History: '#8b6914',
         Languages: '#7a5a1a',
         Math: '#57534e'
@@ -216,7 +216,7 @@ export const Overview = () => {
                 </button>
 
                 {[
-                  { label: "Biologie", color: "#1a7a6d", count: 12, progress: 75 },
+                  { label: "Biologie", color: "#000b3d", count: 12, progress: 75 },
                   { label: "Geschichte", color: "#8b6914", count: 8, progress: 62 },
                   { label: "Mathematik", color: "#57534e", count: 7, progress: 80 },
                   { label: "Informatik", color: "#a8a29e", count: 4, progress: 45 },

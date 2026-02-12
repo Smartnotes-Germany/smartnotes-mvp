@@ -4,6 +4,7 @@ import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, PanelLeftClose, Pa
 import { AnimatePresence, motion } from 'framer-motion';
 import { APP_ROUTES } from '../routes';
 import profileImage from '../assets/images/profile.jpeg';
+import logoImage from '../assets/images/logo.png';
 
 const SIDEBAR_COLLAPSE_KEY = 'smartnotes.sidebar.collapsed';
 
@@ -102,8 +103,8 @@ export const Layout = () => {
         {/* Brand */}
         <div className={`${isCollapsed ? 'px-4' : 'px-7'} pt-8 pb-6`}>
           <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-            <div className="w-10 h-10 border border-cream-border bg-surface-white rounded-sm flex items-center justify-center">
-              <PenTool size={14} className="text-accent" />
+            <div className="w-11 h-11 overflow-hidden rounded-sm border border-cream-border bg-surface-white">
+              <img src={logoImage} alt="Smartnotes logo" className="h-full w-full object-cover" loading="lazy" />
             </div>
 
             <AnimatePresence initial={false}>

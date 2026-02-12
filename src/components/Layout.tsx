@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { APP_ROUTES } from '../routes';
+import profileImage from '../assets/images/profile.jpeg';
 
 const SIDEBAR_COLLAPSE_KEY = 'smartnotes.sidebar.collapsed';
 
@@ -16,9 +17,22 @@ const sidebarItems = [
 const account = {
   name: 'Jakob S.',
   plan: 'Aktives Abo',
-  avatarUrl:
-    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=240&q=80',
+  avatarUrl: profileImage,
 } as const;
+
+const getInitialSidebarState = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const storedState = window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY);
+
+  if (storedState !== null) {
+    return storedState === 'true';
+  }
+
+  return window.matchMedia('(max-width: 1024px)').matches;
+};
 
 const SidebarItem = ({
   id,
@@ -69,20 +83,7 @@ const SidebarItem = ({
 );
 
 export const Layout = () => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  useEffect(() => {
-    const storedState = window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY);
-
-    if (storedState !== null) {
-      setIsCollapsed(storedState === 'true');
-      return;
-    }
-
-    if (window.matchMedia('(max-width: 1024px)').matches) {
-      setIsCollapsed(true);
-    }
-  }, []);
+  const [isCollapsed, setIsCollapsed] = useState(getInitialSidebarState);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_COLLAPSE_KEY, String(isCollapsed));

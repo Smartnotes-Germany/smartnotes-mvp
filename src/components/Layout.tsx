@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, GraduationCap, TrendingUp, PenTool, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { APP_ROUTES } from '../routes';
 import profileImage from '../assets/images/profile.jpeg';
@@ -12,6 +12,7 @@ const sidebarItems = [
   { id: '02', to: APP_ROUTES.flowMode, icon: PenTool, label: 'Flow-Modus' },
   { id: '03', to: APP_ROUTES.studyCoach, icon: GraduationCap, label: 'Lern-Coach' },
   { id: '04', to: APP_ROUTES.progress, icon: TrendingUp, label: 'Fortschritt' },
+  { id: '05', to: APP_ROUTES.settings, icon: Settings, label: 'Einstellungen' },
 ] as const;
 
 const account = {

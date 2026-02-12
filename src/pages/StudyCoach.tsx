@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Check, 
-  BookOpen, 
-  ArrowRight, 
-  Sparkles, 
+import {
+  Check,
+  BookOpen,
+  ArrowRight,
+  Sparkles,
   RotateCcw,
   Lightbulb
 } from 'lucide-react';
@@ -53,7 +53,7 @@ export const StudyCoach = () => {
 
   return (
     <div className="h-full bg-cream flex flex-col items-center justify-center font-sans relative">
-      
+
       {/* Top Navigation / Progress */}
       <div className="absolute top-0 w-full px-10 py-7 flex justify-between items-center">
         <div className="flex items-center gap-7">
@@ -70,9 +70,9 @@ export const StudyCoach = () => {
       </div>
 
       <main className="w-full max-w-2xl px-8 flex flex-col items-center">
-        
+
         {/* Topic Badge */}
-        <motion.span 
+        <motion.span
           key={current.topic}
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           className="section-label mb-10"
@@ -82,7 +82,7 @@ export const StudyCoach = () => {
 
         {/* The Question Area */}
         <div className="w-full text-center space-y-12">
-          <motion.h2 
+          <motion.h2
             key={current.question}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
@@ -109,7 +109,7 @@ export const StudyCoach = () => {
                   <span className="text-[0.6875rem] font-semibold text-ink-muted uppercase tracking-[0.2em] group-hover:text-ink transition-colors">Antwort prüfen</span>
                 </motion.button>
               ) : (
-                <motion.div 
+                <motion.div
                   key="answer-content"
                   initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
@@ -130,23 +130,23 @@ export const StudyCoach = () => {
                   </div>
 
                   <div className="flex flex-wrap justify-center gap-3">
-                    <button 
+                    <button
                       onClick={handleNext}
                       className="px-7 py-3 bg-ink text-cream rounded-sm text-[0.75rem] font-semibold flex items-center gap-2 hover:bg-ink/90 transition-all tracking-wide"
                     >
                       <Check size={14} /> Verstanden
                     </button>
-                    
+
                     {mode !== 'explain' && (
-                      <button 
+                      <button
                         onClick={() => setMode('explain')}
                         className="px-7 py-3 bg-surface-white border border-cream-border text-ink-secondary rounded-sm text-[0.75rem] font-semibold flex items-center gap-2 hover:border-accent hover:text-accent transition-all"
                       >
-                         <Sparkles size={14} /> Erklär es mir einfach
+                         <Sparkles size={14} /> Nicht verstanden
                       </button>
                     )}
 
-                    <button 
+                    <button
                       onClick={() => setShowNote(!showNote)}
                       className="px-7 py-3 bg-cream-dark/30 text-ink-muted rounded-sm text-[0.75rem] font-semibold flex items-center gap-2 hover:bg-cream-dark/50 hover:text-ink-secondary transition-all"
                     >
@@ -178,7 +178,7 @@ export const StudyCoach = () => {
             <p className="text-[1.0625rem] text-ink-secondary leading-[1.8] font-serif italic">
               "{current.sourceNote}"
             </p>
-            <button 
+            <button
               onClick={() => setShowNote(false)}
               className="mt-8 w-full py-3 text-ink-muted text-[0.75rem] font-semibold hover:text-ink transition-colors tracking-wider uppercase"
             >

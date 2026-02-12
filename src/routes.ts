@@ -3,6 +3,7 @@ export const ROUTE_SEGMENTS = {
   flowMode: 'flow-mode',
   studyCoach: 'study-coach',
   progress: 'progress',
+  settings: 'settings',
 } as const;
 
 export const APP_ROUTES = {
@@ -10,4 +11,5 @@ export const APP_ROUTES = {
   flowMode: `/${ROUTE_SEGMENTS.flowMode}`,
   studyCoach: `/${ROUTE_SEGMENTS.studyCoach}`,
   progress: `/${ROUTE_SEGMENTS.progress}`,
+  settings: `/${ROUTE_SEGMENTS.settings}`,
 } as const;

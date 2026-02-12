@@ -4,6 +4,14 @@
   --font-sans: "DM Sans", system-ui, sans-serif;
   --font-serif: "Playfair Display", Georgia, serif;
 
+  /* Softer global corner radius scale */
+  --radius-xs: 0.45rem;
+  --radius-sm: 0.7rem;
+  --radius-md: 0.95rem;
+  --radius-lg: 1.2rem;
+  --radius-xl: 1.45rem;
+  --radius-2xl: 1.8rem;
+
   /* Warm cream palette inspired by the Smartnotes landing page */
   --color-cream: #f0ebe3;
   --color-cream-light: #f5f1eb;

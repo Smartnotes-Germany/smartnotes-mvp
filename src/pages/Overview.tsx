@@ -273,18 +273,31 @@ export const Overview = () => {
                       const lineColor = getLineColor(node, target);
 
                       return (
-                        <motion.line
-                          key={`${node.id}-${target.id}`}
-                          initial={{ opacity: 0 }} 
-                          animate={{ 
-                            opacity: isDimmed ? 0.06 : (isHighlighted ? 0.6 : 0.2),
-                            stroke: isHighlighted ? '#1c1917' : lineColor,
-                            strokeWidth: isHighlighted ? 2 : 1
-                          }}
-                          x1={`${node.x}%`} y1={`${node.y}%`}
-                          x2={`${target.x}%`} y2={`${target.y}%`}
-                          strokeDasharray={isHighlighted ? "none" : "4 4"}
-                        />
+                        <g key={`${node.id}-${target.id}`}>
+                          <motion.line
+                            initial={{ opacity: 0 }}
+                            animate={{
+                              opacity: isDimmed ? 0.06 : (isHighlighted ? 0.28 : 0.18),
+                              stroke: '#292524',
+                              strokeWidth: isHighlighted ? 5 : 4
+                            }}
+                            x1={`${node.x}%`} y1={`${node.y}%`}
+                            x2={`${target.x}%`} y2={`${target.y}%`}
+                            strokeLinecap="round"
+                          />
+                          <motion.line
+                            initial={{ opacity: 0 }}
+                            animate={{
+                              opacity: isDimmed ? 0.18 : (isHighlighted ? 0.92 : 0.62),
+                              stroke: isHighlighted ? '#1c1917' : lineColor,
+                              strokeWidth: isHighlighted ? 2.8 : 2
+                            }}
+                            x1={`${node.x}%`} y1={`${node.y}%`}
+                            x2={`${target.x}%`} y2={`${target.y}%`}
+                            strokeDasharray={isHighlighted ? 'none' : '5 3'}
+                            strokeLinecap="round"
+                          />
+                        </g>
                       );
                     })
                   )}

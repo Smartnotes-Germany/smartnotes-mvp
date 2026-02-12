@@ -4,6 +4,7 @@ import { Overview } from './pages/Overview';
 import { FlowMode } from './pages/FlowMode';
 import { StudyCoach } from './pages/StudyCoach';
 import { Progress } from './pages/Progress';
+import { Settings } from './pages/Settings';
 import { APP_ROUTES, ROUTE_SEGMENTS } from './routes';
 
 const appRoutes = [
@@ -11,6 +12,7 @@ const appRoutes = [
   { path: ROUTE_SEGMENTS.flowMode, element: <FlowMode /> },
   { path: ROUTE_SEGMENTS.studyCoach, element: <StudyCoach /> },
   { path: ROUTE_SEGMENTS.progress, element: <Progress /> },
+  { path: ROUTE_SEGMENTS.settings, element: <Settings /> },
 ];
 
 function App() {

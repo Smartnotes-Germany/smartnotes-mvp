@@ -49,6 +49,14 @@
     min-height: 100vh;
   }
 
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  select,
+  summary,
+  a[href] {
+    cursor: pointer;
+  }
+
   ::selection {
     background-color: var(--color-accent);
     color: white;

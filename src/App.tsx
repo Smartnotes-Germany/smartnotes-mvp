@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -10,7 +10,6 @@ import {
   Layers,
   Loader2,
   Sparkles,
-  Target,
   Upload,
 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
@@ -18,39 +17,75 @@ import logoImage from './assets/images/logo.png';
 
 const flowSteps = [
   { id: 1, label: 'Eingaben' },
-  { id: 2, label: 'Relevanz' },
-  { id: 3, label: 'Verständnis' },
-  { id: 4, label: 'Sicherheit' },
+  { id: 2, label: 'Priorisierung' },
+  { id: 3, label: 'Selbstcheck' },
+  { id: 4, label: 'Auswertung' },
 ] as const;
 
 const initialFiles = ['Biologie_Kapitel5.pptx', 'Whiteboard_Zellatmung.jpg', 'Notizen_Stoffwechsel.pdf'];
 
-const relevanceCore = ['Zellatmung: Ablauf und Bilanz', 'ATP-Ertrag pro Glukose', 'Ort der Reaktionen in der Zelle'];
-const relevanceLower = ['Historischer Kontext der Entdeckung', 'Sonderfälle außerhalb des Lehrplans'];
+const prioritizedTopics = [
+  {
+    id: 'prio1',
+    priority: 'Priorität 1',
+    title: 'Zellatmung: Ablauf und Bilanz',
+    reason: 'Grundlage für mehrere typische Testaufgaben im Kapitel Stoffwechsel.',
+  },
+  {
+    id: 'prio2',
+    priority: 'Priorität 2',
+    title: 'ATP-Ertrag pro Glukose anwenden',
+    reason: 'Rechenaufgaben dazu sind in Klasse 10 oft direkt punkterelevant.',
+  },
+  {
+    id: 'prio3',
+    priority: 'Priorität 3',
+    title: 'Ort der Reaktionen in der Zelle',
+    reason: 'Wird häufig als Begründung oder Zuordnungsfrage abgefragt.',
+  },
+] as const;
 
 const understandingTasks = [
   {
     id: 'q1',
+    topic: 'Sauerstoffmangel und ATP',
     type: 'Offene Frage',
     text: 'Erkläre, warum bei Sauerstoffmangel deutlich weniger ATP entsteht.',
   },
   {
     id: 'q2',
+    topic: 'ATP-Bilanz rechnen',
     type: 'Rechenaufgabe',
     text: 'Berechne die ATP-Ausbeute für 2 Moleküle Glukose und begründe die Zwischenschritte.',
   },
   {
     id: 'q3',
+    topic: 'Atmungskette begründen',
     type: 'Begründungsaufgabe',
     text: 'Begründe, weshalb die Atmungskette als entscheidender Schritt der Energiegewinnung gilt.',
   },
 ] as const;
 
-const confidenceRows = [
-  { label: 'Photosynthese', value: 86 },
-  { label: 'Zellatmung', value: 63 },
-  { label: 'Diffusion und Osmose', value: 41 },
-] as const;
+type SelfCheckRating = 'sicher' | 'teilweise' | 'unsicher';
+type UnderstandingRatings = Record<string, SelfCheckRating | undefined>;
+
+const selfCheckOptions: Array<{ id: SelfCheckRating; label: string; helper: string }> = [
+  { id: 'sicher', label: 'Kann ich sicher', helper: 'ohne Hilfe erklären oder rechnen' },
+  { id: 'teilweise', label: 'Teilweise sicher', helper: 'Grundidee klar, bei Details unsicher' },
+  { id: 'unsicher', label: 'Noch unsicher', helper: 'ich brauche Wiederholung' },
+];
+
+const ratingToScore: Record<SelfCheckRating, number> = {
+  sicher: 85,
+  teilweise: 60,
+  unsicher: 35,
+};
+
+const ratingToLabel: Record<SelfCheckRating, string> = {
+  sicher: 'Sicher',
+  teilweise: 'Teilweise sicher',
+  unsicher: 'Unsicher',
+};
 
 const teacherHintExamples = [
   'Ableitungen anwenden, keine Beweise',
@@ -127,8 +162,8 @@ function PageShell({
             </div>
           </div>
           <div className="flex items-center gap-2 text-[0.72rem] font-medium text-ink-secondary">
-            <span className="rounded-full border border-cream-border bg-surface-white px-3 py-1.5">{subject}</span>
-            <span className="rounded-full border border-cream-border bg-surface-white px-3 py-1.5">{grade}</span>
+            <span className="rounded-md border border-cream-border bg-surface-white px-3 py-1.5">{subject}</span>
+            <span className="rounded-md border border-cream-border bg-surface-white px-3 py-1.5">{grade}</span>
           </div>
         </header>
 
@@ -188,23 +223,40 @@ function StartPage({
   return (
     <PageShell
       currentStep={1}
-      title="Unterlagen und Lernziel festlegen"
-      subtitle="Lade dein Material hoch, wähle Fach und Klassenstufe und starte direkt die Vorbereitung."
+      title="Material eingeben und Analyse starten"
+      subtitle="Alle Unterlagen werden beim Start automatisch analysiert. Fach, Klassenstufe und Lehrerhinweis steuern, was danach als testrelevant priorisiert wird."
       subject={subject}
       grade={grade}
     >
       <div className="rounded-xl border border-cream-border bg-cream-light p-4 md:p-5">
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-ink-muted">Deine Unterlagen</p>
+        <p className="mt-1 text-[0.76rem] text-ink-secondary">Diese Dateien werden in Schritt 2 direkt für die Priorisierung genutzt.</p>
         <div className="mt-3 grid gap-2">
-          {files.map((file) => (
-            <div
-              key={file}
-              className="flex items-center gap-2.5 rounded-xl border border-cream-border bg-surface-white px-3 py-2.5 text-[0.8rem] text-ink-secondary"
-            >
-              <FileImage size={14} className="text-accent" />
-              <span>{file}</span>
-            </div>
-          ))}
+          {files.map((file, index) => {
+            const isAnalyzed = index < 2;
+
+            return (
+              <div
+                key={file}
+                className="flex items-center justify-between gap-2.5 rounded-xl border border-cream-border bg-surface-white px-3 py-2.5 text-[0.8rem] text-ink-secondary"
+              >
+                <span className="flex items-center gap-2.5">
+                  <FileImage size={14} className="text-accent" />
+                  <span>{file}</span>
+                </span>
+                {isAnalyzed ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-[#b7ddb9] bg-[#e8f5e9] px-2 py-0.5 text-[0.65rem] font-semibold text-[#2f7d32]">
+                    <CheckCircle2 size={11} />
+                    Analysiert
+                  </span>
+                ) : (
+                  <span className="rounded-md border border-accent/25 bg-accent/10 px-2 py-0.5 text-[0.65rem] font-semibold text-accent">
+                    Wird analysiert...
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
         <button
           type="button"
@@ -217,7 +269,7 @@ function StartPage({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.75rem] text-ink-secondary">
-          Fach
+          Fach (für passende Aufgabentypen)
           <select
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
@@ -231,7 +283,7 @@ function StartPage({
         </label>
 
         <label className="rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.75rem] text-ink-secondary">
-          Klassenstufe
+          Klassenstufe (beeinflusst die Relevanz)
           <select
             value={grade}
             onChange={(event) => setGrade(event.target.value)}
@@ -242,12 +294,13 @@ function StartPage({
             <option>10. Klasse</option>
             <option>11. Klasse</option>
           </select>
+          <span className="mt-1 block text-[0.68rem] text-ink-muted">Beispiel: In Klasse 10 werden Grundlagen höher gewichtet als Randthemen.</span>
         </label>
       </div>
 
       <div className="mt-4 rounded-xl border border-cream-border bg-cream-light p-4 md:p-5">
         <label className="block text-[0.78rem] font-medium text-ink">
-          Hat der Lehrer etwas explizit für den Test gesagt?
+          Gibt es konkrete Hinweise für den Test?
           <span className="ml-1 text-ink-muted">(optional)</span>
         </label>
 
@@ -256,7 +309,7 @@ function StartPage({
           onChange={(event) => setTeacherHint(event.target.value)}
           maxLength={180}
           rows={3}
-          placeholder="Zum Beispiel: Aufgaben wie im letzten Test"
+          placeholder="Zum Beispiel: Schwerpunkt Energieumwandlung, keine Detailfragen zu Sonderfällen"
           className="mt-2.5 w-full resize-none rounded-xl border border-cream-border bg-surface-white px-3 py-2.5 text-[0.82rem] leading-relaxed text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent/50"
         />
 
@@ -282,6 +335,11 @@ function StartPage({
         </div>
       </div>
 
+      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
+        <span className="mb-2 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Was nach dem Klick passiert</span>
+        <p>1) Dateien werden analysiert, 2) testrelevante Themen werden priorisiert, 3) du schätzt deinen Stand dazu ein.</p>
+      </div>
+
       <div className="mt-6 flex justify-end">
         <button
           type="button"
@@ -290,7 +348,7 @@ function StartPage({
           className="inline-flex items-center gap-2 rounded-lg bg-ink px-5 py-3 text-[0.82rem] font-semibold tracking-wide text-cream transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-75"
         >
           {isStarting ? <Loader2 size={15} className="animate-spin" /> : <Calculator size={15} />}
-          {isStarting ? 'Lernsession wird gestartet...' : 'Auf Test vorbereiten'}
+          {isStarting ? 'Analyse wird gestartet...' : 'Analyse starten'}
         </button>
       </div>
     </PageShell>
@@ -299,61 +357,59 @@ function StartPage({
 
 function RelevancePage({ subject, grade, teacherHint }: { subject: string; grade: string; teacherHint: string }) {
   const navigate = useNavigate();
+  const hasTeacherHint = teacherHint.trim().length > 0;
 
   return (
     <PageShell
       currentStep={2}
-      title="Prüfungsrelevante Kernthemen"
-      subtitle="Wir priorisieren sofort, was du für die Prüfung sicher beherrschen solltest."
+      title="Was für den Test zuerst zählt"
+      subtitle="Diese Priorisierung basiert auf deinen Unterlagen, dem Fach, der Klassenstufe und optional deinem Lehrerhinweis."
       subject={subject}
       grade={grade}
     >
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-cream-border bg-cream-light p-4">
-          <div className="mb-3 flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-cream-border bg-surface-white text-accent">
-              <Layers size={14} />
-            </div>
-            <h3 className="text-[0.9rem] font-semibold text-ink">Das musst du sicher können</h3>
+      <div className="rounded-xl border border-cream-border bg-cream-light p-4">
+        <div className="mb-3 flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-cream-border bg-surface-white text-accent">
+            <Layers size={14} />
           </div>
-          <ul className="space-y-2">
-            {relevanceCore.map((topic) => (
-              <li key={topic} className="flex items-start gap-2 text-[0.8rem] text-ink-secondary">
-                <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-accent" />
-                <span>{topic}</span>
-              </li>
-            ))}
-          </ul>
+          <h3 className="text-[0.9rem] font-semibold text-ink">Priorisierte Themen für deinen Test</h3>
         </div>
 
-        <div className="rounded-xl border border-cream-border bg-surface-white p-4">
-          <div className="mb-3 flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-cream-border bg-cream text-[#8b6914]">
-              <CircleAlert size={14} />
+        <div className="space-y-2.5">
+          {prioritizedTopics.map((topic) => (
+            <div key={topic.id} className="rounded-xl border border-cream-border bg-surface-white px-3 py-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[0.78rem] font-semibold text-ink">{topic.title}</p>
+                  <p className="mt-1 text-[0.74rem] leading-relaxed text-ink-secondary">{topic.reason}</p>
+                </div>
+                <span className="rounded-md border border-accent/25 bg-accent/10 px-2 py-0.5 text-[0.65rem] font-semibold text-accent">
+                  {topic.priority}
+                </span>
+              </div>
             </div>
-            <h3 className="text-[0.9rem] font-semibold text-ink">Das ist weniger wichtig</h3>
-          </div>
-          <ul className="space-y-2">
-            {relevanceLower.map((topic) => (
-              <li key={topic} className="flex items-start gap-2 text-[0.8rem] text-ink-secondary">
-                <span className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-muted" />
-                <span>{topic}</span>
-              </li>
-            ))}
-          </ul>
+          ))}
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.78rem] text-ink-secondary">
-        Fokus gesetzt für <strong className="text-ink">{subject}</strong> in der <strong className="text-ink">{grade}</strong>.
+      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
+        <span className="mb-2 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Eingaben in dieser Priorisierung</span>
+        <p>
+          Fach: <strong className="text-ink">{subject}</strong> | Klassenstufe: <strong className="text-ink">{grade}</strong> | Lehrerhinweis:{' '}
+          <strong className="text-ink">{hasTeacherHint ? 'berücksichtigt' : 'kein Hinweis angegeben'}</strong>
+        </p>
       </div>
 
-      {teacherHint.trim().length > 0 && (
+      {hasTeacherHint && (
         <div className="mt-3 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
-          <span className="mb-1 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Lehrerhinweis berücksichtigt</span>
-          „{teacherHint.trim()}“
+          <span className="mb-1 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Lehrerhinweis</span>
+          "{teacherHint.trim()}"
         </div>
       )}
+
+      <div className="mt-3 rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.78rem] text-ink-secondary">
+        Wenn wenig Zeit bleibt: Starte mit <strong className="text-ink">Priorität 1</strong> und <strong className="text-ink">Priorität 2</strong>.
+        </div>
 
       <div className="mt-6 flex items-center justify-between">
         <button
@@ -369,7 +425,7 @@ function RelevancePage({ subject, grade, teacherHint }: { subject: string; grade
           onClick={() => navigate('/verstaendnis')}
           className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-[0.78rem] font-semibold text-cream transition-colors hover:bg-ink/90"
         >
-          Weiter zum Verständnis-Check
+          Weiter zum Selbstcheck
           <ArrowRight size={14} />
         </button>
       </div>
@@ -377,51 +433,84 @@ function RelevancePage({ subject, grade, teacherHint }: { subject: string; grade
   );
 }
 
-function UnderstandingPage({ subject, grade }: { subject: string; grade: string }) {
+function UnderstandingPage({
+  subject,
+  grade,
+  ratings,
+  setRatings,
+}: {
+  subject: string;
+  grade: string;
+  ratings: UnderstandingRatings;
+  setRatings: Dispatch<SetStateAction<UnderstandingRatings>>;
+}) {
   const navigate = useNavigate();
-  const [checked, setChecked] = useState<string[]>([]);
+  const answeredCount = useMemo(
+    () => understandingTasks.filter((task) => ratings[task.id] !== undefined).length,
+    [ratings],
+  );
+  const allTasksRated = answeredCount === understandingTasks.length;
 
-  const toggleTask = (taskId: string) => {
-    setChecked((previous) =>
-      previous.includes(taskId) ? previous.filter((entry) => entry !== taskId) : [...previous, taskId],
-    );
+  const handleSelect = (taskId: string, rating: SelfCheckRating) => {
+    setRatings((prev) => ({ ...prev, [taskId]: rating }));
   };
-
-  const completedCount = useMemo(() => checked.length, [checked.length]);
 
   return (
     <PageShell
       currentStep={3}
-      title="Verständnis-Check"
-      subtitle="Gezielte Fragen und Aufgaben im Prüfungsstil, damit du nicht nur erkennst, sondern wirklich verstehst."
+      title="Selbstcheck zu den Prioritäten"
+      subtitle="Schätze pro Aufgabe ehrlich ein, wie sicher du sie aktuell lösen könntest. Das ist der Zwischenschritt vor der Auswertung."
       subject={subject}
       grade={grade}
     >
       <div className="space-y-3">
         {understandingTasks.map((task) => {
-          const isChecked = checked.includes(task.id);
+          const selectedRating = ratings[task.id];
 
           return (
-            <button
+            <div
               key={task.id}
-              type="button"
-              onClick={() => toggleTask(task.id)}
-              className={`w-full rounded-xl border p-4 text-left transition-colors ${
-                isChecked ? 'border-accent/60 bg-accent/8' : 'border-cream-border bg-cream-light hover:bg-cream'
+              className={`w-full rounded-xl border p-4 text-left ${
+                selectedRating ? 'border-accent/50 bg-accent/8' : 'border-cream-border bg-cream-light'
               }`}
             >
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-ink-muted">{task.type}</span>
-                {isChecked ? <CheckCircle2 size={14} className="text-accent" /> : <Target size={14} className="text-ink-muted" />}
+                <span className="rounded-md border border-cream-border bg-surface-white px-2 py-0.5 text-[0.64rem] font-semibold text-ink-secondary">
+                  {task.topic}
+                </span>
               </div>
               <p className="text-[0.86rem] leading-relaxed text-ink-secondary">{task.text}</p>
-            </button>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {selfCheckOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => handleSelect(task.id, option.id)}
+                    className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                      selectedRating === option.id
+                        ? 'border-accent/60 bg-surface-white text-ink'
+                        : 'border-cream-border bg-surface-white text-ink-secondary hover:border-accent/35'
+                    }`}
+                  >
+                    <span className="block text-[0.74rem] font-semibold">{option.label}</span>
+                    <span className="mt-1 block text-[0.68rem] leading-snug text-ink-muted">{option.helper}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           );
         })}
       </div>
 
       <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.8rem] text-ink-secondary">
-        <span className="font-medium text-ink">{completedCount}</span> von {understandingTasks.length} Aufgaben markiert.
+        <span className="font-medium text-ink">{answeredCount}</span> von {understandingTasks.length} Aufgaben eingeschätzt.
+        {!allTasksRated && <span className="ml-1">Bitte für jede Aufgabe eine Einschätzung auswählen.</span>}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.78rem] text-ink-secondary">
+        Danach erstellen wir deine Auswertung: Priorität aus Schritt 2 + Selbstcheck aus diesem Schritt.
       </div>
 
       <div className="mt-6 flex items-center justify-between">
@@ -436,9 +525,10 @@ function UnderstandingPage({ subject, grade }: { subject: string; grade: string 
         <button
           type="button"
           onClick={() => navigate('/sicherheit')}
-          className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-[0.78rem] font-semibold text-cream transition-colors hover:bg-ink/90"
+          disabled={!allTasksRated}
+          className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-[0.78rem] font-semibold text-cream transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Weiter zur Sicherheitsanzeige
+          Auswertung anzeigen
           <ArrowRight size={14} />
         </button>
       </div>
@@ -446,21 +536,42 @@ function UnderstandingPage({ subject, grade }: { subject: string; grade: string 
   );
 }
 
-function ConfidencePage({ subject, grade, onRestart }: { subject: string; grade: string; onRestart: () => void }) {
+function ConfidencePage({
+  subject,
+  grade,
+  ratings,
+  onRestart,
+}: {
+  subject: string;
+  grade: string;
+  ratings: UnderstandingRatings;
+  onRestart: () => void;
+}) {
   const navigate = useNavigate();
+  const confidenceRows = understandingTasks.map((task) => {
+    const rating = ratings[task.id];
+    return {
+      label: task.topic,
+      value: rating ? ratingToScore[rating] : 50,
+      ratingLabel: rating ? ratingToLabel[rating] : 'Nicht eingeschätzt',
+    };
+  });
+
+  const secureTopics = confidenceRows.filter((row) => row.value >= 75);
+  const gapTopics = confidenceRows.filter((row) => row.value < 55);
 
   return (
     <PageShell
       currentStep={4}
-      title="Sicherheitsanzeige"
-      subtitle="Du siehst auf einen Blick, wo du stark bist und an welchen Themen du vor der Prüfung noch arbeiten solltest."
+      title="Auswertung für diesen Test"
+      subtitle="Die Prozentwerte zeigen deine Selbsteinschätzung aus Schritt 3 auf den priorisierten Themen aus Schritt 2."
       subject={subject}
       grade={grade}
     >
       <div className="rounded-xl border border-cream-border bg-cream-light p-4">
         <div className="mb-4 flex items-center gap-2 text-[0.78rem] font-medium text-ink-secondary">
           <Sparkles size={14} className="text-accent" />
-          Lernprofil für diese Session
+          Testprofil für diese Session
         </div>
 
         <div className="space-y-3">
@@ -468,7 +579,9 @@ function ConfidencePage({ subject, grade, onRestart }: { subject: string; grade:
             <div key={row.label}>
               <div className="mb-1.5 flex items-center justify-between text-[0.78rem]">
                 <span className="text-ink-secondary">{row.label}</span>
-                <span className="font-semibold text-ink-muted">{row.value}%</span>
+                <span className="font-semibold text-ink-muted">
+                  {row.value}% ({row.ratingLabel})
+                </span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-cream-border">
                 <div
@@ -481,32 +594,41 @@ function ConfidencePage({ subject, grade, onRestart }: { subject: string; grade:
         </div>
       </div>
 
+      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
+        <span className="mb-1 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Was die Prozentwerte bedeuten</span>
+        85% = du fühlst dich sicher, 60% = teilweise sicher, 35% = aktuell unsicher. Das ist keine automatische Note, sondern eine klare Standortbestimmung vor dem Test.
+      </div>
+
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-cream-border bg-surface-white p-4">
-          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-accent">Du bist sicher</p>
+          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-accent">Hier bist du aktuell sicher</p>
           <ul className="space-y-1.5 text-[0.8rem] text-ink-secondary">
-            <li className="flex items-center gap-2">
-              <CheckCircle2 size={13} className="text-accent" />
-              Photosynthese-Grundlagen
-            </li>
-            <li className="flex items-center gap-2">
-              <CheckCircle2 size={13} className="text-accent" />
-              Aufbau der Pflanzenzelle
-            </li>
+            {secureTopics.length > 0 ? (
+              secureTopics.map((topic) => (
+                <li key={topic.label} className="flex items-center gap-2">
+                  <CheckCircle2 size={13} className="text-accent" />
+                  {topic.label}
+                </li>
+              ))
+            ) : (
+              <li>Noch kein Thema als sicher markiert.</li>
+            )}
           </ul>
         </div>
 
         <div className="rounded-xl border border-cream-border bg-surface-white p-4">
-          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#c2746b]">Hier gibt es Lücken</p>
+          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#c2746b]">Vor dem Test wiederholen</p>
           <ul className="space-y-1.5 text-[0.8rem] text-ink-secondary">
-            <li className="flex items-center gap-2">
-              <CircleAlert size={13} className="text-[#c2746b]" />
-              Diffusion und Osmose
-            </li>
-            <li className="flex items-center gap-2">
-              <CircleAlert size={13} className="text-[#c2746b]" />
-              ATP-Bilanz sicher anwenden
-            </li>
+            {gapTopics.length > 0 ? (
+              gapTopics.map((topic) => (
+                <li key={topic.label} className="flex items-center gap-2">
+                  <CircleAlert size={13} className="text-[#c2746b]" />
+                  {topic.label}
+                </li>
+              ))
+            ) : (
+              <li>Keine akuten Lücken in den priorisierten Themen.</li>
+            )}
           </ul>
         </div>
       </div>
@@ -541,12 +663,14 @@ function App() {
   const [subject, setSubject] = useState('Biologie');
   const [grade, setGrade] = useState('10. Klasse');
   const [teacherHint, setTeacherHint] = useState('');
+  const [understandingRatings, setUnderstandingRatings] = useState<UnderstandingRatings>({});
   const files = initialFiles;
 
   const resetSession = () => {
     setSubject('Biologie');
     setGrade('10. Klasse');
     setTeacherHint('');
+    setUnderstandingRatings({});
   };
 
   return (
@@ -568,8 +692,21 @@ function App() {
           }
         />
         <Route path="/relevanz" element={<RelevancePage subject={subject} grade={grade} teacherHint={teacherHint} />} />
-        <Route path="/verstaendnis" element={<UnderstandingPage subject={subject} grade={grade} />} />
-        <Route path="/sicherheit" element={<ConfidencePage subject={subject} grade={grade} onRestart={resetSession} />} />
+        <Route
+          path="/verstaendnis"
+          element={
+            <UnderstandingPage
+              subject={subject}
+              grade={grade}
+              ratings={understandingRatings}
+              setRatings={setUnderstandingRatings}
+            />
+          }
+        />
+        <Route
+          path="/sicherheit"
+          element={<ConfidencePage subject={subject} grade={grade} ratings={understandingRatings} onRestart={resetSession} />}
+        />
         <Route path="*" element={<Navigate to="/start" replace />} />
       </Routes>
     </BrowserRouter>

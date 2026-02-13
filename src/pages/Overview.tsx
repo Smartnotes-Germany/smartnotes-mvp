@@ -36,7 +36,7 @@ const Node = ({ node, onClick, active, dimmed }: { node: NodeData, onClick: () =
   return (
     <motion.div
       initial={{ scale: 0 }}
-      animate={{ 
+      animate={{
         scale: active ? scale * 1.2 : scale,
         opacity: dimmed ? 0.25 : 1,
       }}
@@ -61,7 +61,7 @@ export const Overview = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('folders');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   // Graph state
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -88,7 +88,7 @@ export const Overview = () => {
   const getLineColor = (node1: NodeData, node2: NodeData) => {
     if (node1.category === node2.category) {
       const colors: Record<string, string> = {
-        Science: '#000b3d',
+        Science: '#0b617e',
         History: '#8b6914',
         Languages: '#7a5a1a',
         Math: '#57534e'
@@ -117,13 +117,13 @@ export const Overview = () => {
 
   return (
     <div className="h-full bg-cream flex flex-col overflow-hidden relative">
-      
+
       {/* --- Unified Header --- */}
       <div className="px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6 xl:px-10 xl:py-7 z-30 flex flex-col gap-4 sm:gap-5 xl:gap-6 border-b border-cream-border">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             {viewMode === 'viewer' && (
-              <button 
+              <button
                 onClick={() => setViewMode('folders')}
                 className="p-2 hover:bg-cream-dark/40 rounded-sm text-ink-muted transition-colors"
               >
@@ -187,7 +187,7 @@ export const Overview = () => {
       {/* --- Main Content Area --- */}
       <div className="flex-1 relative overflow-hidden">
         <AnimatePresence mode="wait">
-          
+
           {/* 1. Folders View */}
           {viewMode === 'folders' && (
             <motion.div
@@ -201,7 +201,7 @@ export const Overview = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {/* Upload Card */}
-                <button 
+                <button
                   onClick={handleUpload}
                   disabled={isUploading}
                   className="p-7 border border-dashed border-cream-border rounded-sm flex flex-col items-center justify-center text-center gap-3.5 hover:border-accent hover:bg-accent/5 transition-all group"
@@ -216,12 +216,12 @@ export const Overview = () => {
                 </button>
 
                 {[
-                  { label: "Biologie", color: "#000b3d", count: 12, progress: 75 },
+                  { label: "Biologie", color: "#0b617e", count: 12, progress: 75 },
                   { label: "Geschichte", color: "#8b6914", count: 8, progress: 62 },
                   { label: "Mathematik", color: "#57534e", count: 7, progress: 80 },
                   { label: "Informatik", color: "#a8a29e", count: 4, progress: 45 },
                 ].map((folder) => (
-                  <div 
+                  <div
                     key={folder.label}
                     style={{ '--folder-color': folder.color } as CSSProperties}
                     onClick={() => {
@@ -263,11 +263,11 @@ export const Overview = () => {
             >
               <div className="absolute inset-0 z-10">
                 <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                  {nodes.map(node => 
+                  {nodes.map(node =>
                     node.connections.map(targetId => {
                       const target = nodes.find(n => n.id === targetId);
                       if (!target || parseInt(node.id) > parseInt(target.id)) return null;
-                      
+
                       const isHighlighted = selectedNodeId === node.id || selectedNodeId === target.id;
                       const isDimmed = selectedNodeId && !isHighlighted;
                       const lineColor = getLineColor(node, target);
@@ -303,11 +303,11 @@ export const Overview = () => {
                   )}
                 </svg>
                 {filteredNodes.map(node => (
-                  <Node 
+                  <Node
                     key={node.id} node={node}
                     active={selectedNodeId === node.id}
                     dimmed={!!selectedNodeId && selectedNodeId !== node.id && !selectedNode?.connections.includes(node.id)}
-                    onClick={() => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)} 
+                    onClick={() => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
                   />
                 ))}
               </div>
@@ -347,7 +347,7 @@ export const Overview = () => {
               {/* Document Sidebar */}
               <AnimatePresence>
                 {showLeftSidebar && (
-                  <motion.div 
+                  <motion.div
                     initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
                     className="bg-cream-light border-r border-cream-border flex flex-col overflow-hidden"
                   >
@@ -360,8 +360,8 @@ export const Overview = () => {
                     <div className="h-px bg-cream-border mx-4" />
                     <div className="flex-1 overflow-y-auto px-3 pt-3 space-y-0.5 custom-scrollbar">
                       {['Übersicht', 'Kernkonzept', 'Analyse', 'Quellen'].map((item, i) => (
-                        <div 
-                          key={item} 
+                        <div
+                          key={item}
                           className={`px-3 py-2.5 rounded-sm text-[0.75rem] cursor-pointer transition-colors whitespace-nowrap ${
                             i === 0 ? 'bg-cream-dark/30 text-ink font-medium border-l-2 border-accent' : 'text-ink-muted hover:bg-cream-dark/20 hover:text-ink-secondary border-l-2 border-transparent'
                           }`}
@@ -379,7 +379,7 @@ export const Overview = () => {
                 <div className="w-full max-w-3xl bg-surface-white border border-cream-border rounded-sm p-16 md:p-24 min-h-[1200px] relative">
                   {/* Page Indicator */}
                   <div className="absolute top-8 right-8 text-[0.625rem] font-medium text-ink-muted tracking-wider">Seite 1 von 1</div>
-                  
+
                   <div className="mb-14">
                     <div className="flex items-center gap-3 mb-5">
                        <span className="section-label text-[0.5625rem]">Geprüftes Dokument</span>
@@ -395,7 +395,7 @@ export const Overview = () => {
                       {viewingFile.content}
                     </p>
                     <p className="text-[1.125rem] leading-[1.8] text-ink-secondary font-sans">
-                      Die Energiegewinnung erfolgt in mehreren Schritten. Zunächst wird in der Glykolyse Glucose abgebaut. Dieser Prozess findet im Cytoplasma statt. Die Produkte werden dann in die Mitochondrien transportiert, wo der Citratzyklus und die Atmungskette ablaufen. 
+                      Die Energiegewinnung erfolgt in mehreren Schritten. Zunächst wird in der Glykolyse Glucose abgebaut. Dieser Prozess findet im Cytoplasma statt. Die Produkte werden dann in die Mitochondrien transportiert, wo der Citratzyklus und die Atmungskette ablaufen.
                     </p>
                     <div className="mt-14 p-8 bg-cream-light border border-cream-border rounded-sm flex flex-col items-center gap-4">
                        <Sparkles size={20} className="text-accent" />
@@ -408,7 +408,7 @@ export const Overview = () => {
               {/* AI Assistant Sidebar */}
               <AnimatePresence>
                 {showRightSidebar && (
-                  <motion.div 
+                  <motion.div
                     initial={{ width: 0, opacity: 0 }} animate={{ width: 240, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
                     className="bg-cream-light border-l border-cream-border flex flex-col overflow-hidden"
                   >
@@ -467,7 +467,7 @@ export const Overview = () => {
 
                     <div className="p-4 border-t border-cream-border">
                       <div className="relative">
-                        <input 
+                        <input
                           type="text"
                           placeholder="Frage..."
                           className="w-full pl-3 pr-7 py-2 bg-surface-white border border-cream-border rounded-sm text-[0.6875rem] text-ink outline-none focus:border-accent/40 transition-all placeholder:text-ink-muted font-sans"

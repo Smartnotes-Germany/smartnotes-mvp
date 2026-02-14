@@ -93,9 +93,15 @@ const teacherHintExamples = [
   'Aufgaben wie im letzten Test',
 ] as const;
 
-function StepTracker({ currentStep }: { currentStep: 1 | 2 | 3 | 4 }) {
+function StepTracker({
+  currentStep,
+  className,
+}: {
+  currentStep: 1 | 2 | 3 | 4;
+  className?: string;
+}) {
   return (
-    <div className="mt-5 grid gap-2 sm:grid-cols-4">
+    <div className={`grid gap-2 sm:grid-cols-4 ${className ?? ''}`}>
       {flowSteps.map((step) => {
         const isDone = step.id < currentStep;
         const isActive = step.id === currentStep;
@@ -146,12 +152,12 @@ function PageShell({
   return (
     <div className="min-h-screen bg-cream text-ink">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-accent/8 blur-3xl" />
-        <div className="absolute right-0 top-0 h-[28rem] w-[28rem] rounded-full bg-cream-dark/70 blur-3xl" />
+        <div className="absolute -left-16 top-20 h-80 w-80 rounded-full bg-accent/8 blur-3xl" />
+        <div className="absolute right-0 top-0 h-[30rem] w-[30rem] rounded-full bg-cream-dark/70 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-5xl px-5 pb-12 pt-8 md:px-8 md:pt-10">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-cream-border bg-cream-light/70 px-5 py-4 backdrop-blur-sm md:px-7">
+      <div className="relative mx-auto w-full max-w-7xl px-4 pb-10 pt-6 md:px-8 md:pt-8">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-cream-border pb-5 md:pb-6">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 overflow-hidden rounded-sm border border-cream-border bg-surface-white">
               <img src={logoImage} alt="Smartnotes Logo" className="h-full w-full object-cover" loading="lazy" />
@@ -161,24 +167,37 @@ function PageShell({
               <h1 className="editorial-heading text-[1.2rem]">Prüfungsrelevanz und Verständnis</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-[0.72rem] font-medium text-ink-secondary">
-            <span className="rounded-md border border-cream-border bg-surface-white px-3 py-1.5">{subject}</span>
-            <span className="rounded-md border border-cream-border bg-surface-white px-3 py-1.5">{grade}</span>
-          </div>
         </header>
 
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-          className="rounded-2xl border border-cream-border bg-surface-white p-6 shadow-[0_14px_34px_rgba(30,24,18,0.08)] md:p-8"
-        >
-          <span className="section-label">Schritt {currentStep} von 4</span>
-          <h2 className="editorial-heading mt-4 text-[1.9rem] leading-[1.12] md:text-[2.3rem]">{title}</h2>
-          <p className="mt-3 max-w-3xl text-[0.9rem] leading-relaxed text-ink-secondary">{subtitle}</p>
-          <StepTracker currentStep={currentStep} />
-          <div className="mt-6">{children}</div>
-        </motion.section>
+        <div className="mt-6 grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
+          <aside className="rounded-xl border border-cream-border bg-cream-light/75 p-4 md:p-5">
+            <p className="section-label">Lernfluss</p>
+            <p className="mt-2 text-[0.88rem] font-medium text-ink-secondary">Schritt {currentStep} von 4</p>
+            <StepTracker currentStep={currentStep} className="mt-4 sm:grid-cols-2 lg:grid-cols-1" />
+            <hr className="editorial-separator my-4" />
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-ink-muted">Aktueller Kontext</p>
+            <div className="mt-2 space-y-2 text-[0.75rem] text-ink-secondary">
+              <div className="rounded-md border border-cream-border bg-surface-white px-2.5 py-2">
+                Fach: <span className="font-semibold text-ink">{subject}</span>
+              </div>
+              <div className="rounded-md border border-cream-border bg-surface-white px-2.5 py-2">
+                Stufe: <span className="font-semibold text-ink">{grade}</span>
+              </div>
+            </div>
+          </aside>
+
+          <motion.main
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="min-h-[70vh] rounded-xl border border-cream-border bg-surface-white/90 p-6 shadow-[0_14px_34px_rgba(30,24,18,0.06)] md:p-8"
+          >
+            <span className="section-label">Schritt {currentStep} von 4</span>
+            <h2 className="editorial-heading mt-4 text-[1.9rem] leading-[1.12] md:text-[2.4rem]">{title}</h2>
+            <p className="mt-3 max-w-3xl text-[0.9rem] leading-relaxed text-ink-secondary">{subtitle}</p>
+            <div className="mt-6">{children}</div>
+          </motion.main>
+        </div>
       </div>
     </div>
   );

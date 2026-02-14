@@ -1,733 +1,492 @@
-import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { type Dispatch, type ReactNode, type SetStateAction, useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
   ArrowRight,
-  Calculator,
-  CheckCircle2,
-  CircleAlert,
   FileImage,
-  Layers,
   Loader2,
-  Sparkles,
   Upload,
+  LayoutDashboard,
+  Files,
+  BarChart3,
+  Settings,
+  Plus,
+  X,
+  Target,
+  StopCircle,
+  Zap,
+  Smile,
+  Meh,
+  Frown,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  Clock,
+  BookOpen,
+  Sparkles,
 } from 'lucide-react';
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate, useLocation, Link } from 'react-router-dom';
 import logoImage from './assets/images/logo.png';
+import profileImage from './assets/images/profile.jpeg';
 
-const flowSteps = [
-  { id: 1, label: 'Eingaben' },
-  { id: 2, label: 'Priorisierung' },
-  { id: 3, label: 'Selbstcheck' },
-  { id: 4, label: 'Auswertung' },
-] as const;
+// --- Types & Data ---
 
-const initialFiles = ['Biologie_Kapitel5.pptx', 'Whiteboard_Zellatmung.jpg', 'Notizen_Stoffwechsel.pdf'];
+type QuestionType = 'Offene Frage' | 'Rechenaufgabe' | 'Verständnis' | 'Transfer';
 
-const prioritizedTopics = [
-  {
-    id: 'prio1',
-    priority: 'Priorität 1',
-    title: 'Zellatmung: Ablauf und Bilanz',
-    reason: 'Grundlage für mehrere typische Testaufgaben im Kapitel Stoffwechsel.',
-  },
-  {
-    id: 'prio2',
-    priority: 'Priorität 2',
-    title: 'ATP-Ertrag pro Glukose anwenden',
-    reason: 'Rechenaufgaben dazu sind in Klasse 10 oft direkt punkterelevant.',
-  },
-  {
-    id: 'prio3',
-    priority: 'Priorität 3',
-    title: 'Ort der Reaktionen in der Zelle',
-    reason: 'Wird häufig als Begründung oder Zuordnungsfrage abgefragt.',
-  },
-] as const;
+interface Question {
+  id: string;
+  topic: string;
+  type: QuestionType;
+  text: string;
+  solution: string;
+  explanation: string;
+}
 
-const understandingTasks = [
+const initialQuestions: Question[] = [
   {
     id: 'q1',
-    topic: 'Sauerstoffmangel und ATP',
+    topic: 'Sauerstoffmangel',
     type: 'Offene Frage',
-    text: 'Erkläre, warum bei Sauerstoffmangel deutlich weniger ATP entsteht.',
+    text: 'Warum entsteht bei Sauerstoffmangel weniger ATP?',
+    solution: 'Die Atmungskette stoppt ohne Sauerstoff.',
+    explanation: 'Sauerstoff ist notwendig, um Elektronen am Ende der Atmungskette aufzunehmen. Fehlt er, bricht die effiziente Produktion zusammen und die Zelle nutzt die weniger effektive Gärung.'
   },
+];
+
+const questionPool: Question[] = [
   {
     id: 'q2',
-    topic: 'ATP-Bilanz rechnen',
-    type: 'Rechenaufgabe',
-    text: 'Berechne die ATP-Ausbeute für 2 Moleküle Glukose und begründe die Zwischenschritte.',
+    topic: 'ATP-Bilanz',
+    type: 'Rechnen',
+    text: 'Wie viel ATP liefern 2 Moleküle Glukose?',
+    solution: 'Ca. 60-64 ATP.',
+    explanation: 'Pro Glukose entstehen etwa 30-32 ATP. Bei zwei Molekülen verdoppelt sich der Ertrag.'
   },
   {
     id: 'q3',
-    topic: 'Atmungskette begründen',
-    type: 'Begründungsaufgabe',
-    text: 'Begründe, weshalb die Atmungskette als entscheidender Schritt der Energiegewinnung gilt.',
+    topic: 'Stoffwechsel',
+    type: 'Verständnis',
+    text: 'Was ist der Hauptvorteil aerober Prozesse?',
+    solution: 'Vollständiger Abbau und hohe Energieausbeute.',
+    explanation: 'Aerobe Prozesse nutzen Sauerstoff, um Glukose komplett zu zerlegen, was deutlich mehr Energie freisetzt als anaerobe Wege.'
+  }
+];
+
+const deepDivePool: Question[] = [
+  {
+    id: 'dd1',
+    topic: 'ATP-Bilanz',
+    type: 'Transfer',
+    text: 'Wie verändert sich die ATP-Bilanz, wenn nur die Glykolyse abläuft?',
+    solution: 'Es entstehen nur 2 ATP netto.',
+    explanation: 'Ohne Citratzyklus und Atmungskette bleibt nur der geringe Ertrag der Glykolyse. Das ist der Grund, warum anaerobes Training so schnell ermüdet.'
   },
-] as const;
+  {
+    id: 'dd2',
+    topic: 'ATP-Bilanz',
+    type: 'Rechenaufgabe',
+    text: 'Berechne den ATP-Ertrag für 5 Moleküle Pyruvat, die direkt in den Citratzyklus gehen.',
+    solution: 'Etwa 62-75 ATP.',
+    explanation: 'Ein Pyruvat liefert im Citratzyklus und der Atmungskette ca. 12.5 bis 15 ATP. Bei 5 Molekülen multipliziert sich dies entsprechend.'
+  }
+];
+
+const allQuestions = [...initialQuestions, ...questionPool, ...deepDivePool];
 
 type SelfCheckRating = 'sicher' | 'teilweise' | 'unsicher';
 type UnderstandingRatings = Record<string, SelfCheckRating | undefined>;
 
-const selfCheckOptions: Array<{ id: SelfCheckRating; label: string; helper: string }> = [
-  { id: 'sicher', label: 'Kann ich sicher', helper: 'ohne Hilfe erklären oder rechnen' },
-  { id: 'teilweise', label: 'Teilweise sicher', helper: 'Grundidee klar, bei Details unsicher' },
-  { id: 'unsicher', label: 'Noch unsicher', helper: 'ich brauche Wiederholung' },
+const selfCheckOptions: Array<{ id: SelfCheckRating; label: string; helper: string; icon: any; color: string }> = [
+  { id: 'unsicher', label: 'Unsicher', helper: 'Lösung zeigen', icon: Frown, color: 'border-red-100 bg-red-50/40 text-red-700 hover:border-red-200' },
+  { id: 'teilweise', label: 'Teilweise', helper: 'Fast da', icon: Meh, color: 'border-amber-100 bg-amber-50/40 text-amber-700 hover:border-amber-200' },
+  { id: 'sicher', label: 'Sicher', helper: 'Verstanden', icon: Smile, color: 'border-emerald-100 bg-emerald-50/40 text-emerald-700 hover:border-emerald-200' },
 ];
 
-const ratingToScore: Record<SelfCheckRating, number> = {
-  sicher: 85,
-  teilweise: 60,
-  unsicher: 35,
-};
+const ratingToScore: Record<SelfCheckRating, number> = { sicher: 100, teilweise: 60, unsicher: 20 };
 
-const ratingToLabel: Record<SelfCheckRating, string> = {
-  sicher: 'Sicher',
-  teilweise: 'Teilweise sicher',
-  unsicher: 'Unsicher',
-};
+// --- Components ---
 
-const teacherHintExamples = [
-  'Ableitungen anwenden, keine Beweise',
-  'Kapitel 3-5, Schwerpunkt Energie',
-  'Aufgaben wie im letzten Test',
-] as const;
+function Sidebar({ filesUploaded, questionsFinished }: { filesUploaded: boolean, questionsFinished: boolean }) {
+  const location = useLocation();
+  const navItems = [
+    { icon: Files, label: '1. Unterlagen', path: '/start', enabled: true },
+    { icon: Zap, label: '2. Training', path: '/session', enabled: filesUploaded },
+    { icon: BarChart3, label: '3. Ergebnis', path: '/sicherheit', enabled: questionsFinished },
+  ];
 
-function StepTracker({
-  currentStep,
-  className,
-}: {
-  currentStep: 1 | 2 | 3 | 4;
-  className?: string;
-}) {
   return (
-    <div className={`grid gap-2 sm:grid-cols-4 ${className ?? ''}`}>
-      {flowSteps.map((step) => {
-        const isDone = step.id < currentStep;
-        const isActive = step.id === currentStep;
-
-        return (
-          <div
-            key={step.id}
-            className={`rounded-lg border px-3 py-2 text-[0.72rem] transition-colors ${
-              isActive
-                ? 'border-accent/55 bg-accent/10 text-ink'
-                : isDone
-                  ? 'border-cream-border bg-cream-light text-ink-secondary'
-                  : 'border-cream-border bg-surface-white text-ink-muted'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className={`flex h-4 w-4 items-center justify-center rounded-full text-[0.6rem] font-semibold ${
-                  isActive ? 'bg-accent text-cream' : isDone ? 'bg-ink text-cream' : 'bg-cream-dark text-ink-muted'
-                }`}
-              >
-                <span className="leading-none text-center">{isDone ? '✓' : step.id}</span>
-              </span>
-              <span className="font-medium">{step.label}</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function PageShell({
-  currentStep,
-  title,
-  subtitle,
-  subject,
-  grade,
-  children,
-}: {
-  currentStep: 1 | 2 | 3 | 4;
-  title: string;
-  subtitle: string;
-  subject: string;
-  grade: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-h-screen bg-cream text-ink">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-16 top-20 h-80 w-80 rounded-full bg-accent/8 blur-3xl" />
-        <div className="absolute right-0 top-0 h-[30rem] w-[30rem] rounded-full bg-cream-dark/70 blur-3xl" />
+    <aside className="fixed left-0 top-0 hidden h-full w-64 flex-col border-r border-cream-border bg-surface-white/80 backdrop-blur-md md:flex z-50">
+      <div className="flex items-center gap-3 p-6 pt-8">
+        <div className="h-10 w-10 overflow-hidden rounded-xl border border-cream-border shadow-sm">
+          <img src={logoImage} alt="Logo" className="h-full w-full object-cover" />
+        </div>
+        <p className="text-[1.1rem] font-bold uppercase tracking-[0.12em] text-accent leading-none">Smartnotes</p>
       </div>
 
-      <div className="relative mx-auto w-full max-w-7xl px-4 pb-10 pt-6 md:px-8 md:pt-8">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-cream-border pb-5 md:pb-6">
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 overflow-hidden rounded-sm border border-cream-border bg-surface-white">
-              <img src={logoImage} alt="Smartnotes Logo" className="h-full w-full object-cover" loading="lazy" />
-            </div>
-            <div>
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-accent">Smartnotes</p>
-              <h1 className="editorial-heading text-[1.2rem]">Prüfungsrelevanz und Verständnis</h1>
-            </div>
-          </div>
-        </header>
-
-        <div className="mt-6 grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
-          <aside className="rounded-xl border border-cream-border bg-cream-light/75 p-4 md:p-5">
-            <p className="section-label">Lernfluss</p>
-            <p className="mt-2 text-[0.88rem] font-medium text-ink-secondary">Schritt {currentStep} von 4</p>
-            <StepTracker currentStep={currentStep} className="mt-4 sm:grid-cols-2 lg:grid-cols-1" />
-            <hr className="editorial-separator my-4" />
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-ink-muted">Aktueller Kontext</p>
-            <div className="mt-2 space-y-2 text-[0.75rem] text-ink-secondary">
-              <div className="rounded-md border border-cream-border bg-surface-white px-2.5 py-2">
-                Fach: <span className="font-semibold text-ink">{subject}</span>
-              </div>
-              <div className="rounded-md border border-cream-border bg-surface-white px-2.5 py-2">
-                Stufe: <span className="font-semibold text-ink">{grade}</span>
-              </div>
-            </div>
-          </aside>
-
-          <motion.main
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="min-h-[70vh] rounded-xl border border-cream-border bg-surface-white/90 p-6 shadow-[0_14px_34px_rgba(30,24,18,0.06)] md:p-8"
-          >
-            <span className="section-label">Schritt {currentStep} von 4</span>
-            <h2 className="editorial-heading mt-4 text-[1.9rem] leading-[1.12] md:text-[2.4rem]">{title}</h2>
-            <p className="mt-3 max-w-3xl text-[0.9rem] leading-relaxed text-ink-secondary">{subtitle}</p>
-            <div className="mt-6">{children}</div>
-          </motion.main>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StartPage({
-  subject,
-  setSubject,
-  grade,
-  setGrade,
-  files,
-  teacherHint,
-  setTeacherHint,
-}: {
-  subject: string;
-  setSubject: (value: string) => void;
-  grade: string;
-  setGrade: (value: string) => void;
-  files: string[];
-  teacherHint: string;
-  setTeacherHint: (value: string) => void;
-}) {
-  const navigate = useNavigate();
-  const [isStarting, setIsStarting] = useState(false);
-  const timerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-    };
-  }, []);
-
-  const handleStart = () => {
-    setIsStarting(true);
-    timerRef.current = window.setTimeout(() => {
-      navigate('/relevanz');
-    }, 1000);
-  };
-
-  return (
-    <PageShell
-      currentStep={1}
-      title="Material eingeben und Analyse starten"
-      subtitle="Alle Unterlagen werden beim Start automatisch analysiert. Fach, Klassenstufe und Lehrerhinweis steuern, was danach als testrelevant priorisiert wird."
-      subject={subject}
-      grade={grade}
-    >
-      <div className="rounded-xl border border-cream-border bg-cream-light p-4 md:p-5">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-ink-muted">Deine Unterlagen</p>
-        <p className="mt-1 text-[0.76rem] text-ink-secondary">Diese Dateien werden in Schritt 2 direkt für die Priorisierung genutzt.</p>
-        <div className="mt-3 grid gap-2">
-          {files.map((file, index) => {
-            const isAnalyzed = index < 2;
-
-            return (
-              <div
-                key={file}
-                className="flex items-center justify-between gap-2.5 rounded-xl border border-cream-border bg-surface-white px-3 py-2.5 text-[0.8rem] text-ink-secondary"
-              >
-                <span className="flex items-center gap-2.5">
-                  <FileImage size={14} className="text-accent" />
-                  <span>{file}</span>
-                </span>
-                {isAnalyzed ? (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-[#b7ddb9] bg-[#e8f5e9] px-2 py-0.5 text-[0.65rem] font-semibold text-[#2f7d32]">
-                    <CheckCircle2 size={11} />
-                    Analysiert
-                  </span>
-                ) : (
-                  <span className="rounded-md border border-accent/25 bg-accent/10 px-2 py-0.5 text-[0.65rem] font-semibold text-accent">
-                    Wird analysiert...
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-dashed border-cream-border bg-surface-white px-3 py-2 text-[0.75rem] font-medium text-ink-secondary"
+      <nav className="flex-1 px-3 py-6 space-y-2">
+        <Link
+          to="/dashboard"
+          className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
+            location.pathname === '/dashboard' ? 'bg-accent text-cream shadow-lg' : 'text-ink-secondary hover:bg-cream-light'
+          }`}
         >
-          <Upload size={13} />
-          Weitere Datei hinzufügen
-        </button>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.75rem] text-ink-secondary">
-          Fach (für passende Aufgabentypen)
-          <select
-            value={subject}
-            onChange={(event) => setSubject(event.target.value)}
-            className="mt-1.5 w-full bg-transparent text-[0.86rem] font-medium text-ink outline-none"
-          >
-            <option>Biologie</option>
-            <option>Geschichte</option>
-            <option>Mathematik</option>
-            <option>Chemie</option>
-          </select>
-        </label>
-
-        <label className="rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.75rem] text-ink-secondary">
-          Klassenstufe (beeinflusst die Relevanz)
-          <select
-            value={grade}
-            onChange={(event) => setGrade(event.target.value)}
-            className="mt-1.5 w-full bg-transparent text-[0.86rem] font-medium text-ink outline-none"
-          >
-            <option>8. Klasse</option>
-            <option>9. Klasse</option>
-            <option>10. Klasse</option>
-            <option>11. Klasse</option>
-          </select>
-          <span className="mt-1 block text-[0.68rem] text-ink-muted">Beispiel: In Klasse 10 werden Grundlagen höher gewichtet als Randthemen.</span>
-        </label>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-cream-border bg-cream-light p-4 md:p-5">
-        <label className="block text-[0.78rem] font-medium text-ink">
-          Gibt es konkrete Hinweise für den Test?
-          <span className="ml-1 text-ink-muted">(optional)</span>
-        </label>
-
-        <textarea
-          value={teacherHint}
-          onChange={(event) => setTeacherHint(event.target.value)}
-          maxLength={180}
-          rows={3}
-          placeholder="Zum Beispiel: Schwerpunkt Energieumwandlung, keine Detailfragen zu Sonderfällen"
-          className="mt-2.5 w-full resize-none rounded-xl border border-cream-border bg-surface-white px-3 py-2.5 text-[0.82rem] leading-relaxed text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent/50"
-        />
-
-        <div className="mt-2 flex items-center justify-between text-[0.68rem] text-ink-muted">
-          <span>1-2 Sätze. Kein Roman.</span>
-          <span>{teacherHint.length}/180</span>
+          <LayoutDashboard size={20} />
+          <span className="text-[0.9rem] font-semibold">Dashboard</span>
+        </Link>
+        
+        <div className="pt-6 pb-2">
+           <h3 className="px-4 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ink-muted">Session</h3>
         </div>
-
-        <div className="mt-3">
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-ink-muted">Beispiel-Eingaben</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {teacherHintExamples.map((example) => (
-              <button
-                key={example}
-                type="button"
-                onClick={() => setTeacherHint(example)}
-                className="rounded-lg border border-cream-border bg-surface-white px-3 py-1.5 text-[0.7rem] text-ink-secondary transition-colors hover:border-accent/45 hover:text-ink"
-              >
-                "{example}"
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
-        <span className="mb-2 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Was nach dem Klick passiert</span>
-        <p>1) Dateien werden analysiert, 2) testrelevante Themen werden priorisiert, 3) du schätzt deinen Stand dazu ein.</p>
-      </div>
-
-      <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          onClick={handleStart}
-          disabled={isStarting}
-          className="inline-flex items-center gap-2 rounded-lg bg-ink px-5 py-3 text-[0.82rem] font-semibold tracking-wide text-cream transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-75"
-        >
-          {isStarting ? <Loader2 size={15} className="animate-spin" /> : <Calculator size={15} />}
-          {isStarting ? 'Analyse wird gestartet...' : 'Analyse starten'}
-        </button>
-      </div>
-    </PageShell>
-  );
-}
-
-function RelevancePage({ subject, grade, teacherHint }: { subject: string; grade: string; teacherHint: string }) {
-  const navigate = useNavigate();
-  const hasTeacherHint = teacherHint.trim().length > 0;
-
-  return (
-    <PageShell
-      currentStep={2}
-      title="Was für den Test zuerst zählt"
-      subtitle="Diese Priorisierung basiert auf deinen Unterlagen, dem Fach, der Klassenstufe und optional deinem Lehrerhinweis."
-      subject={subject}
-      grade={grade}
-    >
-      <div className="rounded-xl border border-cream-border bg-cream-light p-4">
-        <div className="mb-3 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-cream-border bg-surface-white text-accent">
-            <Layers size={14} />
-          </div>
-          <h3 className="text-[0.9rem] font-semibold text-ink">Priorisierte Themen für deinen Test</h3>
-        </div>
-
-        <div className="space-y-2.5">
-          {prioritizedTopics.map((topic) => (
-            <div key={topic.id} className="rounded-xl border border-cream-border bg-surface-white px-3 py-2.5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[0.78rem] font-semibold text-ink">{topic.title}</p>
-                  <p className="mt-1 text-[0.74rem] leading-relaxed text-ink-secondary">{topic.reason}</p>
-                </div>
-                <span className="rounded-md border border-accent/25 bg-accent/10 px-2 py-0.5 text-[0.65rem] font-semibold text-accent">
-                  {topic.priority}
-                </span>
-              </div>
+        
+        {navItems.map((item) => {
+          const isActive = location.pathname === item.path || (item.path === '/start' && location.pathname === '/');
+          const Icon = item.icon;
+          return !item.enabled ? (
+            <div key={item.path} className="flex items-center gap-3 px-4 py-3 text-ink-muted/30 cursor-not-allowed select-none">
+              <Icon size={20} />
+              <span className="text-[0.9rem] font-medium">{item.label}</span>
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
-        <span className="mb-2 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Eingaben in dieser Priorisierung</span>
-        <p>
-          Fach: <strong className="text-ink">{subject}</strong> | Klassenstufe: <strong className="text-ink">{grade}</strong> | Lehrerhinweis:{' '}
-          <strong className="text-ink">{hasTeacherHint ? 'berücksichtigt' : 'kein Hinweis angegeben'}</strong>
-        </p>
-      </div>
-
-      {hasTeacherHint && (
-        <div className="mt-3 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
-          <span className="mb-1 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Lehrerhinweis</span>
-          "{teacherHint.trim()}"
-        </div>
-      )}
-
-      <div className="mt-3 rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.78rem] text-ink-secondary">
-        Wenn wenig Zeit bleibt: Starte mit <strong className="text-ink">Priorität 1</strong> und <strong className="text-ink">Priorität 2</strong>.
-        </div>
-
-      <div className="mt-6 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => navigate('/start')}
-          className="inline-flex items-center gap-2 rounded-lg border border-cream-border bg-surface-white px-4 py-2.5 text-[0.78rem] font-semibold text-ink-secondary transition-colors hover:bg-cream-light"
-        >
-          <ArrowLeft size={14} />
-          Zurück
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate('/verstaendnis')}
-          className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-[0.78rem] font-semibold text-cream transition-colors hover:bg-ink/90"
-        >
-          Weiter zum Selbstcheck
-          <ArrowRight size={14} />
-        </button>
-      </div>
-    </PageShell>
-  );
-}
-
-function UnderstandingPage({
-  subject,
-  grade,
-  ratings,
-  setRatings,
-}: {
-  subject: string;
-  grade: string;
-  ratings: UnderstandingRatings;
-  setRatings: Dispatch<SetStateAction<UnderstandingRatings>>;
-}) {
-  const navigate = useNavigate();
-  const answeredCount = useMemo(
-    () => understandingTasks.filter((task) => ratings[task.id] !== undefined).length,
-    [ratings],
-  );
-  const allTasksRated = answeredCount === understandingTasks.length;
-
-  const handleSelect = (taskId: string, rating: SelfCheckRating) => {
-    setRatings((prev) => ({ ...prev, [taskId]: rating }));
-  };
-
-  return (
-    <PageShell
-      currentStep={3}
-      title="Selbstcheck zu den Prioritäten"
-      subtitle="Schätze pro Aufgabe ehrlich ein, wie sicher du sie aktuell lösen könntest. Das ist der Zwischenschritt vor der Auswertung."
-      subject={subject}
-      grade={grade}
-    >
-      <div className="space-y-3">
-        {understandingTasks.map((task) => {
-          const selectedRating = ratings[task.id];
-
-          return (
-            <div
-              key={task.id}
-              className={`w-full rounded-xl border p-4 text-left ${
-                selectedRating ? 'border-accent/50 bg-accent/8' : 'border-cream-border bg-cream-light'
+          ) : (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
+                isActive ? 'bg-accent text-cream shadow-lg' : 'text-ink-secondary hover:bg-cream-light'
               }`}
             >
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-ink-muted">{task.type}</span>
-                <span className="rounded-md border border-cream-border bg-surface-white px-2 py-0.5 text-[0.64rem] font-semibold text-ink-secondary">
-                  {task.topic}
-                </span>
-              </div>
-              <p className="text-[0.86rem] leading-relaxed text-ink-secondary">{task.text}</p>
-
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {selfCheckOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => handleSelect(task.id, option.id)}
-                    className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                      selectedRating === option.id
-                        ? 'border-accent/60 bg-surface-white text-ink'
-                        : 'border-cream-border bg-surface-white text-ink-secondary hover:border-accent/35'
-                    }`}
-                  >
-                    <span className="block text-[0.74rem] font-semibold">{option.label}</span>
-                    <span className="mt-1 block text-[0.68rem] leading-snug text-ink-muted">{option.helper}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+              <Icon size={20} />
+              <span className="text-[0.9rem] font-semibold">{item.label}</span>
+            </Link>
           );
         })}
-      </div>
+      </nav>
 
-      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.8rem] text-ink-secondary">
-        <span className="font-medium text-ink">{answeredCount}</span> von {understandingTasks.length} Aufgaben eingeschätzt.
-        {!allTasksRated && <span className="ml-1">Bitte für jede Aufgabe eine Einschätzung auswählen.</span>}
+      <div className="mt-auto border-t border-cream-border p-4">
+        <div className="flex items-center gap-3 px-2 py-3">
+          <div className="h-10 w-10 rounded-full border-2 border-cream-border overflow-hidden shadow-sm shrink-0">
+            <img src={profileImage} alt="Profile" className="h-full w-full object-cover" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+               <p className="truncate text-[0.85rem] font-bold text-ink leading-tight">Max Mustermann</p>
+               <Settings size={14} className="text-ink-muted cursor-pointer hover:text-accent transition-colors shrink-0" />
+            </div>
+            <p className="truncate text-[0.7rem] text-ink-muted font-medium">Premium Account</p>
+          </div>
+        </div>
       </div>
-
-      <div className="mt-3 rounded-xl border border-cream-border bg-cream-light px-4 py-3 text-[0.78rem] text-ink-secondary">
-        Danach erstellen wir deine Auswertung: Priorität aus Schritt 2 + Selbstcheck aus diesem Schritt.
-      </div>
-
-      <div className="mt-6 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => navigate('/relevanz')}
-          className="inline-flex items-center gap-2 rounded-lg border border-cream-border bg-surface-white px-4 py-2.5 text-[0.78rem] font-semibold text-ink-secondary transition-colors hover:bg-cream-light"
-        >
-          <ArrowLeft size={14} />
-          Zurück
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate('/sicherheit')}
-          disabled={!allTasksRated}
-          className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-[0.78rem] font-semibold text-cream transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Auswertung anzeigen
-          <ArrowRight size={14} />
-        </button>
-      </div>
-    </PageShell>
+    </aside>
   );
 }
 
-function ConfidencePage({
-  subject,
-  grade,
-  ratings,
-  onRestart,
-}: {
-  subject: string;
-  grade: string;
-  ratings: UnderstandingRatings;
-  onRestart: () => void;
-}) {
-  const navigate = useNavigate();
-  const confidenceRows = understandingTasks.map((task) => {
-    const rating = ratings[task.id];
-    return {
-      label: task.topic,
-      value: rating ? ratingToScore[rating] : 50,
-      ratingLabel: rating ? ratingToLabel[rating] : 'Nicht eingeschätzt',
-    };
-  });
+function MainLayout({ children, filesUploaded, questionsFinished }: { children: ReactNode, filesUploaded: boolean, questionsFinished: boolean }) {
+  return (
+    <div className="min-h-screen bg-cream text-ink flex">
+      <Sidebar filesUploaded={filesUploaded} questionsFinished={questionsFinished} />
+      <main className="flex-1 md:ml-64 p-6 md:p-12 lg:p-16 relative flex flex-col items-center">
+        <div className="relative w-full max-w-5xl flex-1 flex flex-col">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
 
-  const secureTopics = confidenceRows.filter((row) => row.value >= 75);
-  const gapTopics = confidenceRows.filter((row) => row.value < 55);
+function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], setFiles: Dispatch<SetStateAction<string[]>>, setFilesUploaded: (v: boolean) => void }) {
+  const navigate = useNavigate();
+  const [isUploading, setIsUploading] = useState(false);
+  const handleUpload = () => { setIsUploading(true); setTimeout(() => { setFilesUploaded(true); navigate('/session'); }, 1000); };
 
   return (
-    <PageShell
-      currentStep={4}
-      title="Auswertung für diesen Test"
-      subtitle="Die Prozentwerte zeigen deine Selbsteinschätzung aus Schritt 3 auf den priorisierten Themen aus Schritt 2."
-      subject={subject}
-      grade={grade}
-    >
-      <div className="rounded-xl border border-cream-border bg-cream-light p-4">
-        <div className="mb-4 flex items-center gap-2 text-[0.78rem] font-medium text-ink-secondary">
-          <Sparkles size={14} className="text-accent" />
-          Testprofil für diese Session
-        </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-16 py-10">
+      <header className="text-center">
+        <h1 className="editorial-heading text-[3.5rem] tracking-tight">Unterlagen</h1>
+        <p className="mt-3 text-ink-secondary text-lg">Lade deine Dokumente für das Training hoch.</p>
+      </header>
 
-        <div className="space-y-3">
-          {confidenceRows.map((row) => (
-            <div key={row.label}>
-              <div className="mb-1.5 flex items-center justify-between text-[0.78rem]">
-                <span className="text-ink-secondary">{row.label}</span>
-                <span className="font-semibold text-ink-muted">
-                  {row.value}% ({row.ratingLabel})
-                </span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-cream-border">
-                <div
-                  style={{ width: `${row.value}%` }}
-                  className={`h-full rounded-full ${row.value >= 75 ? 'bg-accent' : row.value >= 55 ? 'bg-[#8b6914]' : 'bg-[#c2746b]'}`}
-                />
-              </div>
+      <div className="group relative rounded-[2.5rem] border-2 border-dashed border-cream-border bg-surface-white/40 hover:border-accent/30 transition-all">
+        <div className="flex flex-col items-center justify-center p-20 text-center">
+          <div className="mb-6 text-accent/20"><Upload size={48} /></div>
+          <button className="rounded-full bg-ink px-10 py-4 text-sm font-bold text-cream transition-all hover:scale-105 active:scale-95">Datei auswählen</button>
+        </div>
+      </div>
+
+      <div className="flex justify-center">
+        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="flex items-center gap-3 rounded-full bg-accent px-12 py-5 text-lg font-bold text-cream shadow-xl transition-all hover:translate-y-[-2px] disabled:opacity-20">
+          {isUploading ? <Loader2 size={24} className="animate-spin" /> : <>Starten <ArrowRight size={22} /></>}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+function StudySessionPage({ 
+  ratings, 
+  setRatings, 
+  setQuestionsFinished,
+  sessionType 
+}: { 
+  ratings: UnderstandingRatings, 
+  setRatings: Dispatch<SetStateAction<UnderstandingRatings>>, 
+  setQuestionsFinished: (v: boolean) => void,
+  sessionType: 'normal' | 'deep-dive'
+}) {
+  const navigate = useNavigate();
+  const [activeQuestions, setActiveQuestions] = useState<Question[]>([]);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Simulate smart question generation based on type
+    setTimeout(() => {
+        if (sessionType === 'deep-dive') {
+            setActiveQuestions([deepDivePool[0]]);
+        } else {
+            setActiveQuestions(initialQuestions);
+        }
+        setLoading(false);
+    }, 800);
+  }, [sessionType]);
+
+  const currentTask = activeQuestions[currentIdx];
+  const answeredCount = Object.keys(ratings).length;
+  
+  const currentPhase = useMemo(() => {
+    if (sessionType === 'deep-dive') return "Gezieltes Training: ATP-Bilanzen";
+    if (answeredCount < 2) return "Basis-Check";
+    if (answeredCount < 4) return "Analyse des Verständnisses";
+    return "Vertiefungsphase";
+  }, [answeredCount, sessionType]);
+
+  const handleSelect = (rating: SelfCheckRating) => {
+    setRatings(prev => ({ ...prev, [currentTask.id]: rating }));
+    if (rating === 'unsicher') setShowExplanation(true);
+    else nextQuestion();
+  };
+
+  const nextQuestion = () => {
+    setShowExplanation(false);
+    const pool = sessionType === 'deep-dive' ? deepDivePool : questionPool;
+    const available = pool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
+    
+    setActiveQuestions(prev => [...prev, available[0] || { 
+        id: `gen-${Date.now()}`, 
+        topic: sessionType === 'deep-dive' ? 'ATP-Bilanz' : 'Vertiefung', 
+        text: sessionType === 'deep-dive' ? 'Erkläre einen weiteren Spezialfall der ATP-Bilanz.' : 'Beschreibe ein weiteres Detail des Themas.', 
+        solution: 'Individuell.', 
+        explanation: 'Klasse, dass du dranbleibst!' 
+    }]);
+    setCurrentIdx(prev => prev + 1);
+  };
+
+  if (loading) return (
+    <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+        <Sparkles size={40} className="text-accent animate-pulse" />
+        <p className="text-ink-secondary font-bold uppercase tracking-widest text-sm">Bereite Deep-Dive vor...</p>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 flex flex-col py-10">
+      <header className="mb-20 space-y-4 text-center">
+        <div className="flex items-center justify-center gap-2">
+           <span className={`text-[0.7rem] font-bold uppercase tracking-[0.2em] animate-pulse ${sessionType === 'deep-dive' ? 'text-emerald-600' : 'text-accent'}`}>
+             {currentPhase}
+           </span>
+        </div>
+        <div className="h-1.5 w-full bg-cream-dark/20 rounded-full overflow-hidden relative">
+          <motion.div className="h-full bg-accent" animate={{ width: `${Math.min((answeredCount / 6) * 100, 100)}%` }} />
+        </div>
+      </header>
+
+      <div className="flex-1 flex flex-col relative min-h-[400px]">
+        <AnimatePresence mode="wait">
+          <motion.div key={currentTask.id + (showExplanation ? '-e' : '')} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex-1 flex flex-col">
+            <h2 className="text-[2.5rem] md:text-[3.2rem] font-bold leading-tight tracking-tight text-ink mb-20 text-center">
+              {currentTask.text}
+            </h2>
+
+            <div className="mt-auto">
+              {!showExplanation ? (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  {selfCheckOptions.map((opt) => (
+                    <button key={opt.id} onClick={() => handleSelect(opt.id)} className={`flex flex-col items-center rounded-3xl border-2 p-8 transition-all hover:scale-[1.02] active:scale-95 ${opt.color}`}>
+                      <opt.icon size={28} className="mb-4" />
+                      <span className="text-lg font-bold tracking-tight">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="rounded-[2.5rem] bg-surface-white p-10 shadow-xl border border-cream-border text-center">
+                  <p className="text-xl font-bold mb-4">{currentTask.solution}</p>
+                  <p className="text-ink-secondary leading-relaxed mb-8">{currentTask.explanation}</p>
+                  <button onClick={nextQuestion} className="rounded-full bg-ink px-10 py-4 text-cream font-bold transition-all hover:bg-accent">Weiter</button>
+                </motion.div>
+              )}
             </div>
-          ))}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      <footer className="mt-20 flex justify-between items-center opacity-40 hover:opacity-100 transition-opacity">
+        <button onClick={() => navigate('/start')} className="text-sm font-bold uppercase tracking-widest">Abbrechen</button>
+        <button onClick={() => { setQuestionsFinished(true); navigate('/sicherheit'); }} className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest"><StopCircle size={16} /> Beenden</button>
+      </footer>
+    </div>
+  );
+}
+
+function ConfidencePage({ 
+  ratings, 
+  onRestart,
+  onDeepDive 
+}: { 
+  ratings: UnderstandingRatings, 
+  onRestart: () => void,
+  onDeepDive: () => void
+}) {
+  const navigate = useNavigate();
+  const answeredIds = Object.keys(ratings);
+  const totalQuestions = answeredIds.length;
+
+  const topicResults = useMemo(() => {
+    const results: Record<string, { total: number, score: number }> = {};
+    answeredIds.forEach(id => {
+      const q = allQuestions.find(aq => aq.id === id) || { topic: 'Allgemein' };
+      const rating = ratings[id];
+      if (!results[q.topic]) results[q.topic] = { total: 0, score: 0 };
+      results[q.topic].total += 1;
+      results[q.topic].score += rating ? ratingToScore[rating] : 0;
+    });
+    return Object.entries(results).map(([name, data]) => ({
+      name,
+      percentage: Math.round(data.score / data.total)
+    }));
+  }, [ratings, answeredIds]);
+
+  const avgScore = totalQuestions > 0 
+    ? Math.round(topicResults.reduce((acc, curr) => acc + curr.percentage, 0) / topicResults.length) 
+    : 0;
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12 py-6 w-full">
+      <div className="grid lg:grid-cols-[1fr_2fr] gap-8">
+        <div className="space-y-6">
+          <div className="bg-surface-white rounded-[2.5rem] p-10 border border-cream-border shadow-sm text-center">
+            <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-accent text-cream text-[3rem] font-bold shadow-xl shadow-accent/20">
+              {avgScore}%
+            </div>
+            <h1 className="editorial-heading text-[2.5rem] tracking-tight mb-2">Fertig!</h1>
+            <p className="text-ink-secondary font-medium italic">Dein Ergebnis</p>
+          </div>
+
+          <div className="bg-surface-white rounded-[2.5rem] p-8 border border-cream-border shadow-sm grid grid-cols-2 gap-6">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-accent">
+                <BookOpen size={16} />
+                <span className="text-[0.65rem] font-bold uppercase tracking-widest">Fragen</span>
+              </div>
+              <p className="text-2xl font-bold text-ink">{totalQuestions}</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-accent">
+                <Clock size={16} />
+                <span className="text-[0.65rem] font-bold uppercase tracking-widest">Dauer</span>
+              </div>
+              <p className="text-2xl font-bold text-ink">~4m</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-surface-white rounded-[2.5rem] p-8 border border-cream-border shadow-sm">
+            <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-ink/40 mb-6 px-2">Themen-Analyse</h2>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {topicResults.map((topic) => (
+                <div key={topic.name} className="bg-cream-light/30 rounded-2xl p-5 border border-cream-border/50">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${topic.percentage >= 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {topic.percentage >= 80 ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                    </div>
+                    <span className="text-xl font-bold text-accent">{topic.percentage}%</span>
+                  </div>
+                  <p className="font-bold text-ink tracking-tight mb-1">{topic.name}</p>
+                  <p className="text-[0.7rem] text-ink-secondary font-bold uppercase tracking-wider">
+                    {topic.percentage >= 80 ? 'Sicher' : 'Wiederholen'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-ink rounded-[2.5rem] p-8 text-cream shadow-2xl relative overflow-hidden group">
+            <div className="absolute -right-10 -bottom-10 h-40 w-40 rounded-full bg-accent/20 blur-3xl group-hover:bg-accent/30 transition-all" />
+            <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-cream/40 mb-4">KI-Empfehlung</h2>
+            <p className="text-[1.1rem] font-bold leading-snug mb-6">
+              Soll ich für dich neue Fragen zu <span className="text-accent underline underline-offset-4 decoration-2">ATP-Bilanzen</span> heraussuchen? Ich nutze dafür deine Notizen und Online-Quellen.
+            </p>
+            <button onClick={onDeepDive} className="relative z-10 w-full rounded-full bg-cream py-4 text-ink font-bold transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2">
+              <Zap size={18} fill="currentColor" />
+              Deep-Dive starten
+            </button>
+          </div>
         </div>
       </div>
-
-      <div className="mt-4 rounded-xl border border-cream-border bg-surface-white px-4 py-3 text-[0.78rem] text-ink-secondary">
-        <span className="mb-1 block text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-accent">Was die Prozentwerte bedeuten</span>
-        85% = du fühlst dich sicher, 60% = teilweise sicher, 35% = aktuell unsicher. Das ist keine automatische Note, sondern eine klare Standortbestimmung vor dem Test.
-      </div>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-cream-border bg-surface-white p-4">
-          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-accent">Hier bist du aktuell sicher</p>
-          <ul className="space-y-1.5 text-[0.8rem] text-ink-secondary">
-            {secureTopics.length > 0 ? (
-              secureTopics.map((topic) => (
-                <li key={topic.label} className="flex items-center gap-2">
-                  <CheckCircle2 size={13} className="text-accent" />
-                  {topic.label}
-                </li>
-              ))
-            ) : (
-              <li>Noch kein Thema als sicher markiert.</li>
-            )}
-          </ul>
-        </div>
-
-        <div className="rounded-xl border border-cream-border bg-surface-white p-4">
-          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#c2746b]">Vor dem Test wiederholen</p>
-          <ul className="space-y-1.5 text-[0.8rem] text-ink-secondary">
-            {gapTopics.length > 0 ? (
-              gapTopics.map((topic) => (
-                <li key={topic.label} className="flex items-center gap-2">
-                  <CircleAlert size={13} className="text-[#c2746b]" />
-                  {topic.label}
-                </li>
-              ))
-            ) : (
-              <li>Keine akuten Lücken in den priorisierten Themen.</li>
-            )}
-          </ul>
-        </div>
-      </div>
-
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => navigate('/verstaendnis')}
-          className="inline-flex items-center gap-2 rounded-lg border border-cream-border bg-surface-white px-4 py-2.5 text-[0.78rem] font-semibold text-ink-secondary transition-colors hover:bg-cream-light"
-        >
-          <ArrowLeft size={14} />
-          Zurück
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            onRestart();
-            navigate('/start');
-          }}
-          className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-[0.78rem] font-semibold text-cream transition-colors hover:bg-ink/90"
-        >
-          Neue Lernsession starten
-          <ArrowRight size={14} />
-        </button>
-      </div>
-    </PageShell>
+    </motion.div>
   );
 }
 
 function App() {
-  const [subject, setSubject] = useState('Biologie');
-  const [grade, setGrade] = useState('10. Klasse');
-  const [teacherHint, setTeacherHint] = useState('');
+  const [files, setFiles] = useState(['Bio.pdf']);
   const [understandingRatings, setUnderstandingRatings] = useState<UnderstandingRatings>({});
-  const files = initialFiles;
+  const [filesUploaded, setFilesUploaded] = useState(false);
+  const [questionsFinished, setQuestionsFinished] = useState(false);
+  const [sessionType, setSessionType] = useState<'normal' | 'deep-dive'>('normal');
 
-  const resetSession = () => {
-    setSubject('Biologie');
-    setGrade('10. Klasse');
-    setTeacherHint('');
+  const startNewNormalSession = () => {
     setUnderstandingRatings({});
+    setFilesUploaded(false);
+    setQuestionsFinished(false);
+    setSessionType('normal');
+  };
+
+  const startDeepDiveSession = () => {
+    setUnderstandingRatings({});
+    setQuestionsFinished(false);
+    setSessionType('deep-dive');
   };
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/start" replace />} />
-        <Route
-          path="/start"
-          element={
-            <StartPage
-              subject={subject}
-              setSubject={setSubject}
-              grade={grade}
-              setGrade={setGrade}
-              files={files}
-              teacherHint={teacherHint}
-              setTeacherHint={setTeacherHint}
-            />
-          }
-        />
-        <Route path="/relevanz" element={<RelevancePage subject={subject} grade={grade} teacherHint={teacherHint} />} />
-        <Route
-          path="/verstaendnis"
-          element={
-            <UnderstandingPage
-              subject={subject}
-              grade={grade}
-              ratings={understandingRatings}
-              setRatings={setUnderstandingRatings}
-            />
-          }
-        />
-        <Route
-          path="/sicherheit"
-          element={<ConfidencePage subject={subject} grade={grade} ratings={understandingRatings} onRestart={resetSession} />}
-        />
-        <Route path="*" element={<Navigate to="/start" replace />} />
-      </Routes>
+      <MainLayout filesUploaded={filesUploaded || sessionType === 'deep-dive'} questionsFinished={questionsFinished}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/start" replace />} />
+          <Route path="/start" element={<StartPage files={files} setFiles={setFiles} setFilesUploaded={setFilesUploaded} />} />
+          <Route 
+            path="/session" 
+            element={
+                <StudySessionPage 
+                    ratings={understandingRatings} 
+                    setRatings={setUnderstandingRatings} 
+                    setQuestionsFinished={setQuestionsFinished} 
+                    sessionType={sessionType}
+                />
+            } 
+          />
+          <Route 
+            path="/sicherheit" 
+            element={
+                <ConfidencePage 
+                    ratings={understandingRatings} 
+                    onRestart={startNewNormalSession} 
+                    onDeepDive={startDeepDiveSession}
+                />
+            } 
+          />
+          <Route path="*" element={<Navigate to="/start" replace />} />
+        </Routes>
+      </MainLayout>
     </BrowserRouter>
   );
 }

@@ -25,6 +25,8 @@ const analysisValidator = v.object({
   recommendedNextStep: v.string(),
 });
 
+const aiAnalyticsStatusValidator = v.union(v.literal("success"), v.literal("error"));
+
 type GrantDoc = {
   _id: Id<"accessGrants">;
   expiresAt: number;
@@ -425,5 +427,62 @@ export const storeSessionAnalysis = internalMutation({
       analysis: args.analysis,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const storeAiAnalyticsEvent = internalMutation({
+  args: {
+    traceId: v.string(),
+    sessionId: v.id("studySessions"),
+    scope: v.string(),
+    status: aiAnalyticsStatusValidator,
+    modelId: v.optional(v.string()),
+    fallbackUsed: v.optional(v.boolean()),
+    llmAttempts: v.optional(v.number()),
+    latencyMs: v.number(),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    totalTokens: v.optional(v.number()),
+    promptTokenCount: v.optional(v.number()),
+    candidatesTokenCount: v.optional(v.number()),
+    thoughtsTokenCount: v.optional(v.number()),
+    documentPromptTokens: v.optional(v.number()),
+    textPromptTokens: v.optional(v.number()),
+    finishReason: v.optional(v.string()),
+    totalDocuments: v.optional(v.number()),
+    readyDocuments: v.optional(v.number()),
+    filePartCount: v.optional(v.number()),
+    sourceContextLength: v.optional(v.number()),
+    outputQuestionCount: v.optional(v.number()),
+    errorName: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    errorStackPreview: v.optional(v.string()),
+    metadataJson: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("aiAnalyticsEvents", {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export const getAiAnalyticsForSession = query({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    const limit = Math.max(1, Math.min(200, Math.round(args.limit ?? 50)));
+
+    return ctx.db
+      .query("aiAnalyticsEvents")
+      .withIndex("by_session_createdAt", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(limit);
   },
 });

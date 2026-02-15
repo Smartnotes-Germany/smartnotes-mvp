@@ -4,7 +4,8 @@ import { generateText, NoOutputGeneratedError, Output } from "ai";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
-import { action } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
@@ -320,6 +321,29 @@ type VertexUsageSnapshot = {
   textPromptTokens?: number;
 };
 
+type PersistedAiAnalyticsStatus = "success" | "error";
+
+type PersistedAiAnalyticsPayload = {
+  traceId: string;
+  sessionId: Id<"studySessions">;
+  scope: string;
+  status: PersistedAiAnalyticsStatus;
+  modelId?: string;
+  fallbackUsed?: boolean;
+  llmAttempts?: number;
+  latencyMs: number;
+  usage?: UsageSnapshot;
+  vertexUsage?: VertexUsageSnapshot;
+  finishReason?: string;
+  totalDocuments?: number;
+  readyDocuments?: number;
+  filePartCount?: number;
+  sourceContextLength?: number;
+  outputQuestionCount?: number;
+  error?: ReturnType<typeof extractErrorForLog>;
+  metadata?: Record<string, unknown>;
+};
+
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   if (value.length <= maxChars) {
     return value;
@@ -386,6 +410,31 @@ const mergeUsage = (target: UsageSnapshot, incoming?: UsageSnapshot) => {
   }
   if (incoming.totalTokens !== undefined) {
     target.totalTokens = (target.totalTokens ?? 0) + incoming.totalTokens;
+  }
+};
+
+const mergeVertexUsage = (target: VertexUsageSnapshot, incoming?: VertexUsageSnapshot) => {
+  if (!incoming) {
+    return;
+  }
+
+  if (incoming.promptTokenCount !== undefined) {
+    target.promptTokenCount = (target.promptTokenCount ?? 0) + incoming.promptTokenCount;
+  }
+  if (incoming.candidatesTokenCount !== undefined) {
+    target.candidatesTokenCount = (target.candidatesTokenCount ?? 0) + incoming.candidatesTokenCount;
+  }
+  if (incoming.thoughtsTokenCount !== undefined) {
+    target.thoughtsTokenCount = (target.thoughtsTokenCount ?? 0) + incoming.thoughtsTokenCount;
+  }
+  if (incoming.totalTokenCount !== undefined) {
+    target.totalTokenCount = (target.totalTokenCount ?? 0) + incoming.totalTokenCount;
+  }
+  if (incoming.documentPromptTokens !== undefined) {
+    target.documentPromptTokens = (target.documentPromptTokens ?? 0) + incoming.documentPromptTokens;
+  }
+  if (incoming.textPromptTokens !== undefined) {
+    target.textPromptTokens = (target.textPromptTokens ?? 0) + incoming.textPromptTokens;
   }
 };
 
@@ -642,6 +691,61 @@ const createAiTraceLogger = (scope: string, sessionId: string) => {
     addUsage,
     getUsageTotals: () => ({ ...accumulatedUsage }),
   };
+};
+
+const persistAiAnalyticsEvent = async (
+  ctx: Pick<ActionCtx, "runMutation">,
+  payload: PersistedAiAnalyticsPayload,
+) => {
+  try {
+    const errorRecord = payload.error && typeof payload.error === "object" ? payload.error : undefined;
+
+    await ctx.runMutation(internal.study.storeAiAnalyticsEvent, {
+      traceId: payload.traceId,
+      sessionId: payload.sessionId,
+      scope: payload.scope,
+      status: payload.status,
+      modelId: payload.modelId,
+      fallbackUsed: payload.fallbackUsed,
+      llmAttempts: payload.llmAttempts,
+      latencyMs: payload.latencyMs,
+      inputTokens: payload.usage?.inputTokens,
+      outputTokens: payload.usage?.outputTokens,
+      totalTokens: payload.usage?.totalTokens,
+      promptTokenCount: payload.vertexUsage?.promptTokenCount,
+      candidatesTokenCount: payload.vertexUsage?.candidatesTokenCount,
+      thoughtsTokenCount: payload.vertexUsage?.thoughtsTokenCount,
+      documentPromptTokens: payload.vertexUsage?.documentPromptTokens,
+      textPromptTokens: payload.vertexUsage?.textPromptTokens,
+      finishReason: payload.finishReason,
+      totalDocuments: payload.totalDocuments,
+      readyDocuments: payload.readyDocuments,
+      filePartCount: payload.filePartCount,
+      sourceContextLength: payload.sourceContextLength,
+      outputQuestionCount: payload.outputQuestionCount,
+      errorName:
+        errorRecord && "name" in errorRecord && typeof errorRecord.name === "string"
+          ? errorRecord.name
+          : undefined,
+      errorMessage:
+        errorRecord && "message" in errorRecord && typeof errorRecord.message === "string"
+          ? errorRecord.message
+          : undefined,
+      errorStackPreview:
+        errorRecord && "stack" in errorRecord && typeof errorRecord.stack === "string"
+          ? errorRecord.stack
+          : undefined,
+      metadataJson: payload.metadata ? serializeForLog(payload.metadata, 20_000) : undefined,
+    });
+  } catch (error) {
+    console.warn("[KI-Monitoring]", {
+      event: "analytics_persist_failed",
+      traceId: payload.traceId,
+      scope: payload.scope,
+      sessionId: payload.sessionId,
+      error: extractErrorForLog(error),
+    });
+  }
 };
 
 const parseJsonStringSafely = (value: string): unknown => {
@@ -903,6 +1007,19 @@ export const generateQuiz = action({
   },
   handler: async (ctx, args) => {
     const trace = createAiTraceLogger("generateQuiz", args.sessionId);
+    const analyticsModelId = "gemini-2.5-flash";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let fallbackUsed = false;
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let totalDocuments = 0;
+    let readyDocumentsCount = 0;
+    let filePartCount = 0;
+    let sourceContextLength = 0;
+    let outputQuestionCount: number | undefined;
+    let analyticsError: unknown;
+
+    try {
     const desiredCount = Math.max(3, Math.min(10, Math.floor(args.questionCount ?? 6)));
     const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
 
@@ -923,10 +1040,12 @@ Anforderungen:
     });
 
     const documents = quizContext.documents;
+    totalDocuments = documents.length;
 
     const readyDocuments = documents.filter(
       (document: SessionDocumentInput) => document.extractionStatus === "ready",
     );
+    readyDocumentsCount = readyDocuments.length;
 
     trace.log("info", "documents_loaded", {
       totalDocuments: documents.length,
@@ -987,6 +1106,9 @@ Anforderungen:
       })),
     });
 
+    filePartCount = fileParts.length;
+    sourceContextLength = sourceContext.length;
+
     if (fileParts.length === 0 && !sourceContext) {
       trace.log("error", "no_usable_input");
       throw new Error("Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.");
@@ -1025,6 +1147,8 @@ Anforderungen:
         filePartCount: fileParts.length,
       });
 
+      llmAttempts += 1;
+
       const result = await generateText({
         model: model("gemini-2.5-flash"),
         temperature: 0.3,
@@ -1040,6 +1164,8 @@ Anforderungen:
 
       const resultLog = extractGenerationResultForLog(result);
       trace.addUsage(resultLog.usage);
+      finishReason = resultLog.details.finishReason;
+      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
       trace.log("info", "llm_primary_response", {
         ...resultLog.details,
         outputSummary: summarizeGeneratedQuiz(result.output),
@@ -1069,6 +1195,8 @@ Anforderungen:
         error: extractErrorForLog(error),
       });
 
+      fallbackUsed = true;
+
       try {
         if (sourceContext) {
           trace.log("info", "llm_fallback_request", {
@@ -1078,6 +1206,8 @@ Anforderungen:
             thinkingBudget: 0,
             sourceContextLength: sourceContext.length,
           });
+
+          llmAttempts += 1;
 
           const fallbackResult = await generateText({
             model: model("gemini-2.5-flash"),
@@ -1094,6 +1224,8 @@ Anforderungen:
 
           const fallbackLog = extractGenerationResultForLog(fallbackResult);
           trace.addUsage(fallbackLog.usage);
+          finishReason = fallbackLog.details.finishReason;
+          mergeVertexUsage(vertexUsageTotals, fallbackLog.details.vertexUsage);
           trace.log("info", "llm_fallback_response", {
             ...fallbackLog.details,
             outputSummary: summarizeGeneratedQuiz(fallbackResult.output),
@@ -1118,6 +1250,8 @@ Anforderungen:
             sourceContextLength: 0,
           });
 
+          llmAttempts += 1;
+
           const fallbackResult = await generateText({
             model: model("gemini-2.5-flash"),
             temperature: 0.2,
@@ -1131,6 +1265,8 @@ Anforderungen:
 
           const fallbackLog = extractGenerationResultForLog(fallbackResult);
           trace.addUsage(fallbackLog.usage);
+          finishReason = fallbackLog.details.finishReason;
+          mergeVertexUsage(vertexUsageTotals, fallbackLog.details.vertexUsage);
 
           generated = normalizeQuizGenerationOutput(fallbackResult.output);
 
@@ -1203,9 +1339,35 @@ Anforderungen:
       usageTotals: trace.getUsageTotals(),
     });
 
+    outputQuestionCount = normalizedQuestions.length;
+
     return {
       questionCount: normalizedQuestions.length,
     };
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        scope: "generateQuiz",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        fallbackUsed,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        totalDocuments,
+        readyDocuments: readyDocumentsCount,
+        filePartCount,
+        sourceContextLength,
+        outputQuestionCount,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+      });
+    }
   },
 });
 
@@ -1219,6 +1381,13 @@ export const evaluateAnswer = action({
   },
   handler: async (ctx, args): Promise<AnswerEvaluationResult> => {
     const trace = createAiTraceLogger("evaluateAnswer", args.sessionId);
+    const analyticsModelId = "gemini-2.5-flash";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let analyticsError: unknown;
+
+    try {
 
     trace.log("info", "start", {
       questionId: args.questionId,
@@ -1255,6 +1424,8 @@ export const evaluateAnswer = action({
         thinkingBudget: 0,
       });
 
+      llmAttempts += 1;
+
       const result = await generateText({
         model: model("gemini-2.5-flash"),
         temperature: 0.1,
@@ -1278,6 +1449,8 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
 
       const resultLog = extractGenerationResultForLog(result);
       trace.addUsage(resultLog.usage);
+      finishReason = resultLog.details.finishReason;
+      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
       trace.log("info", "llm_response", {
         ...resultLog.details,
         outputPreview: {
@@ -1333,6 +1506,29 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
       explanation: generated.explanation,
       idealAnswer: generated.idealAnswer,
     };
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        scope: "evaluateAnswer",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          questionId: args.questionId,
+          answerLength: args.userAnswer.length,
+          timeSpentSeconds: args.timeSpentSeconds,
+        },
+      });
+    }
   },
 });
 
@@ -1343,6 +1539,15 @@ export const analyzePerformance = action({
   },
   handler: async (ctx, args) => {
     const trace = createAiTraceLogger("analyzePerformance", args.sessionId);
+    const analyticsModelId = "gemini-2.5-flash";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let responseCount = 0;
+    let usedFallback = false;
+    let analyticsError: unknown;
+
+    try {
 
     trace.log("info", "start");
 
@@ -1356,6 +1561,7 @@ export const analyzePerformance = action({
       currentFocusTopic: session.currentFocusTopic ?? null,
       round: session.round,
     });
+    responseCount = responses.length;
 
     if (responses.length === 0) {
       trace.log("warn", "no_responses_available");
@@ -1374,6 +1580,8 @@ export const analyzePerformance = action({
         maxOutputTokens: 1_500,
         thinkingBudget: 0,
       });
+
+      llmAttempts += 1;
 
       const result = await generateText({
         model: model("gemini-2.5-flash"),
@@ -1396,6 +1604,8 @@ Sei streng, aber konstruktiv.`,
 
       const resultLog = extractGenerationResultForLog(result);
       trace.addUsage(resultLog.usage);
+      finishReason = resultLog.details.finishReason;
+      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
       trace.log("info", "llm_response", {
         ...resultLog.details,
         outputPreview: {
@@ -1422,6 +1632,7 @@ Sei streng, aber konstruktiv.`,
       };
     } catch (error) {
       trace.addUsage(extractUsageFromError(error));
+      usedFallback = true;
       trace.log("warn", "llm_failed_using_fallback", {
         error: extractErrorForLog(error),
         fallbackOverallReadiness: fallback.overallReadiness,
@@ -1442,7 +1653,32 @@ Sei streng, aber konstruktiv.`,
       usageTotals: trace.getUsageTotals(),
     });
 
+    usedFallback = analysis === fallback;
+
     return analysis;
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        scope: "analyzePerformance",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        fallbackUsed: usedFallback,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          responseCount,
+          usedFallback,
+        },
+      });
+    }
   },
 });
 
@@ -1454,6 +1690,18 @@ export const generateTopicDeepDive = action({
   },
   handler: async (ctx, args) => {
     const trace = createAiTraceLogger("generateTopicDeepDive", args.sessionId);
+    const analyticsModelId = "gemini-2.5-flash";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let totalDocuments = 0;
+    let readyDocumentsCount = 0;
+    let filePartCount = 0;
+    let sourceContextLength = 0;
+    let outputQuestionCount: number | undefined;
+    let analyticsError: unknown;
+
+    try {
 
     trace.log("info", "start", {
       topic: args.topic,
@@ -1468,10 +1716,12 @@ export const generateTopicDeepDive = action({
     );
 
     const documents = deepDiveContext.documents;
+    totalDocuments = documents.length;
 
     const readyDocuments = documents.filter(
       (document: SessionDocumentInput) => document.extractionStatus === "ready",
     );
+    readyDocumentsCount = readyDocuments.length;
 
     trace.log("info", "documents_loaded", {
       totalDocuments: documents.length,
@@ -1528,6 +1778,9 @@ export const generateTopicDeepDive = action({
       })),
     });
 
+    filePartCount = fileParts.length;
+    sourceContextLength = sourceContext.length;
+
     if (fileParts.length === 0 && !sourceContext) {
       trace.log("error", "no_usable_input");
       throw new Error("Es konnten keine nutzbaren Inhalte fuer die Vertiefung gelesen werden.");
@@ -1570,6 +1823,8 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         filePartCount: fileParts.length,
       });
 
+      llmAttempts += 1;
+
       const result = await generateText({
         model: model("gemini-2.5-flash"),
         temperature: 0.25,
@@ -1584,6 +1839,8 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
 
       const resultLog = extractGenerationResultForLog(result);
       trace.addUsage(resultLog.usage);
+      finishReason = resultLog.details.finishReason;
+      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
       trace.log("info", "llm_response", {
         ...resultLog.details,
         outputSummary: summarizeGeneratedDeepDive(result.output),
@@ -1645,9 +1902,37 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
       usageTotals: trace.getUsageTotals(),
     });
 
+    outputQuestionCount = deepDiveQuestions.length;
+
     return {
       questionCount: deepDiveQuestions.length,
       topic: args.topic,
     };
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        scope: "generateTopicDeepDive",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        totalDocuments,
+        readyDocuments: readyDocumentsCount,
+        filePartCount,
+        sourceContextLength,
+        outputQuestionCount,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          topic: args.topic,
+        },
+      });
+    }
   },
 });

@@ -91,4 +91,38 @@ export default defineSchema({
   })
     .index("by_session_round", ["sessionId", "round"])
     .index("by_session_round_question", ["sessionId", "round", "questionId"]),
+
+  aiAnalyticsEvents: defineTable({
+    traceId: v.string(),
+    sessionId: v.id("studySessions"),
+    scope: v.string(),
+    status: v.union(v.literal("success"), v.literal("error")),
+    modelId: v.optional(v.string()),
+    fallbackUsed: v.optional(v.boolean()),
+    llmAttempts: v.optional(v.number()),
+    latencyMs: v.number(),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    totalTokens: v.optional(v.number()),
+    promptTokenCount: v.optional(v.number()),
+    candidatesTokenCount: v.optional(v.number()),
+    thoughtsTokenCount: v.optional(v.number()),
+    documentPromptTokens: v.optional(v.number()),
+    textPromptTokens: v.optional(v.number()),
+    finishReason: v.optional(v.string()),
+    totalDocuments: v.optional(v.number()),
+    readyDocuments: v.optional(v.number()),
+    filePartCount: v.optional(v.number()),
+    sourceContextLength: v.optional(v.number()),
+    outputQuestionCount: v.optional(v.number()),
+    errorName: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    errorStackPreview: v.optional(v.string()),
+    metadataJson: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_session_createdAt", ["sessionId", "createdAt"])
+    .index("by_traceId", ["traceId"])
+    .index("by_scope_createdAt", ["scope", "createdAt"])
+    .index("by_status_createdAt", ["status", "createdAt"]),
 });

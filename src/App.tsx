@@ -1,4 +1,4 @@
-import { type Dispatch, type ReactNode, type SetStateAction, useState, useMemo, useEffect } from 'react';
+import { type Dispatch, type ReactNode, type SetStateAction, useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -15,41 +15,57 @@ import {
   Target,
   StopCircle,
   Zap,
-  Smile,
-  Meh,
-  Frown,
   CheckCircle2,
   AlertCircle,
   TrendingUp,
   Clock,
   BookOpen,
-  Sparkles,
+  Keyboard,
+  Timer,
+  ShieldAlert,
+  BarChart,
+  HelpCircle,
+  MessageSquareHeart,
 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useLocation, Link } from 'react-router-dom';
 import logoImage from './assets/images/logo.png';
 import profileImage from './assets/images/profile.jpeg';
 
-// --- Types & Data ---
-
-type QuestionType = 'Offene Frage' | 'Rechenaufgabe' | 'Verständnis' | 'Transfer';
+// --- Types & Logic ---
 
 interface Question {
   id: string;
   topic: string;
-  type: QuestionType;
+  relevance: number;
   text: string;
+  expectedKeywords: string[];
   solution: string;
-  explanation: string;
+  explanationTemplate: (userName: string, userAnswer: string, isCorrect: boolean) => string;
 }
+
+interface UserResponse {
+  questionId: string;
+  topic: string;
+  answer: string;
+  timeSpent: number;
+  changes: number;
+  score: number;
+}
+
+const userName = "Max";
 
 const initialQuestions: Question[] = [
   {
     id: 'q1',
-    topic: 'Sauerstoffmangel',
-    type: 'Offene Frage',
-    text: 'Warum entsteht bei Sauerstoffmangel weniger ATP?',
-    solution: 'Die Atmungskette stoppt ohne Sauerstoff.',
-    explanation: 'Sauerstoff ist notwendig, um Elektronen am Ende der Atmungskette aufzunehmen. Fehlt er, bricht die effiziente Produktion zusammen und die Zelle nutzt die weniger effektive Gärung.'
+    topic: 'Zellatmung',
+    relevance: 0.9,
+    text: 'Welches Molekül ist der finale Elektronenakzeptor in der Atmungskette?',
+    expectedKeywords: ['sauerstoff', 'o2'],
+    solution: 'Sauerstoff (O2)',
+    explanationTemplate: (name, answer, correct) => 
+      correct 
+        ? `Ganz genau, ${name}. Sauerstoff ist am Ende der Kette unverzichtbar, um die Elektronen aufzunehmen.`
+        : `Nein, ${name}, „${answer}“ ist in diesem Fall leider nicht der finale Akzeptor. Es ist der Sauerstoff (O2). Er saugt die Elektronen am Ende quasi auf, damit der Prozess nicht zum Stillstand kommt.`
   },
 ];
 
@@ -57,52 +73,36 @@ const questionPool: Question[] = [
   {
     id: 'q2',
     topic: 'ATP-Bilanz',
-    type: 'Rechnen',
-    text: 'Wie viel ATP liefern 2 Moleküle Glukose?',
-    solution: 'Ca. 60-64 ATP.',
-    explanation: 'Pro Glukose entstehen etwa 30-32 ATP. Bei zwei Molekülen verdoppelt sich der Ertrag.'
+    relevance: 1.0,
+    text: 'Wie viel ATP gewinnt eine Zelle netto pro Glukose nur durch Glykolyse?',
+    expectedKeywords: ['2', 'zwei'],
+    solution: '2 ATP',
+    explanationTemplate: (name, answer, correct) => 
+      correct 
+        ? `Korrekt, ${name}! 2 investiert, 4 raus, macht 2 Gewinn.`
+        : `Nein, ${answer} ATP sind es nicht. Es sind tatsächlich nur 2 ATP netto. Zwar entstehen insgesamt 4, aber da die Zelle am Anfang 2 investieren muss, bleibt am Ende nur ein Gewinn von 2 übrig.`
   },
   {
     id: 'q3',
     topic: 'Stoffwechsel',
-    type: 'Verständnis',
-    text: 'Was ist der Hauptvorteil aerober Prozesse?',
-    solution: 'Vollständiger Abbau und hohe Energieausbeute.',
-    explanation: 'Aerobe Prozesse nutzen Sauerstoff, um Glukose komplett zu zerlegen, was deutlich mehr Energie freisetzt als anaerobe Wege.'
+    relevance: 0.7,
+    text: 'Wann kam das erste iPhone auf den Markt?',
+    expectedKeywords: ['2007'],
+    solution: '2007',
+    explanationTemplate: (name, answer, correct) => 
+      correct 
+        ? `Richtig, ${name}! Im Jahr 2007 hat das iPhone die Smartphone-Welt revolutioniert.`
+        : `Nein, ${answer} war es leider noch nicht. Das erste iPhone kam erst im Jahr 2007 heraus. 2006 war es noch in der Entwicklung.`
   }
 ];
 
-const deepDivePool: Question[] = [
-  {
-    id: 'dd1',
-    topic: 'ATP-Bilanz',
-    type: 'Transfer',
-    text: 'Wie verändert sich die ATP-Bilanz, wenn nur die Glykolyse abläuft?',
-    solution: 'Es entstehen nur 2 ATP netto.',
-    explanation: 'Ohne Citratzyklus und Atmungskette bleibt nur der geringe Ertrag der Glykolyse. Das ist der Grund, warum anaerobes Training so schnell ermüdet.'
-  },
-  {
-    id: 'dd2',
-    topic: 'ATP-Bilanz',
-    type: 'Rechenaufgabe',
-    text: 'Berechne den ATP-Ertrag für 5 Moleküle Pyruvat, die direkt in den Citratzyklus gehen.',
-    solution: 'Etwa 62-75 ATP.',
-    explanation: 'Ein Pyruvat liefert im Citratzyklus und der Atmungskette ca. 12.5 bis 15 ATP. Bei 5 Molekülen multipliziert sich dies entsprechend.'
-  }
-];
-
-const allQuestions = [...initialQuestions, ...questionPool, ...deepDivePool];
-
-type SelfCheckRating = 'sicher' | 'teilweise' | 'unsicher';
-type UnderstandingRatings = Record<string, SelfCheckRating | undefined>;
-
-const selfCheckOptions: Array<{ id: SelfCheckRating; label: string; helper: string; icon: any; color: string }> = [
-  { id: 'unsicher', label: 'Unsicher', helper: 'Lösung zeigen', icon: Frown, color: 'border-red-100 bg-red-50/40 text-red-700 hover:border-red-200' },
-  { id: 'teilweise', label: 'Teilweise', helper: 'Fast da', icon: Meh, color: 'border-amber-100 bg-amber-50/40 text-amber-700 hover:border-amber-200' },
-  { id: 'sicher', label: 'Sicher', helper: 'Verstanden', icon: Smile, color: 'border-emerald-100 bg-emerald-50/40 text-emerald-700 hover:border-emerald-200' },
-];
-
-const ratingToScore: Record<SelfCheckRating, number> = { sicher: 100, teilweise: 60, unsicher: 20 };
+const calculateConfidenceScore = (isCorrect: boolean, time: number, changes: number, skipped: boolean = false) => {
+  if (skipped) return 0;
+  const accuracy = isCorrect ? 1 : 0;
+  const timeScore = Math.max(0, Math.min(1, 1 - (time - 10) / 30));
+  const changePenalty = Math.min(0.3, changes * 0.1);
+  return Math.max(0, (accuracy * 0.6) + (timeScore * 0.3) - (changePenalty));
+};
 
 // --- Components ---
 
@@ -124,38 +124,19 @@ function Sidebar({ filesUploaded, questionsFinished }: { filesUploaded: boolean,
       </div>
 
       <nav className="flex-1 px-3 py-6 space-y-2">
-        <Link
-          to="/dashboard"
-          className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
-            location.pathname === '/dashboard' ? 'bg-accent text-cream shadow-lg' : 'text-ink-secondary hover:bg-cream-light'
-          }`}
-        >
+        <Link to="/dashboard" className="flex items-center gap-3 rounded-xl px-4 py-3 text-ink-secondary hover:bg-cream-light transition-all">
           <LayoutDashboard size={20} />
           <span className="text-[0.9rem] font-semibold">Dashboard</span>
         </Link>
-        
-        <div className="pt-6 pb-2">
-           <h3 className="px-4 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ink-muted">Session</h3>
-        </div>
-        
+        <div className="pt-6 pb-2"><h3 className="px-4 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ink-muted">Session</h3></div>
         {navItems.map((item) => {
           const isActive = location.pathname === item.path || (item.path === '/start' && location.pathname === '/');
           const Icon = item.icon;
           return !item.enabled ? (
-            <div key={item.path} className="flex items-center gap-3 px-4 py-3 text-ink-muted/30 cursor-not-allowed select-none">
-              <Icon size={20} />
-              <span className="text-[0.9rem] font-medium">{item.label}</span>
-            </div>
+            <div key={item.path} className="flex items-center gap-3 px-4 py-3 text-ink-muted/30 cursor-not-allowed select-none"><Icon size={20} /><span className="text-[0.9rem] font-medium">{item.label}</span></div>
           ) : (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${
-                isActive ? 'bg-accent text-cream shadow-lg' : 'text-ink-secondary hover:bg-cream-light'
-              }`}
-            >
-              <Icon size={20} />
-              <span className="text-[0.9rem] font-semibold">{item.label}</span>
+            <Link key={item.path} to={item.path} className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${isActive ? 'bg-accent text-cream shadow-lg' : 'text-ink-secondary hover:bg-cream-light'}`}>
+              <item.icon size={20} /><span className="text-[0.9rem] font-semibold">{item.label}</span>
             </Link>
           );
         })}
@@ -163,14 +144,9 @@ function Sidebar({ filesUploaded, questionsFinished }: { filesUploaded: boolean,
 
       <div className="mt-auto border-t border-cream-border p-4">
         <div className="flex items-center gap-3 px-2 py-3">
-          <div className="h-10 w-10 rounded-full border-2 border-cream-border overflow-hidden shadow-sm shrink-0">
-            <img src={profileImage} alt="Profile" className="h-full w-full object-cover" />
-          </div>
+          <div className="h-10 w-10 rounded-full border-2 border-cream-border overflow-hidden shadow-sm shrink-0"><img src={profileImage} alt="Profile" className="h-full w-full object-cover" /></div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-               <p className="truncate text-[0.85rem] font-bold text-ink leading-tight">Max Mustermann</p>
-               <Settings size={14} className="text-ink-muted cursor-pointer hover:text-accent transition-colors shrink-0" />
-            </div>
+            <div className="flex items-center gap-1.5"><p className="truncate text-[0.85rem] font-bold text-ink leading-tight">Max Mustermann</p><Settings size={14} className="text-ink-muted hover:text-accent cursor-pointer" /></div>
             <p className="truncate text-[0.7rem] text-ink-muted font-medium">Premium Account</p>
           </div>
         </div>
@@ -184,9 +160,11 @@ function MainLayout({ children, filesUploaded, questionsFinished }: { children: 
     <div className="min-h-screen bg-cream text-ink flex">
       <Sidebar filesUploaded={filesUploaded} questionsFinished={questionsFinished} />
       <main className="flex-1 md:ml-64 p-6 md:p-12 lg:p-16 relative flex flex-col items-center">
-        <div className="relative w-full max-w-5xl flex-1 flex flex-col">
-          {children}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-16 top-20 h-80 w-80 rounded-full bg-accent/5 blur-3xl" />
+          <div className="absolute right-0 top-0 h-[30rem] w-[30rem] rounded-full bg-cream-dark/40 blur-3xl" />
         </div>
+        <div className="relative mx-auto w-full max-w-5xl flex-1 flex flex-col">{children}</div>
       </main>
     </div>
   );
@@ -196,294 +174,211 @@ function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], set
   const navigate = useNavigate();
   const [isUploading, setIsUploading] = useState(false);
   const handleUpload = () => { setIsUploading(true); setTimeout(() => { setFilesUploaded(true); navigate('/session'); }, 1000); };
+  const removeFile = (name: string) => setFiles(prev => prev.filter(f => f !== name));
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-16 py-10">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-16 py-10">
       <header className="text-center">
-        <h1 className="editorial-heading text-[3.5rem] tracking-tight">Unterlagen</h1>
-        <p className="mt-3 text-ink-secondary text-lg">Lade deine Dokumente für das Training hoch.</p>
+        <h1 className="text-[3rem] md:text-[4rem] font-bold leading-tight tracking-tight text-ink">Unterlagen</h1>
+        <p className="mt-4 text-ink-secondary text-lg font-medium">Lade deine Dokumente für das Training hoch.</p>
       </header>
 
-      <div className="group relative rounded-[2.5rem] border-2 border-dashed border-cream-border bg-surface-white/40 hover:border-accent/30 transition-all">
-        <div className="flex flex-col items-center justify-center p-20 text-center">
-          <div className="mb-6 text-accent/20"><Upload size={48} /></div>
-          <button className="rounded-full bg-ink px-10 py-4 text-sm font-bold text-cream transition-all hover:scale-105 active:scale-95">Datei auswählen</button>
+      <div className="group relative rounded-[3rem] border-2 border-dashed border-cream-border bg-surface-white/40 hover:border-accent/30 transition-all duration-500">
+        <div className="flex flex-col items-center justify-center p-16 md:p-24 text-center">
+          <div className="mb-8 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-accent/5 text-accent shadow-inner"><Upload size={40} /></div>
+          <h2 className="text-2xl font-bold text-ink tracking-tight">Hier ablegen</h2>
+          <button className="mt-10 flex items-center gap-2 rounded-full border border-cream-border bg-surface-white px-10 py-4 text-[0.95rem] font-bold text-ink shadow-sm transition-all hover:bg-cream-light active:scale-95"><Plus size={18} />Datei auswählen</button>
         </div>
       </div>
 
-      <div className="flex justify-center">
-        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="flex items-center gap-3 rounded-full bg-accent px-12 py-5 text-lg font-bold text-cream shadow-xl transition-all hover:translate-y-[-2px] disabled:opacity-20">
-          {isUploading ? <Loader2 size={24} className="animate-spin" /> : <>Starten <ArrowRight size={22} /></>}
+      {files.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {files.map((file) => (
+            <motion.div key={file} layout className="flex items-center justify-between gap-4 rounded-2xl border border-cream-border bg-surface-white/80 p-5 shadow-sm backdrop-blur-sm">
+              <div className="flex items-center gap-3 overflow-hidden"><FileImage size={20} className="shrink-0 text-accent" /><span className="truncate text-[0.9rem] font-bold text-ink-secondary">{file}</span></div>
+              <button onClick={() => removeFile(file)} className="text-ink-muted hover:text-red-500 transition-colors p-1"><X size={18} /></button>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex justify-center pt-12">
+        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="group flex items-center gap-4 rounded-full bg-accent px-14 py-6 text-[1.15rem] font-bold text-cream shadow-2xl transition-all hover:translate-y-[-4px] active:scale-95 disabled:opacity-30">
+          {isUploading ? <Loader2 size={24} className="animate-spin" /> : <>Training starten<ArrowRight size={26} className="transition-transform group-hover:translate-x-1" /></>}
         </button>
       </div>
     </motion.div>
   );
 }
 
-function StudySessionPage({ 
-  ratings, 
-  setRatings, 
-  setQuestionsFinished,
-  sessionType 
-}: { 
-  ratings: UnderstandingRatings, 
-  setRatings: Dispatch<SetStateAction<UnderstandingRatings>>, 
-  setQuestionsFinished: (v: boolean) => void,
-  sessionType: 'normal' | 'deep-dive'
-}) {
+function StudySessionPage({ userResponses, setUserResponses, setQuestionsFinished }: { userResponses: UserResponse[], setUserResponses: Dispatch<SetStateAction<UserResponse[]>>, setQuestionsFinished: (v: boolean) => void }) {
   const navigate = useNavigate();
-  const [activeQuestions, setActiveQuestions] = useState<Question[]>([]);
+  const [activeQuestions, setActiveQuestions] = useState<Question[]>(initialQuestions);
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [showExplanation, setShowExplanation] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Simulate smart question generation based on type
-    setTimeout(() => {
-        if (sessionType === 'deep-dive') {
-            setActiveQuestions([deepDivePool[0]]);
-        } else {
-            setActiveQuestions(initialQuestions);
-        }
-        setLoading(false);
-    }, 800);
-  }, [sessionType]);
+  const [userInput, setUserInput] = useState('');
+  const [changes, setChanges] = useState(0);
+  const [startTime, setStartTime] = useState(Date.now());
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [isCorrect, setIsCorrect] = useState(false);
 
   const currentTask = activeQuestions[currentIdx];
-  const answeredCount = Object.keys(ratings).length;
-  
-  const currentPhase = useMemo(() => {
-    if (sessionType === 'deep-dive') return "Gezieltes Training: ATP-Bilanzen";
-    if (answeredCount < 2) return "Basis-Check";
-    if (answeredCount < 4) return "Analyse des Verständnisses";
-    return "Vertiefungsphase";
-  }, [answeredCount, sessionType]);
 
-  const handleSelect = (rating: SelfCheckRating) => {
-    setRatings(prev => ({ ...prev, [currentTask.id]: rating }));
-    if (rating === 'unsicher') setShowExplanation(true);
-    else nextQuestion();
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUserInput(e.target.value);
+    setChanges(prev => prev + 1);
+  };
+
+  const handleSkip = () => {
+    const score = calculateConfidenceScore(false, 0, 0, true);
+    setUserResponses(prev => [...prev, { questionId: currentTask.id, topic: currentTask.topic, answer: 'Übersprungen', timeSpent: 0, changes: 0, score }]);
+    setIsCorrect(false);
+    setShowFeedback(true);
+  };
+
+  const handleSubmit = () => {
+    const timeSpent = (Date.now() - startTime) / 1000;
+    const correct = currentTask.expectedKeywords.some(k => userInput.toLowerCase().includes(k.toLowerCase()));
+    const score = calculateConfidenceScore(correct, timeSpent, changes);
+    setUserResponses(prev => [...prev, { questionId: currentTask.id, topic: currentTask.topic, answer: userInput, timeSpent, changes, score }]);
+    setIsCorrect(correct);
+    setShowFeedback(true);
   };
 
   const nextQuestion = () => {
-    setShowExplanation(false);
-    const pool = sessionType === 'deep-dive' ? deepDivePool : questionPool;
-    const available = pool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
+    setShowFeedback(false);
+    setUserInput('');
+    setChanges(0);
+    setStartTime(Date.now());
     
-    setActiveQuestions(prev => [...prev, available[0] || { 
-        id: `gen-${Date.now()}`, 
-        topic: sessionType === 'deep-dive' ? 'ATP-Bilanz' : 'Vertiefung', 
-        text: sessionType === 'deep-dive' ? 'Erkläre einen weiteren Spezialfall der ATP-Bilanz.' : 'Beschreibe ein weiteres Detail des Themas.', 
-        solution: 'Individuell.', 
-        explanation: 'Klasse, dass du dranbleibst!' 
-    }]);
-    setCurrentIdx(prev => prev + 1);
-  };
+    let available = questionPool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
+    available.sort((a, b) => b.relevance - a.relevance);
 
-  if (loading) return (
-    <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-        <Sparkles size={40} className="text-accent animate-pulse" />
-        <p className="text-ink-secondary font-bold uppercase tracking-widest text-sm">Bereite Deep-Dive vor...</p>
-    </div>
-  );
+    if (available.length > 0) {
+      setActiveQuestions(prev => [...prev, available[0]]);
+      setCurrentIdx(prev => prev + 1);
+    } else {
+      setActiveQuestions(prev => [...prev, {
+          id: `gen-${Date.now()}`,
+          topic: 'Wiederholung',
+          relevance: 0.5,
+          text: `Erkläre mir kurz, ${userName}, was du heute als wichtigsten Punkt zur ${currentTask.topic} mitnimmst?`,
+          expectedKeywords: ['relevanz'],
+          solution: 'Individuelle Zusammenfassung',
+          explanationTemplate: (n) => `Tolle Reflexion, ${n}! Genau dieses aktive Abrufen festigt dein Wissen für den Test.`
+      }]);
+      setCurrentIdx(prev => prev + 1);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col py-10">
       <header className="mb-20 space-y-4 text-center">
-        <div className="flex items-center justify-center gap-2">
-           <span className={`text-[0.7rem] font-bold uppercase tracking-[0.2em] animate-pulse ${sessionType === 'deep-dive' ? 'text-emerald-600' : 'text-accent'}`}>
-             {currentPhase}
-           </span>
+        <div className="flex items-center justify-center gap-4 text-accent">
+           <div className="flex items-center gap-2"><Timer size={14} /><span className="text-[0.7rem] font-bold uppercase tracking-widest">Analyse aktiv</span></div>
+           <div className="h-1 w-1 rounded-full bg-cream-border" />
+           <div className="flex items-center gap-2"><CheckCircle2 size={14} /><span className="text-[0.7rem] font-bold uppercase tracking-widest">{userResponses.length} Beantwortet</span></div>
         </div>
-        <div className="h-1.5 w-full bg-cream-dark/20 rounded-full overflow-hidden relative">
-          <motion.div className="h-full bg-accent" animate={{ width: `${Math.min((answeredCount / 6) * 100, 100)}%` }} />
-        </div>
+        <div className="h-1.5 w-full bg-cream-dark/20 rounded-full overflow-hidden relative"><motion.div className="h-full bg-accent" animate={{ width: `${Math.min((userResponses.length / 5) * 100, 100)}%` }} /></div>
       </header>
 
-      <div className="flex-1 flex flex-col relative min-h-[400px]">
+      <div className="flex-1 flex flex-col items-center">
         <AnimatePresence mode="wait">
-          <motion.div key={currentTask.id + (showExplanation ? '-e' : '')} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex-1 flex flex-col">
-            <h2 className="text-[2.5rem] md:text-[3.2rem] font-bold leading-tight tracking-tight text-ink mb-20 text-center">
-              {currentTask.text}
-            </h2>
-
-            <div className="mt-auto">
-              {!showExplanation ? (
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {selfCheckOptions.map((opt) => (
-                    <button key={opt.id} onClick={() => handleSelect(opt.id)} className={`flex flex-col items-center rounded-3xl border-2 p-8 transition-all hover:scale-[1.02] active:scale-95 ${opt.color}`}>
-                      <opt.icon size={28} className="mb-4" />
-                      <span className="text-lg font-bold tracking-tight">{opt.label}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="rounded-[2.5rem] bg-surface-white p-10 shadow-xl border border-cream-border text-center">
-                  <p className="text-xl font-bold mb-4">{currentTask.solution}</p>
-                  <p className="text-ink-secondary leading-relaxed mb-8">{currentTask.explanation}</p>
-                  <button onClick={nextQuestion} className="rounded-full bg-ink px-10 py-4 text-cream font-bold transition-all hover:bg-accent">Weiter</button>
-                </motion.div>
-              )}
-            </div>
-          </motion.div>
+          {!showFeedback ? (
+            <motion.div key={currentTask.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full text-center">
+              <span className="inline-block px-3 py-1 rounded-full bg-accent/5 text-accent text-[0.65rem] font-bold uppercase tracking-widest mb-6">{currentTask.topic}</span>
+              <h2 className="text-[2.2rem] md:text-[2.8rem] font-bold leading-tight tracking-tight text-ink mb-16">{currentTask.text}</h2>
+              <div className="relative max-w-xl mx-auto group mb-12"><input type="text" value={userInput} onChange={handleInputChange} autoFocus placeholder="Deine Antwort..." className="w-full bg-transparent border-b-2 border-cream-border py-4 px-2 text-xl font-medium outline-none focus:border-accent transition-colors text-center" onKeyDown={(e) => e.key === 'Enter' && userInput.length > 0 && handleSubmit()} /></div>
+              <button onClick={handleSkip} className="flex items-center gap-2 mx-auto text-ink-muted hover:text-accent transition-all text-[0.7rem] font-bold uppercase tracking-widest"><HelpCircle size={16} />Weiß ich gerade nicht</button>
+            </motion.div>
+          ) : (
+            <motion.div key="feedback" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-surface-white rounded-[2.5rem] p-10 border border-cream-border shadow-xl text-center">
+              <div className={`mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-6 ${isCorrect ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>{isCorrect ? <CheckCircle2 size={32} /> : <AlertCircle size={32} />}</div>
+              <div className="flex items-center justify-center gap-2 mb-2 text-accent">
+                <MessageSquareHeart size={16} />
+                <p className="text-[0.7rem] font-bold uppercase tracking-widest">{isCorrect ? 'Super!' : 'Klarstellung'}</p>
+              </div>
+              <p className="text-xl font-bold mb-6">{isCorrect ? 'Völlig richtig!' : 'Nicht ganz...'}</p>
+              <div className="bg-cream-light/30 rounded-2xl p-8 text-left mb-8 border border-cream-border/50">
+                <p className="text-[1.1rem] leading-relaxed text-ink-secondary font-medium italic">
+                  „{currentTask.explanationTemplate(userName, userInput, isCorrect)}“
+                </p>
+              </div>
+              <button onClick={nextQuestion} className="w-full rounded-full bg-ink py-4 text-cream font-bold flex items-center justify-center gap-2 hover:bg-accent transition-colors">Nächste Frage <ArrowRight size={18} /></button>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
-      <footer className="mt-20 flex justify-between items-center opacity-40 hover:opacity-100 transition-opacity">
-        <button onClick={() => navigate('/start')} className="text-sm font-bold uppercase tracking-widest">Abbrechen</button>
-        <button onClick={() => { setQuestionsFinished(true); navigate('/sicherheit'); }} className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest"><StopCircle size={16} /> Beenden</button>
-      </footer>
+      <footer className="mt-20 flex justify-center border-t border-cream-border/50 pt-8 w-full"><button onClick={() => navigate('/sicherheit')} className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-ink-muted hover:text-ink transition-colors"><StopCircle size={14} />Session Beenden</button></footer>
     </div>
   );
 }
 
-function ConfidencePage({ 
-  ratings, 
-  onRestart,
-  onDeepDive 
-}: { 
-  ratings: UnderstandingRatings, 
-  onRestart: () => void,
-  onDeepDive: () => void
-}) {
+function ConfidencePage({ userResponses }: { userResponses: UserResponse[] }) {
   const navigate = useNavigate();
-  const answeredIds = Object.keys(ratings);
-  const totalQuestions = answeredIds.length;
-
-  const topicResults = useMemo(() => {
-    const results: Record<string, { total: number, score: number }> = {};
-    answeredIds.forEach(id => {
-      const q = allQuestions.find(aq => aq.id === id) || { topic: 'Allgemein' };
-      const rating = ratings[id];
-      if (!results[q.topic]) results[q.topic] = { total: 0, score: 0 };
-      results[q.topic].total += 1;
-      results[q.topic].score += rating ? ratingToScore[rating] : 0;
+  const analysis = useMemo(() => {
+    const topics: Record<string, { scores: number[], relevance: number }> = {};
+    userResponses.forEach(res => {
+      const q = [...initialQuestions, ...questionPool].find(q => q.id === res.questionId) || { relevance: 0.5 };
+      if (!topics[res.topic]) topics[res.topic] = { scores: [], relevance: q.relevance };
+      topics[res.topic].scores.push(res.score);
     });
-    return Object.entries(results).map(([name, data]) => ({
-      name,
-      percentage: Math.round(data.score / data.total)
-    }));
-  }, [ratings, answeredIds]);
+    return Object.entries(topics).map(([name, data]) => {
+      const avg = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+      let status: 'green' | 'yellow' | 'red' = 'red';
+      if (avg > 0.75) status = 'green'; else if (avg > 0.45) status = 'yellow';
+      return { name, score: Math.round(avg * 100), status, relevance: data.relevance };
+    }).sort((a, b) => a.score - b.score);
+  }, [userResponses]);
 
-  const avgScore = totalQuestions > 0 
-    ? Math.round(topicResults.reduce((acc, curr) => acc + curr.percentage, 0) / topicResults.length) 
-    : 0;
+  const biggestWeakness = analysis[0];
+  const overallProgress = Math.round(analysis.reduce((acc, curr) => acc + curr.score, 0) / (analysis.length || 1));
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12 py-6 w-full">
-      <div className="grid lg:grid-cols-[1fr_2fr] gap-8">
-        <div className="space-y-6">
-          <div className="bg-surface-white rounded-[2.5rem] p-10 border border-cream-border shadow-sm text-center">
-            <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-accent text-cream text-[3rem] font-bold shadow-xl shadow-accent/20">
-              {avgScore}%
-            </div>
-            <h1 className="editorial-heading text-[2.5rem] tracking-tight mb-2">Fertig!</h1>
-            <p className="text-ink-secondary font-medium italic">Dein Ergebnis</p>
-          </div>
+      <header className="grid md:grid-cols-2 gap-8 items-center mb-16">
+        <div className="text-left"><h1 className="text-[3rem] font-bold tracking-tight leading-none mb-4">Ergebnis</h1><p className="text-ink-secondary text-lg font-medium">Deine heutige Lernlücken-Analyse.</p></div>
+        <div className="bg-surface-white rounded-[2.5rem] p-8 border border-cream-border shadow-sm flex items-center justify-between"><div><p className="text-[0.65rem] font-bold uppercase tracking-widest text-accent mb-1">Knowledge Growth</p><p className="text-3xl font-bold text-ink">+{overallProgress}%</p></div><div className="h-16 w-16 rounded-full border-4 border-accent/20 border-t-accent flex items-center justify-center"><TrendingUp size={24} className="text-accent" /></div></div>
+      </header>
 
-          <div className="bg-surface-white rounded-[2.5rem] p-8 border border-cream-border shadow-sm grid grid-cols-2 gap-6">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-accent">
-                <BookOpen size={16} />
-                <span className="text-[0.65rem] font-bold uppercase tracking-widest">Fragen</span>
-              </div>
-              <p className="text-2xl font-bold text-ink">{totalQuestions}</p>
+      {biggestWeakness && (
+        <section className="bg-red-50 border border-red-100 rounded-[2.5rem] p-10 relative overflow-hidden">
+          <div className="absolute right-[-20px] top-[-20px] opacity-10 text-red-600 rotate-12"><ShieldAlert size={200} /></div>
+          <div className="relative z-10"><span className="inline-block px-3 py-1 rounded-full bg-red-600 text-white text-[0.6rem] font-bold uppercase tracking-widest mb-4">Größte Lernlücke</span><h2 className="text-3xl font-bold text-red-900 mb-2">{biggestWeakness.name}</h2><p className="text-red-700 max-w-lg mb-8 font-medium italic">Hey {userName}, hier haben wir gemeinsam den größten Nachholbedarf festgestellt. Wollen wir das gezielt angehen?</p><button onClick={() => navigate('/session')} className="rounded-full bg-red-600 px-8 py-3 text-white font-bold text-sm hover:bg-red-700 transition-all flex items-center gap-2">Deep-Dive starten <Zap size={14} fill="white" /></button></div>
+        </section>
+      )}
+
+      <section className="space-y-6">
+        <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-ink/40 px-2">Themen-Status</h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {analysis.map((topic) => (
+            <div key={topic.name} className={`rounded-[2rem] border-2 p-8 transition-all hover:translate-y-[-4px] ${topic.status === 'green' ? 'bg-emerald-50/30 border-emerald-100' : topic.status === 'yellow' ? 'bg-amber-50/30 border-amber-100' : 'bg-red-50/30 border-red-100'}`}>
+              <div className="flex justify-between items-start mb-6"><div className={`p-3 rounded-2xl ${topic.status === 'green' ? 'bg-emerald-100 text-emerald-600' : topic.status === 'yellow' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>{topic.status === 'green' ? <CheckCircle2 size={20} /> : topic.status === 'yellow' ? <BarChart size={20} /> : <AlertCircle size={20} />}</div><span className={`text-2xl font-bold ${topic.status === 'green' ? 'text-emerald-700' : topic.status === 'yellow' ? 'text-amber-700' : 'text-red-700'}`}>{topic.score}%</span></div>
+              <p className="font-bold text-ink text-lg tracking-tight mb-1">{topic.name}</p>
             </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-accent">
-                <Clock size={16} />
-                <span className="text-[0.65rem] font-bold uppercase tracking-widest">Dauer</span>
-              </div>
-              <p className="text-2xl font-bold text-ink">~4m</p>
-            </div>
-          </div>
+          ))}
         </div>
+      </section>
 
-        <div className="space-y-6">
-          <div className="bg-surface-white rounded-[2.5rem] p-8 border border-cream-border shadow-sm">
-            <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-ink/40 mb-6 px-2">Themen-Analyse</h2>
-            <div className="grid sm:grid-cols-2 gap-4">
-              {topicResults.map((topic) => (
-                <div key={topic.name} className="bg-cream-light/30 rounded-2xl p-5 border border-cream-border/50">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${topic.percentage >= 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {topic.percentage >= 80 ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                    </div>
-                    <span className="text-xl font-bold text-accent">{topic.percentage}%</span>
-                  </div>
-                  <p className="font-bold text-ink tracking-tight mb-1">{topic.name}</p>
-                  <p className="text-[0.7rem] text-ink-secondary font-bold uppercase tracking-wider">
-                    {topic.percentage >= 80 ? 'Sicher' : 'Wiederholen'}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-ink rounded-[2.5rem] p-8 text-cream shadow-2xl relative overflow-hidden group">
-            <div className="absolute -right-10 -bottom-10 h-40 w-40 rounded-full bg-accent/20 blur-3xl group-hover:bg-accent/30 transition-all" />
-            <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-cream/40 mb-4">KI-Empfehlung</h2>
-            <p className="text-[1.1rem] font-bold leading-snug mb-6">
-              Soll ich für dich neue Fragen zu <span className="text-accent underline underline-offset-4 decoration-2">ATP-Bilanzen</span> heraussuchen? Ich nutze dafür deine Notizen und Online-Quellen.
-            </p>
-            <button onClick={onDeepDive} className="relative z-10 w-full rounded-full bg-cream py-4 text-ink font-bold transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2">
-              <Zap size={18} fill="currentColor" />
-              Deep-Dive starten
-            </button>
-          </div>
-        </div>
-      </div>
+      <div className="flex justify-center pt-8"><button onClick={() => navigate('/start')} className="text-[0.7rem] font-bold text-ink-muted uppercase tracking-[0.2em] hover:text-ink transition-colors">Neue Session</button></div>
     </motion.div>
   );
 }
 
 function App() {
   const [files, setFiles] = useState(['Bio.pdf']);
-  const [understandingRatings, setUnderstandingRatings] = useState<UnderstandingRatings>({});
+  const [userResponses, setUserResponses] = useState<UserResponse[]>([]);
   const [filesUploaded, setFilesUploaded] = useState(false);
   const [questionsFinished, setQuestionsFinished] = useState(false);
-  const [sessionType, setSessionType] = useState<'normal' | 'deep-dive'>('normal');
-
-  const startNewNormalSession = () => {
-    setUnderstandingRatings({});
-    setFilesUploaded(false);
-    setQuestionsFinished(false);
-    setSessionType('normal');
-  };
-
-  const startDeepDiveSession = () => {
-    setUnderstandingRatings({});
-    setQuestionsFinished(false);
-    setSessionType('deep-dive');
-  };
 
   return (
     <BrowserRouter>
-      <MainLayout filesUploaded={filesUploaded || sessionType === 'deep-dive'} questionsFinished={questionsFinished}>
+      <MainLayout filesUploaded={filesUploaded} questionsFinished={questionsFinished}>
         <Routes>
           <Route path="/" element={<Navigate to="/start" replace />} />
           <Route path="/start" element={<StartPage files={files} setFiles={setFiles} setFilesUploaded={setFilesUploaded} />} />
-          <Route 
-            path="/session" 
-            element={
-                <StudySessionPage 
-                    ratings={understandingRatings} 
-                    setRatings={setUnderstandingRatings} 
-                    setQuestionsFinished={setQuestionsFinished} 
-                    sessionType={sessionType}
-                />
-            } 
-          />
-          <Route 
-            path="/sicherheit" 
-            element={
-                <ConfidencePage 
-                    ratings={understandingRatings} 
-                    onRestart={startNewNormalSession} 
-                    onDeepDive={startDeepDiveSession}
-                />
-            } 
-          />
+          <Route path="/session" element={<StudySessionPage userResponses={userResponses} setUserResponses={setUserResponses} setQuestionsFinished={setQuestionsFinished} />} />
+          <Route path="/sicherheit" element={<ConfidencePage userResponses={userResponses} />} />
           <Route path="*" element={<Navigate to="/start" replace />} />
         </Routes>
       </MainLayout>

@@ -13,10 +13,10 @@
   --radius-2xl: 1rem;
 
   /* Warm cream palette inspired by the Smartnotes landing page */
-  --color-cream: #f0ebe3;
-  --color-cream-light: #f5f1eb;
-  --color-cream-dark: #e8e2d8;
-  --color-cream-border: #ddd6cb;
+  --color-cream: #f5f5f0;
+  --color-cream-light: #fbfbf8;
+  --color-cream-dark: #ebebe5;
+  --color-cream-border: #e0e0d6;
 
   /* Deep blue accent */
   --color-accent: #0b617e;

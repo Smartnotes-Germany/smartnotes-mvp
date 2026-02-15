@@ -11,6 +11,14 @@ import { v } from "convex/values";
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 
+const vertexProviderOptions = {
+  google: {
+    thinkingConfig: {
+      thinkingBudget: 0,
+    },
+  },
+} as const;
+
 const plainTextExtensions = new Set(["txt", "md", "markdown", "csv", "json", "yaml", "yml"]);
 const vertexNativeFileExtensions = new Set(["pdf", "ppt", "pptx", "doc", "docx"]);
 const vertexNativeMediaTypes = new Set([
@@ -303,6 +311,15 @@ type UsageSnapshot = {
   totalTokens?: number;
 };
 
+type VertexUsageSnapshot = {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
+  totalTokenCount?: number;
+  documentPromptTokens?: number;
+  textPromptTokens?: number;
+};
+
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   if (value.length <= maxChars) {
     return value;
@@ -456,6 +473,64 @@ const extractUsageFromError = (error: unknown) => {
   return extractUsage(record.totalUsage ?? record.usage);
 };
 
+const extractVertexUsage = (providerMetadata: unknown): VertexUsageSnapshot | undefined => {
+  if (typeof providerMetadata !== "object" || providerMetadata === null) {
+    return undefined;
+  }
+
+  const providerRecord = providerMetadata as Record<string, unknown>;
+  const vertexRecord =
+    typeof providerRecord.vertex === "object" && providerRecord.vertex !== null
+      ? (providerRecord.vertex as Record<string, unknown>)
+      : null;
+  if (!vertexRecord) {
+    return undefined;
+  }
+
+  const usageMetadata =
+    typeof vertexRecord.usageMetadata === "object" && vertexRecord.usageMetadata !== null
+      ? (vertexRecord.usageMetadata as Record<string, unknown>)
+      : null;
+  if (!usageMetadata) {
+    return undefined;
+  }
+
+  const promptTokensDetails = Array.isArray(usageMetadata.promptTokensDetails)
+    ? usageMetadata.promptTokensDetails
+    : [];
+
+  let documentPromptTokens = 0;
+  let textPromptTokens = 0;
+
+  for (const entry of promptTokensDetails) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const detail = entry as Record<string, unknown>;
+    const modality = toTrimmedString(detail.modality).toUpperCase();
+    const tokenCount = toFiniteNumber(detail.tokenCount) ?? 0;
+
+    if (modality === "DOCUMENT") {
+      documentPromptTokens += tokenCount;
+    }
+    if (modality === "TEXT") {
+      textPromptTokens += tokenCount;
+    }
+  }
+
+  const snapshot: VertexUsageSnapshot = {
+    promptTokenCount: toFiniteNumber(usageMetadata.promptTokenCount),
+    candidatesTokenCount: toFiniteNumber(usageMetadata.candidatesTokenCount),
+    thoughtsTokenCount: toFiniteNumber(usageMetadata.thoughtsTokenCount),
+    totalTokenCount: toFiniteNumber(usageMetadata.totalTokenCount),
+    documentPromptTokens,
+    textPromptTokens,
+  };
+
+  const hasValues = Object.values(snapshot).some((value) => value !== undefined && value !== 0);
+  return hasValues ? snapshot : undefined;
+};
+
 const extractGenerationResultForLog = (result: unknown) => {
   if (typeof result !== "object" || result === null) {
     return {
@@ -468,6 +543,7 @@ const extractGenerationResultForLog = (result: unknown) => {
 
   const record = result as Record<string, unknown>;
   const usage = extractUsage(record.totalUsage ?? record.usage);
+  const vertexUsage = extractVertexUsage(record.providerMetadata);
 
   return {
     usage,
@@ -477,6 +553,7 @@ const extractGenerationResultForLog = (result: unknown) => {
       rawUsagePreview: serializeForLog(record.totalUsage ?? record.usage),
       warningsPreview: serializeForLog(record.warnings),
       providerMetadataPreview: serializeForLog(record.providerMetadata),
+      vertexUsage,
       response: extractResponseForLog(record.response),
       stepsCount: Array.isArray(record.steps) ? record.steps.length : undefined,
     },
@@ -943,6 +1020,7 @@ Anforderungen:
         strategy: "structured_messages",
         temperature: 0.3,
         maxOutputTokens: 2_000,
+        thinkingBudget: 0,
         sourceContextLength: sourceContext.length,
         filePartCount: fileParts.length,
       });
@@ -951,6 +1029,7 @@ Anforderungen:
         model: model("gemini-2.5-flash"),
         temperature: 0.3,
         maxOutputTokens: 2_000,
+        providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: quizGenerationSchema,
         }),
@@ -965,6 +1044,15 @@ Anforderungen:
         ...resultLog.details,
         outputSummary: summarizeGeneratedQuiz(result.output),
       });
+
+      const primaryDocumentTokens = resultLog.details.vertexUsage?.documentPromptTokens ?? 0;
+      if (fileParts.length > 0 && primaryDocumentTokens <= 0) {
+        trace.log("warn", "no_document_tokens_detected", {
+          stage: "primary",
+          filePartCount: fileParts.length,
+          vertexUsage: resultLog.details.vertexUsage,
+        });
+      }
 
       generated = result.output;
     } catch (error) {
@@ -987,6 +1075,7 @@ Anforderungen:
             strategy: "structured_prompt",
             temperature: 0.2,
             maxOutputTokens: 2_000,
+            thinkingBudget: 0,
             sourceContextLength: sourceContext.length,
           });
 
@@ -994,6 +1083,7 @@ Anforderungen:
             model: model("gemini-2.5-flash"),
             temperature: 0.2,
             maxOutputTokens: 2_000,
+            providerOptions: vertexProviderOptions,
             output: Output.object({
               schema: quizGenerationSchema,
             }),
@@ -1009,12 +1099,22 @@ Anforderungen:
             outputSummary: summarizeGeneratedQuiz(fallbackResult.output),
           });
 
+          const fallbackDocumentTokens = fallbackLog.details.vertexUsage?.documentPromptTokens ?? 0;
+          if (fileParts.length > 0 && fallbackDocumentTokens <= 0) {
+            trace.log("warn", "no_document_tokens_detected", {
+              stage: "fallback_structured",
+              filePartCount: fileParts.length,
+              vertexUsage: fallbackLog.details.vertexUsage,
+            });
+          }
+
           generated = fallbackResult.output;
         } else {
           trace.log("info", "llm_fallback_request", {
             strategy: "json_messages",
             temperature: 0.2,
             maxOutputTokens: 2_200,
+            thinkingBudget: 0,
             sourceContextLength: 0,
           });
 
@@ -1022,6 +1122,7 @@ Anforderungen:
             model: model("gemini-2.5-flash"),
             temperature: 0.2,
             maxOutputTokens: 2_200,
+            providerOptions: vertexProviderOptions,
             output: Output.json(),
             system:
               "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {\"sourceSummary\": string, \"topics\": string[], \"questions\": [{\"topic\": string, \"prompt\": string, \"idealAnswer\": string, \"explanationHint\": string}]}. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder \"frage\", \"korrekte_antwort\" und \"hilfe_falsche_antwort\".",
@@ -1038,6 +1139,15 @@ Anforderungen:
             rawOutputPreview: serializeForLog(fallbackResult.output),
             normalizedOutputSummary: summarizeGeneratedQuiz(generated),
           });
+
+          const fallbackDocumentTokens = fallbackLog.details.vertexUsage?.documentPromptTokens ?? 0;
+          if (fileParts.length > 0 && fallbackDocumentTokens <= 0) {
+            trace.log("warn", "no_document_tokens_detected", {
+              stage: "fallback_json",
+              filePartCount: fileParts.length,
+              vertexUsage: fallbackLog.details.vertexUsage,
+            });
+          }
 
           if (!generated) {
             trace.log("error", "llm_fallback_normalization_failed", {
@@ -1142,12 +1252,14 @@ export const evaluateAnswer = action({
         modelId: "gemini-2.5-flash",
         temperature: 0.1,
         maxOutputTokens: 800,
+        thinkingBudget: 0,
       });
 
       const result = await generateText({
         model: model("gemini-2.5-flash"),
         temperature: 0.1,
         maxOutputTokens: 800,
+        providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: answerEvaluationSchema,
         }),
@@ -1260,12 +1372,14 @@ export const analyzePerformance = action({
         modelId: "gemini-2.5-flash",
         temperature: 0.2,
         maxOutputTokens: 1_500,
+        thinkingBudget: 0,
       });
 
       const result = await generateText({
         model: model("gemini-2.5-flash"),
         temperature: 0.2,
         maxOutputTokens: 1_500,
+        providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: analysisSchema,
         }),
@@ -1451,6 +1565,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
       trace.log("info", "llm_request", {
         temperature: 0.25,
         maxOutputTokens: 1_700,
+        thinkingBudget: 0,
         sourceContextLength: sourceContext.length,
         filePartCount: fileParts.length,
       });
@@ -1459,6 +1574,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         model: model("gemini-2.5-flash"),
         temperature: 0.25,
         maxOutputTokens: 1_700,
+        providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: deepDiveSchema,
         }),
@@ -1472,6 +1588,14 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         ...resultLog.details,
         outputSummary: summarizeGeneratedDeepDive(result.output),
       });
+
+      const documentTokens = resultLog.details.vertexUsage?.documentPromptTokens ?? 0;
+      if (fileParts.length > 0 && documentTokens <= 0) {
+        trace.log("warn", "no_document_tokens_detected", {
+          filePartCount: fileParts.length,
+          vertexUsage: resultLog.details.vertexUsage,
+        });
+      }
 
       generated = result.output;
     } catch (error) {

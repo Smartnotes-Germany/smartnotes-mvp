@@ -175,7 +175,7 @@ function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], set
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-0 flex-col gap-6 py-4">
       <header className="space-y-2 text-center">
         <h1 className="text-[2.4rem] md:text-[3rem] font-bold leading-tight tracking-tight text-ink">Unterlagen</h1>
-        <p className="text-base font-medium text-ink-secondary md:text-lg">Lade deine Dokumente für das Training hoch.</p>
+        <p className="text-base font-medium text-ink-secondary md:text-lg">Lade deine Dokumente für deine Testvorbereitung hoch.</p>
       </header>
 
       <div className="group relative rounded-[3rem] border-2 border-dashed border-cream-border bg-surface-white/40 hover:border-accent/30 transition-all duration-500">
@@ -330,32 +330,63 @@ function ConfidencePage({ userResponses }: { userResponses: UserResponse[] }) {
   const overallProgress = Math.round(analysis.reduce((acc, curr) => acc + curr.score, 0) / (analysis.length || 1));
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12 py-6 w-full">
-      <header className="grid md:grid-cols-2 gap-8 items-center mb-16">
-        <div className="text-left"><h1 className="text-[3rem] font-bold tracking-tight leading-none mb-4">Ergebnis</h1><p className="text-ink-secondary text-lg font-medium">Deine heutige Lernlücken-Analyse.</p></div>
-        <div className="bg-surface-white rounded-[2.5rem] p-8 border border-cream-border shadow-sm flex items-center justify-between"><div><p className="text-[0.65rem] font-bold uppercase tracking-widest text-accent mb-1">Knowledge Growth</p><p className="text-3xl font-bold text-ink">+{overallProgress}%</p></div><div className="h-16 w-16 rounded-full border-4 border-accent/20 border-t-accent flex items-center justify-center"><TrendingUp size={24} className="text-accent" /></div></div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full w-full min-h-0 flex-col gap-5 py-2">
+      <header className="grid items-center gap-4 md:grid-cols-2">
+        <div className="text-left">
+          <h1 className="mb-2 text-[2.4rem] font-bold leading-none tracking-tight">Ergebnis</h1>
+          <p className="text-base font-medium text-ink-secondary">Deine heutige Lernlücken-Analyse.</p>
+        </div>
+        <div className="flex items-center justify-between rounded-[2rem] border border-cream-border bg-surface-white px-6 py-5 shadow-sm">
+          <div>
+            <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-accent">Knowledge Growth</p>
+            <p className="text-2xl font-bold text-ink">+{overallProgress}%</p>
+          </div>
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border-4 border-accent/20 border-t-accent">
+            <TrendingUp size={22} className="text-accent" />
+          </div>
+        </div>
       </header>
 
-      {biggestWeakness && (
-        <section className="bg-red-50 border border-red-100 rounded-[2.5rem] p-10 relative overflow-hidden">
-          <div className="absolute -right-5 -top-5 opacity-10 text-red-600 rotate-12"><ShieldAlert size={200} /></div>
-          <div className="relative z-10"><span className="inline-block px-3 py-1 rounded-full bg-red-600 text-white text-[0.6rem] font-bold uppercase tracking-widest mb-4">Größte Lernlücke</span><h2 className="text-3xl font-bold text-red-900 mb-2">{biggestWeakness.name}</h2><p className="text-red-700 max-w-lg mb-8 font-medium italic">Hey {userName}, hier haben wir gemeinsam den größten Nachholbedarf festgestellt. Wollen wir das gezielt angehen?</p><button onClick={() => navigate('/session')} className="rounded-full bg-red-600 px-8 py-3 text-white font-bold text-sm hover:bg-red-700 transition-all flex items-center gap-2">Deep-Dive starten <Zap size={14} fill="white" /></button></div>
-        </section>
-      )}
-
-      <section className="space-y-6">
-        <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-ink/40 px-2">Themen-Status</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {analysis.map((topic) => (
-            <div key={topic.name} className={`rounded-4xl border-2 p-8 transition-all hover:-translate-y-1 ${topic.status === 'green' ? 'bg-emerald-50/30 border-emerald-100' : topic.status === 'yellow' ? 'bg-amber-50/30 border-amber-100' : 'bg-red-50/30 border-red-100'}`}>
-              <div className="flex justify-between items-start mb-6"><div className={`p-3 rounded-2xl ${topic.status === 'green' ? 'bg-emerald-100 text-emerald-600' : topic.status === 'yellow' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>{topic.status === 'green' ? <CheckCircle2 size={20} /> : topic.status === 'yellow' ? <BarChart size={20} /> : <AlertCircle size={20} />}</div><span className={`text-2xl font-bold ${topic.status === 'green' ? 'text-emerald-700' : topic.status === 'yellow' ? 'text-amber-700' : 'text-red-700'}`}>{topic.score}%</span></div>
-              <p className="font-bold text-ink text-lg tracking-tight mb-1">{topic.name}</p>
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1.2fr_1.8fr]">
+        {biggestWeakness && (
+          <section className="relative overflow-hidden rounded-[2rem] border border-red-100 bg-red-50 p-6">
+            <div className="absolute -right-8 -top-8 rotate-12 text-red-600 opacity-10"><ShieldAlert size={150} /></div>
+            <div className="relative z-10">
+              <span className="mb-3 inline-block rounded-full bg-red-600 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-widest text-white">Größte Lernlücke</span>
+              <h2 className="mb-2 text-2xl font-bold text-red-900">{biggestWeakness.name}</h2>
+              <p className="mb-5 max-w-md text-sm font-medium italic text-red-700">Hey {userName}, hier haben wir gemeinsam den größten Nachholbedarf festgestellt.</p>
+              <button onClick={() => navigate('/session')} className="inline-flex items-center gap-2 rounded-full bg-red-600 px-6 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition-all hover:bg-red-700">
+                Deep-Dive starten
+                <Zap size={14} fill="white" />
+              </button>
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
+        )}
 
-      <div className="flex justify-center pt-8"><button onClick={() => navigate('/start')} className="text-[0.7rem] font-bold text-ink-muted uppercase tracking-[0.2em] hover:text-ink transition-colors">Neue Session</button></div>
+        <section className="flex min-h-0 flex-col rounded-[2rem] border border-cream-border bg-surface-white/70 p-5">
+          <h2 className="mb-4 px-1 text-[0.72rem] font-bold uppercase tracking-widest text-ink/40">Themen-Status</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {analysis.map((topic) => (
+              <div key={topic.name} className={`rounded-3xl border p-4 transition-all ${topic.status === 'green' ? 'border-emerald-100 bg-emerald-50/30' : topic.status === 'yellow' ? 'border-amber-100 bg-amber-50/30' : 'border-red-100 bg-red-50/30'}`}>
+                <div className="mb-3 flex items-start justify-between">
+                  <div className={`rounded-xl p-2.5 ${topic.status === 'green' ? 'bg-emerald-100 text-emerald-600' : topic.status === 'yellow' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
+                    {topic.status === 'green' ? <CheckCircle2 size={18} /> : topic.status === 'yellow' ? <BarChart size={18} /> : <AlertCircle size={18} />}
+                  </div>
+                  <span className={`text-xl font-bold ${topic.status === 'green' ? 'text-emerald-700' : topic.status === 'yellow' ? 'text-amber-700' : 'text-red-700'}`}>{topic.score}%</span>
+                </div>
+                <p className="text-base font-bold tracking-tight text-ink">{topic.name}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="flex justify-center pt-1">
+        <button onClick={() => navigate('/start')} className="group inline-flex items-center gap-2 rounded-full bg-accent px-8 py-3 text-sm font-bold uppercase tracking-[0.12em] text-cream shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl active:scale-95">
+          Neue Session starten
+          <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />
+        </button>
+      </div>
     </motion.div>
   );
 }

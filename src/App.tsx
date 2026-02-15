@@ -1,18 +1,13 @@
 import { type Dispatch, type ReactNode, type SetStateAction, useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft,
   ArrowRight,
-  FileImage,
   Loader2,
   Upload,
   LayoutDashboard,
   Files,
   BarChart3,
   Settings,
-  Plus,
-  X,
-  Target,
   StopCircle,
   Zap,
   Smile,
@@ -20,10 +15,10 @@ import {
   Frown,
   CheckCircle2,
   AlertCircle,
-  TrendingUp,
   Clock,
   BookOpen,
   Sparkles,
+  type LucideIcon,
 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useLocation, Link } from 'react-router-dom';
 import logoImage from './assets/images/logo.png';
@@ -57,7 +52,7 @@ const questionPool: Question[] = [
   {
     id: 'q2',
     topic: 'ATP-Bilanz',
-    type: 'Rechnen',
+    type: 'Rechenaufgabe',
     text: 'Wie viel ATP liefern 2 Moleküle Glukose?',
     solution: 'Ca. 60-64 ATP.',
     explanation: 'Pro Glukose entstehen etwa 30-32 ATP. Bei zwei Molekülen verdoppelt sich der Ertrag.'
@@ -96,7 +91,7 @@ const allQuestions = [...initialQuestions, ...questionPool, ...deepDivePool];
 type SelfCheckRating = 'sicher' | 'teilweise' | 'unsicher';
 type UnderstandingRatings = Record<string, SelfCheckRating | undefined>;
 
-const selfCheckOptions: Array<{ id: SelfCheckRating; label: string; helper: string; icon: any; color: string }> = [
+const selfCheckOptions: Array<{ id: SelfCheckRating; label: string; helper: string; icon: LucideIcon; color: string }> = [
   { id: 'unsicher', label: 'Unsicher', helper: 'Lösung zeigen', icon: Frown, color: 'border-red-100 bg-red-50/40 text-red-700 hover:border-red-200' },
   { id: 'teilweise', label: 'Teilweise', helper: 'Fast da', icon: Meh, color: 'border-amber-100 bg-amber-50/40 text-amber-700 hover:border-amber-200' },
   { id: 'sicher', label: 'Sicher', helper: 'Verstanden', icon: Smile, color: 'border-emerald-100 bg-emerald-50/40 text-emerald-700 hover:border-emerald-200' },
@@ -133,11 +128,11 @@ function Sidebar({ filesUploaded, questionsFinished }: { filesUploaded: boolean,
           <LayoutDashboard size={20} />
           <span className="text-[0.9rem] font-semibold">Dashboard</span>
         </Link>
-        
+
         <div className="pt-6 pb-2">
            <h3 className="px-4 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ink-muted">Session</h3>
         </div>
-        
+
         {navItems.map((item) => {
           const isActive = location.pathname === item.path || (item.path === '/start' && location.pathname === '/');
           const Icon = item.icon;
@@ -192,7 +187,7 @@ function MainLayout({ children, filesUploaded, questionsFinished }: { children: 
   );
 }
 
-function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], setFiles: Dispatch<SetStateAction<string[]>>, setFilesUploaded: (v: boolean) => void }) {
+function StartPage({ files, setFilesUploaded }: { files: string[], setFilesUploaded: (v: boolean) => void }) {
   const navigate = useNavigate();
   const [isUploading, setIsUploading] = useState(false);
   const handleUpload = () => { setIsUploading(true); setTimeout(() => { setFilesUploaded(true); navigate('/session'); }, 1000); };
@@ -220,14 +215,14 @@ function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], set
   );
 }
 
-function StudySessionPage({ 
-  ratings, 
-  setRatings, 
+function StudySessionPage({
+  ratings,
+  setRatings,
   setQuestionsFinished,
-  sessionType 
-}: { 
-  ratings: UnderstandingRatings, 
-  setRatings: Dispatch<SetStateAction<UnderstandingRatings>>, 
+  sessionType
+}: {
+  ratings: UnderstandingRatings,
+  setRatings: Dispatch<SetStateAction<UnderstandingRatings>>,
   setQuestionsFinished: (v: boolean) => void,
   sessionType: 'normal' | 'deep-dive'
 }) {
@@ -251,7 +246,7 @@ function StudySessionPage({
 
   const currentTask = activeQuestions[currentIdx];
   const answeredCount = Object.keys(ratings).length;
-  
+
   const currentPhase = useMemo(() => {
     if (sessionType === 'deep-dive') return "Gezieltes Training: ATP-Bilanzen";
     if (answeredCount < 2) return "Basis-Check";
@@ -269,13 +264,13 @@ function StudySessionPage({
     setShowExplanation(false);
     const pool = sessionType === 'deep-dive' ? deepDivePool : questionPool;
     const available = pool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
-    
-    setActiveQuestions(prev => [...prev, available[0] || { 
-        id: `gen-${Date.now()}`, 
-        topic: sessionType === 'deep-dive' ? 'ATP-Bilanz' : 'Vertiefung', 
-        text: sessionType === 'deep-dive' ? 'Erkläre einen weiteren Spezialfall der ATP-Bilanz.' : 'Beschreibe ein weiteres Detail des Themas.', 
-        solution: 'Individuell.', 
-        explanation: 'Klasse, dass du dranbleibst!' 
+
+    setActiveQuestions(prev => [...prev, available[0] || {
+        id: `gen-${Date.now()}`,
+        topic: sessionType === 'deep-dive' ? 'ATP-Bilanz' : 'Vertiefung',
+        text: sessionType === 'deep-dive' ? 'Erkläre einen weiteren Spezialfall der ATP-Bilanz.' : 'Beschreibe ein weiteres Detail des Themas.',
+        solution: 'Individuell.',
+        explanation: 'Klasse, dass du dranbleibst!'
     }]);
     setCurrentIdx(prev => prev + 1);
   };
@@ -337,12 +332,12 @@ function StudySessionPage({
   );
 }
 
-function ConfidencePage({ 
-  ratings, 
+function ConfidencePage({
+  ratings,
   onRestart,
-  onDeepDive 
-}: { 
-  ratings: UnderstandingRatings, 
+  onDeepDive
+}: {
+  ratings: UnderstandingRatings,
   onRestart: () => void,
   onDeepDive: () => void
 }) {
@@ -365,8 +360,8 @@ function ConfidencePage({
     }));
   }, [ratings, answeredIds]);
 
-  const avgScore = totalQuestions > 0 
-    ? Math.round(topicResults.reduce((acc, curr) => acc + curr.percentage, 0) / topicResults.length) 
+  const avgScore = totalQuestions > 0
+    ? Math.round(topicResults.reduce((acc, curr) => acc + curr.percentage, 0) / topicResults.length)
     : 0;
 
   return (
@@ -430,6 +425,15 @@ function ConfidencePage({
               <Zap size={18} fill="currentColor" />
               Deep-Dive starten
             </button>
+            <button
+              onClick={() => {
+                onRestart();
+                navigate('/start');
+              }}
+              className="relative z-10 mt-3 w-full rounded-full border border-cream/20 py-3 text-cream font-bold transition-all hover:border-cream/40"
+            >
+              Neu starten
+            </button>
           </div>
         </div>
       </div>
@@ -438,7 +442,7 @@ function ConfidencePage({
 }
 
 function App() {
-  const [files, setFiles] = useState(['Bio.pdf']);
+  const [files] = useState(['Bio.pdf']);
   const [understandingRatings, setUnderstandingRatings] = useState<UnderstandingRatings>({});
   const [filesUploaded, setFilesUploaded] = useState(false);
   const [questionsFinished, setQuestionsFinished] = useState(false);
@@ -462,27 +466,27 @@ function App() {
       <MainLayout filesUploaded={filesUploaded || sessionType === 'deep-dive'} questionsFinished={questionsFinished}>
         <Routes>
           <Route path="/" element={<Navigate to="/start" replace />} />
-          <Route path="/start" element={<StartPage files={files} setFiles={setFiles} setFilesUploaded={setFilesUploaded} />} />
-          <Route 
-            path="/session" 
+          <Route path="/start" element={<StartPage files={files} setFilesUploaded={setFilesUploaded} />} />
+          <Route
+            path="/session"
             element={
-                <StudySessionPage 
-                    ratings={understandingRatings} 
-                    setRatings={setUnderstandingRatings} 
-                    setQuestionsFinished={setQuestionsFinished} 
+                <StudySessionPage
+                    ratings={understandingRatings}
+                    setRatings={setUnderstandingRatings}
+                    setQuestionsFinished={setQuestionsFinished}
                     sessionType={sessionType}
                 />
-            } 
+            }
           />
-          <Route 
-            path="/sicherheit" 
+          <Route
+            path="/sicherheit"
             element={
-                <ConfidencePage 
-                    ratings={understandingRatings} 
-                    onRestart={startNewNormalSession} 
+                <ConfidencePage
+                    ratings={understandingRatings}
+                    onRestart={startNewNormalSession}
                     onDeepDive={startDeepDiveSession}
                 />
-            } 
+            }
           />
           <Route path="*" element={<Navigate to="/start" replace />} />
         </Routes>

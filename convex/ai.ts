@@ -1,6 +1,6 @@
 "use node";
 
-import { generateText, Output } from "ai";
+import { generateText, NoOutputGeneratedError, Output } from "ai";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
@@ -31,7 +31,7 @@ const extensionToMediaType: Record<string, string> = {
 
 const quizGenerationSchema = z.object({
   sourceSummary: z.string(),
-  topics: z.array(z.string()).min(3).max(12),
+  topics: z.array(z.string()).min(1).max(12),
   questions: z.array(
     z.object({
       topic: z.string(),
@@ -282,6 +282,421 @@ const buildFallbackAnalysis = (
   };
 };
 
+const toTrimmedString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+const MAX_LOG_PREVIEW_CHARS = 12_000;
+const MAX_LOG_STACK_LINES = 8;
+const IMPORTANT_RESPONSE_HEADER_KEYS = new Set([
+  "content-type",
+  "x-request-id",
+  "x-goog-request-id",
+  "x-goog-trace-id",
+  "x-cloud-trace-context",
+  "x-ratelimit-limit",
+  "x-ratelimit-remaining",
+  "x-ratelimit-reset",
+]);
+
+type UsageSnapshot = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const omitted = value.length - maxChars;
+  return `${value.slice(0, maxChars)}\n...[gekürzt: ${omitted} Zeichen]`;
+};
+
+const serializeForLog = (value: unknown, maxChars = MAX_LOG_PREVIEW_CHARS) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    const serialized = JSON.stringify(value, null, 2);
+    return truncateForLog(serialized, maxChars);
+  } catch {
+    return truncateForLog(String(value), maxChars);
+  }
+};
+
+const toFiniteNumber = (value: unknown) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return value;
+};
+
+const extractUsage = (usage: unknown): UsageSnapshot | undefined => {
+  if (typeof usage !== "object" || usage === null) {
+    return undefined;
+  }
+
+  const record = usage as Record<string, unknown>;
+  const normalized: UsageSnapshot = {
+    inputTokens: toFiniteNumber(record.inputTokens),
+    outputTokens: toFiniteNumber(record.outputTokens),
+    totalTokens: toFiniteNumber(record.totalTokens),
+  };
+
+  if (
+    normalized.inputTokens === undefined &&
+    normalized.outputTokens === undefined &&
+    normalized.totalTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return normalized;
+};
+
+const mergeUsage = (target: UsageSnapshot, incoming?: UsageSnapshot) => {
+  if (!incoming) {
+    return;
+  }
+
+  if (incoming.inputTokens !== undefined) {
+    target.inputTokens = (target.inputTokens ?? 0) + incoming.inputTokens;
+  }
+  if (incoming.outputTokens !== undefined) {
+    target.outputTokens = (target.outputTokens ?? 0) + incoming.outputTokens;
+  }
+  if (incoming.totalTokens !== undefined) {
+    target.totalTokens = (target.totalTokens ?? 0) + incoming.totalTokens;
+  }
+};
+
+const extractResponseHeaders = (headers: unknown) => {
+  if (!headers) {
+    return undefined;
+  }
+
+  const extracted: Record<string, string> = {};
+
+  if (typeof Headers !== "undefined" && headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      const lower = key.toLowerCase();
+      if (IMPORTANT_RESPONSE_HEADER_KEYS.has(lower) || lower.includes("request") || lower.includes("trace")) {
+        extracted[key] = value;
+      }
+    });
+  } else if (typeof headers === "object") {
+    for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+      const lower = key.toLowerCase();
+      if (
+        IMPORTANT_RESPONSE_HEADER_KEYS.has(lower) ||
+        lower.includes("request") ||
+        lower.includes("trace")
+      ) {
+        extracted[key] = String(value);
+      }
+    }
+  }
+
+  if (Object.keys(extracted).length === 0) {
+    return undefined;
+  }
+
+  return extracted;
+};
+
+const extractResponseForLog = (response: unknown) => {
+  if (typeof response !== "object" || response === null) {
+    return undefined;
+  }
+
+  const record = response as Record<string, unknown>;
+  const id = toTrimmedString(record.id);
+
+  return {
+    id: id || undefined,
+    modelId: toTrimmedString(record.modelId) || undefined,
+    timestamp: toTrimmedString(record.timestamp) || undefined,
+    headers: extractResponseHeaders(record.headers),
+    bodyPreview: serializeForLog(record.body),
+    messagesPreview: serializeForLog(record.messages),
+  };
+};
+
+const extractErrorForLog = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return {
+      type: typeof error,
+      valuePreview: serializeForLog(error),
+    };
+  }
+
+  const withUnknownFields = error as Error & Record<string, unknown>;
+
+  return {
+    name: error.name,
+    message: error.message,
+    stack: truncateForLog(error.stack?.split("\n").slice(0, MAX_LOG_STACK_LINES).join("\n") ?? ""),
+    causePreview: serializeForLog(withUnknownFields.cause),
+    finishReason: toTrimmedString(withUnknownFields.finishReason) || undefined,
+    usage: extractUsage(withUnknownFields.totalUsage ?? withUnknownFields.usage),
+    rawUsagePreview: serializeForLog(withUnknownFields.totalUsage ?? withUnknownFields.usage),
+    response: extractResponseForLog(withUnknownFields.response),
+    textPreview: truncateForLog(toTrimmedString(withUnknownFields.text), 6_000) || undefined,
+  };
+};
+
+const extractUsageFromError = (error: unknown) => {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const record = error as Record<string, unknown>;
+  return extractUsage(record.totalUsage ?? record.usage);
+};
+
+const extractGenerationResultForLog = (result: unknown) => {
+  if (typeof result !== "object" || result === null) {
+    return {
+      usage: undefined,
+      details: {
+        rawResultPreview: serializeForLog(result),
+      },
+    };
+  }
+
+  const record = result as Record<string, unknown>;
+  const usage = extractUsage(record.totalUsage ?? record.usage);
+
+  return {
+    usage,
+    details: {
+      finishReason: toTrimmedString(record.finishReason) || undefined,
+      usage,
+      rawUsagePreview: serializeForLog(record.totalUsage ?? record.usage),
+      warningsPreview: serializeForLog(record.warnings),
+      providerMetadataPreview: serializeForLog(record.providerMetadata),
+      response: extractResponseForLog(record.response),
+      stepsCount: Array.isArray(record.steps) ? record.steps.length : undefined,
+    },
+  };
+};
+
+const summarizeGeneratedQuiz = (generated: QuizGenerationResult | null | undefined) => {
+  if (!generated) {
+    return {
+      hasOutput: false,
+    };
+  }
+
+  return {
+    hasOutput: true,
+    sourceSummaryLength: generated.sourceSummary.length,
+    topicsCount: generated.topics.length,
+    questionsCount: generated.questions.length,
+    firstTopic: generated.topics[0] ?? null,
+    firstQuestionPreview: generated.questions[0]
+      ? truncateForLog(generated.questions[0].prompt, 600)
+      : undefined,
+  };
+};
+
+const summarizeGeneratedDeepDive = (generated: DeepDiveGenerationResult | null | undefined) => {
+  if (!generated) {
+    return {
+      hasOutput: false,
+    };
+  }
+
+  return {
+    hasOutput: true,
+    sourceSummaryLength: generated.sourceSummary.length,
+    topicsCount: generated.topics.length,
+    questionsCount: generated.questions.length,
+    firstTopic: generated.topics[0] ?? null,
+    firstQuestionPreview: generated.questions[0]
+      ? truncateForLog(generated.questions[0].prompt, 600)
+      : undefined,
+  };
+};
+
+const createAiTraceLogger = (scope: string, sessionId: string) => {
+  const traceId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  const startedAt = Date.now();
+  const accumulatedUsage: UsageSnapshot = {};
+
+  const log = (level: "info" | "warn" | "error", event: string, details?: Record<string, unknown>) => {
+    const payload = {
+      traceId,
+      scope,
+      sessionId,
+      event,
+      elapsedMs: Date.now() - startedAt,
+      usageTotals: accumulatedUsage,
+      ...details,
+    };
+
+    if (level === "error") {
+      console.error("[KI-Monitoring]", payload);
+      return;
+    }
+
+    if (level === "warn") {
+      console.warn("[KI-Monitoring]", payload);
+      return;
+    }
+
+    console.log("[KI-Monitoring]", payload);
+  };
+
+  const addUsage = (usage?: UsageSnapshot) => {
+    mergeUsage(accumulatedUsage, usage);
+  };
+
+  return {
+    traceId,
+    startedAt,
+    log,
+    addUsage,
+    getUsageTotals: () => ({ ...accumulatedUsage }),
+  };
+};
+
+const parseJsonStringSafely = (value: string): unknown => {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
+const toObjectRecord = (value: unknown): Record<string, unknown> | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const pickFirstString = (record: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const candidate = toTrimmedString(record[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return "";
+};
+
+const normalizeQuizGenerationOutput = (value: unknown): QuizGenerationResult | null => {
+  const parsedValue = typeof value === "string" ? parseJsonStringSafely(value) : value;
+
+  const record = toObjectRecord(parsedValue);
+  const rawQuestions = Array.isArray(parsedValue)
+    ? parsedValue
+    : Array.isArray(record?.questions)
+      ? record.questions
+      : Array.isArray(record?.fragen)
+        ? record.fragen
+        : Array.isArray(record?.quizQuestions)
+          ? record.quizQuestions
+          : [];
+
+  const questions = rawQuestions
+    .map((question) => {
+      const questionRecord = toObjectRecord(question);
+      if (!questionRecord) {
+        return null;
+      }
+
+      const prompt = pickFirstString(questionRecord, [
+        "prompt",
+        "frage",
+        "question",
+        "fragestellung",
+        "aufgabe",
+      ]);
+      const idealAnswer = pickFirstString(questionRecord, [
+        "idealAnswer",
+        "korrekte_antwort",
+        "korrekteAntwort",
+        "answer",
+        "antwort",
+        "lösung",
+        "loesung",
+      ]);
+
+      if (!prompt || !idealAnswer) {
+        return null;
+      }
+
+      return {
+        topic: pickFirstString(questionRecord, ["topic", "thema", "bereich", "kapitel"]),
+        prompt,
+        idealAnswer,
+        explanationHint:
+          pickFirstString(questionRecord, [
+            "explanationHint",
+            "hilfe_falsche_antwort",
+            "hilfe",
+            "hint",
+            "hinweis",
+          ]) ||
+          "Fokussiere dich auf die Kernbegriffe und erkläre sie in eigenen Worten.",
+      };
+    })
+    .filter((question): question is QuizGenerationResult["questions"][number] => question !== null);
+
+  if (questions.length === 0) {
+    return null;
+  }
+
+  const rawTopics = Array.isArray(record?.topics)
+    ? record.topics
+    : Array.isArray(record?.themen)
+      ? record.themen
+      : [];
+  const parsedTopics = rawTopics.map(toTrimmedString).filter((topic) => topic.length > 0);
+  const inferredTopics = questions.map((question) => question.topic).filter((topic) => topic.length > 0);
+  const topics = [...new Set([...parsedTopics, ...inferredTopics])].slice(0, 12);
+
+  if (topics.length === 0) {
+    topics.push("Allgemeines Verständnis");
+  }
+
+  const fallbackTopic = topics[0] ?? "Allgemeines Verständnis";
+
+  return {
+    sourceSummary:
+      pickFirstString(record ?? {}, ["sourceSummary", "zusammenfassung", "summary"]) ||
+      "Die wichtigsten Inhalte wurden aus dem hochgeladenen Lernmaterial zusammengefasst.",
+    topics,
+    questions: questions.map((question) => ({
+      ...question,
+      topic: question.topic || fallbackTopic,
+    })),
+  };
+};
+
+const isNoOutputGeneratedError = (error: unknown) =>
+  NoOutputGeneratedError.isInstance(error) ||
+  (typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    ((error as { name?: unknown }).name === "AI_NoOutputGeneratedError" ||
+      (error as { name?: unknown }).name === "AI_NoObjectGeneratedError"));
+
 export const extractDocumentContent = action({
   args: {
     grantToken: v.string(),
@@ -289,6 +704,12 @@ export const extractDocumentContent = action({
     documentId: v.id("sessionDocuments"),
   },
   handler: async (ctx, args) => {
+    const trace = createAiTraceLogger("extractDocumentContent", args.sessionId);
+
+    trace.log("info", "start", {
+      documentId: args.documentId,
+    });
+
     await ctx.runMutation(internal.study.setDocumentExtractionResult, {
       documentId: args.documentId,
       extractionStatus: "processing",
@@ -300,10 +721,24 @@ export const extractDocumentContent = action({
       documentId: args.documentId,
     });
 
+    trace.log("info", "context_loaded", {
+      fileName: document.fileName,
+      fileType: document.fileType,
+      fileSizeBytes: document.fileSizeBytes,
+      extractionStatus: document.extractionStatus,
+      hasExtractedText: Boolean(document.extractedText),
+      extractedTextLength: document.extractedText?.length ?? 0,
+    });
+
     // Hybrid approach:
     // - Native Vertex file path for PDF/Slides/Word formats.
     // - officeparser/text extraction fallback for all other formats.
     if (isVertexNativeCandidate(document.fileType, document.fileName)) {
+      trace.log("info", "skip_text_extraction_vertex_native", {
+        fileName: document.fileName,
+        fileType: document.fileType,
+      });
+
       await ctx.runMutation(internal.study.setDocumentExtractionResult, {
         documentId: args.documentId,
         extractionStatus: "ready",
@@ -321,10 +756,20 @@ export const extractDocumentContent = action({
         throw new Error("Auf das hochgeladene Dokument kann nicht zugegriffen werden.");
       }
 
+      trace.log("info", "storage_url_loaded", {
+        fileName: document.fileName,
+        hasUrl: true,
+      });
+
       const response = await fetch(fileUrl);
       if (!response.ok) {
         throw new Error(`Datei-Download fehlgeschlagen: ${response.status}`);
       }
+
+      trace.log("info", "file_downloaded", {
+        fileName: document.fileName,
+        statusCode: response.status,
+      });
 
       const fileBuffer = Buffer.from(await response.arrayBuffer());
       const extractedText = await extractTextFromBytes(document.fileName, document.fileType, fileBuffer);
@@ -332,6 +777,12 @@ export const extractDocumentContent = action({
       if (!extractedText) {
         throw new Error("Aus dieser Datei konnte kein Text extrahiert werden.");
       }
+
+      trace.log("info", "text_extracted", {
+        fileName: document.fileName,
+        extractedLength: extractedText.length,
+        extractedPreview: truncateForLog(extractedText, 1_200),
+      });
 
       await ctx.runMutation(internal.study.setDocumentExtractionResult, {
         documentId: args.documentId,
@@ -345,6 +796,12 @@ export const extractDocumentContent = action({
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unbekannter Fehler bei der Extraktion.";
+
+      trace.log("error", "extraction_failed", {
+        documentId: args.documentId,
+        fileName: document.fileName,
+        error: extractErrorForLog(error),
+      });
 
       await ctx.runMutation(internal.study.setDocumentExtractionResult, {
         documentId: args.documentId,
@@ -368,7 +825,20 @@ export const generateQuiz = action({
     questionCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const trace = createAiTraceLogger("generateQuiz", args.sessionId);
     const desiredCount = Math.max(3, Math.min(10, Math.floor(args.questionCount ?? 6)));
+    const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
+
+Anforderungen:
+- Fragen sollen zu wahrscheinlichen Klausur-/Testfragen passen.
+- Mische konzeptionelles Verständnis und Faktenabfrage.
+- Antworthinweise müssen fachlich korrekt und konkret sein.
+- Gib eine kurze Hilfezeile für den Fall einer falschen Antwort.`;
+
+    trace.log("info", "start", {
+      desiredCount,
+      instructionLength: quizInstruction.length,
+    });
 
     const quizContext: { documents: SessionDocumentInput[] } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
       grantToken: args.grantToken,
@@ -380,22 +850,68 @@ export const generateQuiz = action({
     const readyDocuments = documents.filter(
       (document: SessionDocumentInput) => document.extractionStatus === "ready",
     );
+
+    trace.log("info", "documents_loaded", {
+      totalDocuments: documents.length,
+      readyDocuments: readyDocuments.length,
+      documents: documents.map((document) => ({
+        fileName: document.fileName,
+        fileType: document.fileType,
+        extractionStatus: document.extractionStatus,
+        extractedTextLength: document.extractedText?.length ?? 0,
+      })),
+    });
+
     if (readyDocuments.length === 0) {
+      trace.log("warn", "no_ready_documents");
       throw new Error("Lade mindestens ein Dokument hoch und verarbeite es, bevor du Quizfragen generierst.");
     }
 
     const model = createVertexModel();
-    const { fileParts, sourceContext } = await buildModelInputFromDocuments(
-      ctx,
-      readyDocuments.map((document: SessionDocumentInput) => ({
-        storageId: document.storageId,
-        fileName: document.fileName,
-        fileType: document.fileType,
-        extractedText: document.extractedText,
+    trace.log("info", "vertex_model_initialized", {
+      modelId: "gemini-2.5-flash",
+    });
+
+    let fileParts: Array<{
+      type: "file";
+      data: Buffer;
+      mediaType: string;
+      filename: string;
+    }> = [];
+    let sourceContext = "";
+
+    try {
+      const modelInput = await buildModelInputFromDocuments(
+        ctx,
+        readyDocuments.map((document: SessionDocumentInput) => ({
+          storageId: document.storageId,
+          fileName: document.fileName,
+          fileType: document.fileType,
+          extractedText: document.extractedText,
+        })),
+      );
+      fileParts = modelInput.fileParts;
+      sourceContext = modelInput.sourceContext;
+    } catch (error) {
+      trace.log("error", "model_input_preparation_failed", {
+        error: extractErrorForLog(error),
+      });
+      throw error;
+    }
+
+    trace.log("info", "model_input_prepared", {
+      sourceContextLength: sourceContext.length,
+      sourceContextPreview: sourceContext ? truncateForLog(sourceContext, 2_500) : undefined,
+      filePartCount: fileParts.length,
+      fileParts: fileParts.map((part) => ({
+        filename: part.filename,
+        mediaType: part.mediaType,
+        sizeBytes: part.data.byteLength,
       })),
-    );
+    });
 
     if (fileParts.length === 0 && !sourceContext) {
+      trace.log("error", "no_usable_input");
       throw new Error("Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.");
     }
 
@@ -405,36 +921,155 @@ export const generateQuiz = action({
     > = [
       {
         type: "text",
-        text: `Erstelle ${desiredCount} kurze, prufungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
-
-Anforderungen:
-- Fragen sollen zu wahrscheinlichen Klausur-/Testfragen passen.
-- Mische konzeptionelles Verstaendnis und Faktenabfrage.
-- Antworthinweise muessen fachlich korrekt und konkret sein.
-- Gib eine kurze Hilfezeile fuer den Fall einer falschen Antwort.`,
+        text: quizInstruction,
       },
     ];
 
     if (sourceContext) {
       userContent.push({
         type: "text",
-        text: `Zusaetzliche Textauszuege aus den Dateien:\n${sourceContext}`,
+        text: `Zusätzliche Textauszüge aus den Dateien:\n${sourceContext}`,
       });
     }
 
     userContent.push(...fileParts);
 
-    const { output: generated }: { output: QuizGenerationResult } = await generateText({
-      model: model("gemini-2.5-flash"),
-      temperature: 0.3,
-      maxOutputTokens: 2_000,
-      output: Output.object({
-        schema: quizGenerationSchema,
-      }),
-      system:
-        "Du bist ein akademischer Tutor. Erzeuge realistische Pruefungsfragen auf Deutsch und bleibe klar und praezise.",
-      messages: [{ role: "user", content: userContent }],
-    });
+    let generated: QuizGenerationResult | null = null;
+    const quizGenerationErrorMessage =
+      "Die KI hat keine Fragen erzeugt. Bitte versuche es erneut oder lade das Dokument neu hoch.";
+
+    try {
+      trace.log("info", "llm_primary_request", {
+        strategy: "structured_messages",
+        temperature: 0.3,
+        maxOutputTokens: 2_000,
+        sourceContextLength: sourceContext.length,
+        filePartCount: fileParts.length,
+      });
+
+      const result = await generateText({
+        model: model("gemini-2.5-flash"),
+        temperature: 0.3,
+        maxOutputTokens: 2_000,
+        output: Output.object({
+          schema: quizGenerationSchema,
+        }),
+        system:
+          "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
+        messages: [{ role: "user", content: userContent }],
+      });
+
+      const resultLog = extractGenerationResultForLog(result);
+      trace.addUsage(resultLog.usage);
+      trace.log("info", "llm_primary_response", {
+        ...resultLog.details,
+        outputSummary: summarizeGeneratedQuiz(result.output),
+      });
+
+      generated = result.output;
+    } catch (error) {
+      if (!isNoOutputGeneratedError(error)) {
+        trace.addUsage(extractUsageFromError(error));
+        trace.log("error", "llm_primary_failed", {
+          error: extractErrorForLog(error),
+        });
+        throw error;
+      }
+
+      trace.addUsage(extractUsageFromError(error));
+      trace.log("warn", "llm_primary_no_output", {
+        error: extractErrorForLog(error),
+      });
+
+      try {
+        if (sourceContext) {
+          trace.log("info", "llm_fallback_request", {
+            strategy: "structured_prompt",
+            temperature: 0.2,
+            maxOutputTokens: 2_000,
+            sourceContextLength: sourceContext.length,
+          });
+
+          const fallbackResult = await generateText({
+            model: model("gemini-2.5-flash"),
+            temperature: 0.2,
+            maxOutputTokens: 2_000,
+            output: Output.object({
+              schema: quizGenerationSchema,
+            }),
+            system:
+              "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
+            prompt: `${quizInstruction}\n\nNutze ausschließlich das folgende Lernmaterial:\n${sourceContext}`,
+          });
+
+          const fallbackLog = extractGenerationResultForLog(fallbackResult);
+          trace.addUsage(fallbackLog.usage);
+          trace.log("info", "llm_fallback_response", {
+            ...fallbackLog.details,
+            outputSummary: summarizeGeneratedQuiz(fallbackResult.output),
+          });
+
+          generated = fallbackResult.output;
+        } else {
+          trace.log("info", "llm_fallback_request", {
+            strategy: "json_messages",
+            temperature: 0.2,
+            maxOutputTokens: 2_200,
+            sourceContextLength: 0,
+          });
+
+          const fallbackResult = await generateText({
+            model: model("gemini-2.5-flash"),
+            temperature: 0.2,
+            maxOutputTokens: 2_200,
+            output: Output.json(),
+            system:
+              "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {\"sourceSummary\": string, \"topics\": string[], \"questions\": [{\"topic\": string, \"prompt\": string, \"idealAnswer\": string, \"explanationHint\": string}]}. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder \"frage\", \"korrekte_antwort\" und \"hilfe_falsche_antwort\".",
+            messages: [{ role: "user", content: userContent }],
+          });
+
+          const fallbackLog = extractGenerationResultForLog(fallbackResult);
+          trace.addUsage(fallbackLog.usage);
+
+          generated = normalizeQuizGenerationOutput(fallbackResult.output);
+
+          trace.log("info", "llm_fallback_response", {
+            ...fallbackLog.details,
+            rawOutputPreview: serializeForLog(fallbackResult.output),
+            normalizedOutputSummary: summarizeGeneratedQuiz(generated),
+          });
+
+          if (!generated) {
+            trace.log("error", "llm_fallback_normalization_failed", {
+              rawOutputPreview: serializeForLog(fallbackResult.output),
+            });
+            throw new Error(quizGenerationErrorMessage);
+          }
+        }
+      } catch (fallbackError) {
+        if (isNoOutputGeneratedError(fallbackError)) {
+          trace.addUsage(extractUsageFromError(fallbackError));
+          trace.log("error", "llm_fallback_no_output", {
+            error: extractErrorForLog(fallbackError),
+          });
+          throw new Error(quizGenerationErrorMessage);
+        }
+
+        trace.addUsage(extractUsageFromError(fallbackError));
+        trace.log("error", "llm_fallback_failed", {
+          error: extractErrorForLog(fallbackError),
+        });
+
+        throw fallbackError;
+      }
+    }
+
+    if (!generated || generated.questions.length === 0) {
+      trace.log("error", "validation_no_questions", {
+        outputSummary: summarizeGeneratedQuiz(generated),
+      });
+      throw new Error("Die KI hat keine Fragen erzeugt. Bitte versuche es erneut.");
+    }
 
     const normalizedQuestions = generated.questions.slice(0, desiredCount).map((question, index) => ({
       id: `${Date.now()}-${index + 1}`,
@@ -452,6 +1087,12 @@ Anforderungen:
       incrementRound: false,
     });
 
+    trace.log("info", "completed", {
+      outputSummary: summarizeGeneratedQuiz(generated),
+      normalizedQuestionCount: normalizedQuestions.length,
+      usageTotals: trace.getUsageTotals(),
+    });
+
     return {
       questionCount: normalizedQuestions.length,
     };
@@ -467,6 +1108,14 @@ export const evaluateAnswer = action({
     timeSpentSeconds: v.number(),
   },
   handler: async (ctx, args): Promise<AnswerEvaluationResult> => {
+    const trace = createAiTraceLogger("evaluateAnswer", args.sessionId);
+
+    trace.log("info", "start", {
+      questionId: args.questionId,
+      answerLength: args.userAnswer.length,
+      timeSpentSeconds: args.timeSpentSeconds,
+    });
+
     const evaluationContext: { round: number; question: QuestionForEvaluation } = await ctx.runQuery(
       internal.study.getQuestionForEvaluation,
       {
@@ -478,17 +1127,33 @@ export const evaluateAnswer = action({
 
     const { round, question } = evaluationContext;
 
+    trace.log("info", "context_loaded", {
+      round,
+      topic: question.topic,
+      promptPreview: truncateForLog(question.prompt, 600),
+      expectedAnswerLength: question.idealAnswer.length,
+    });
+
     const model = createVertexModel();
-    const { output: generated }: { output: AnswerEvaluationResult } = await generateText({
-      model: model("gemini-2.5-flash"),
-      temperature: 0.1,
-      maxOutputTokens: 800,
-      output: Output.object({
-        schema: answerEvaluationSchema,
-      }),
-      system:
-        "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
-      prompt: `Thema: ${question.topic}
+    let generated: AnswerEvaluationResult;
+
+    try {
+      trace.log("info", "llm_request", {
+        modelId: "gemini-2.5-flash",
+        temperature: 0.1,
+        maxOutputTokens: 800,
+      });
+
+      const result = await generateText({
+        model: model("gemini-2.5-flash"),
+        temperature: 0.1,
+        maxOutputTokens: 800,
+        output: Output.object({
+          schema: answerEvaluationSchema,
+        }),
+        system:
+          "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
+        prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
@@ -497,7 +1162,36 @@ Antwort der lernenden Person:
 ${args.userAnswer}
 
 Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
-    });
+      });
+
+      const resultLog = extractGenerationResultForLog(result);
+      trace.addUsage(resultLog.usage);
+      trace.log("info", "llm_response", {
+        ...resultLog.details,
+        outputPreview: {
+          isCorrect: result.output.isCorrect,
+          score: result.output.score,
+          explanationPreview: truncateForLog(result.output.explanation, 800),
+        },
+      });
+
+      generated = result.output;
+    } catch (error) {
+      if (isNoOutputGeneratedError(error)) {
+        trace.addUsage(extractUsageFromError(error));
+        trace.log("error", "llm_no_output", {
+          error: extractErrorForLog(error),
+        });
+        throw new Error("Die KI konnte keine Auswertung erzeugen. Bitte versuche es erneut.");
+      }
+
+      trace.addUsage(extractUsageFromError(error));
+      trace.log("error", "llm_failed", {
+        error: extractErrorForLog(error),
+      });
+
+      throw error;
+    }
 
     const roundedScore = Math.round(Math.max(0, Math.min(100, generated.score)));
 
@@ -515,6 +1209,12 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
       timeSpentSeconds: Math.max(1, Math.round(args.timeSpentSeconds)),
     });
 
+    trace.log("info", "completed", {
+      roundedScore,
+      isCorrect: generated.isCorrect,
+      usageTotals: trace.getUsageTotals(),
+    });
+
     return {
       isCorrect: generated.isCorrect,
       score: roundedScore,
@@ -530,12 +1230,23 @@ export const analyzePerformance = action({
     sessionId: v.id("studySessions"),
   },
   handler: async (ctx, args) => {
+    const trace = createAiTraceLogger("analyzePerformance", args.sessionId);
+
+    trace.log("info", "start");
+
     const { session, responses } = await ctx.runQuery(internal.study.getAnalysisContext, {
       grantToken: args.grantToken,
       sessionId: args.sessionId,
     });
 
+    trace.log("info", "context_loaded", {
+      responseCount: responses.length,
+      currentFocusTopic: session.currentFocusTopic ?? null,
+      round: session.round,
+    });
+
     if (responses.length === 0) {
+      trace.log("warn", "no_responses_available");
       throw new Error("Beantworte mindestens eine Frage, bevor du die Analyse startest.");
     }
 
@@ -545,7 +1256,13 @@ export const analyzePerformance = action({
     let analysis = fallback;
 
     try {
-      const { output: generated }: { output: AnalysisResult } = await generateText({
+      trace.log("info", "llm_request", {
+        modelId: "gemini-2.5-flash",
+        temperature: 0.2,
+        maxOutputTokens: 1_500,
+      });
+
+      const result = await generateText({
         model: model("gemini-2.5-flash"),
         temperature: 0.2,
         maxOutputTokens: 1_500,
@@ -563,6 +1280,20 @@ ${JSON.stringify(responses, null, 2)}
 Sei streng, aber konstruktiv.`,
       });
 
+      const resultLog = extractGenerationResultForLog(result);
+      trace.addUsage(resultLog.usage);
+      trace.log("info", "llm_response", {
+        ...resultLog.details,
+        outputPreview: {
+          overallReadiness: result.output.overallReadiness,
+          strongestTopics: result.output.strongestTopics,
+          weakestTopics: result.output.weakestTopics,
+          topicCount: result.output.topics.length,
+        },
+      });
+
+      const generated: AnalysisResult = result.output;
+
       analysis = {
         overallReadiness: Math.round(generated.overallReadiness),
         strongestTopics: generated.strongestTopics,
@@ -575,13 +1306,26 @@ Sei streng, aber konstruktiv.`,
         })),
         recommendedNextStep: generated.recommendedNextStep,
       };
-    } catch {
+    } catch (error) {
+      trace.addUsage(extractUsageFromError(error));
+      trace.log("warn", "llm_failed_using_fallback", {
+        error: extractErrorForLog(error),
+        fallbackOverallReadiness: fallback.overallReadiness,
+        fallbackTopicCount: fallback.topics.length,
+      });
       // Keep deterministic fallback analysis when the LLM call fails.
     }
 
     await ctx.runMutation(internal.study.storeSessionAnalysis, {
       sessionId: args.sessionId,
       analysis,
+    });
+
+    trace.log("info", "completed", {
+      usedFallback: analysis === fallback,
+      overallReadiness: analysis.overallReadiness,
+      topicCount: analysis.topics.length,
+      usageTotals: trace.getUsageTotals(),
     });
 
     return analysis;
@@ -595,6 +1339,12 @@ export const generateTopicDeepDive = action({
     topic: v.string(),
   },
   handler: async (ctx, args) => {
+    const trace = createAiTraceLogger("generateTopicDeepDive", args.sessionId);
+
+    trace.log("info", "start", {
+      topic: args.topic,
+    });
+
     const deepDiveContext: { documents: SessionDocumentInput[] } = await ctx.runQuery(
       internal.study.getQuizGenerationContext,
       {
@@ -608,21 +1358,64 @@ export const generateTopicDeepDive = action({
     const readyDocuments = documents.filter(
       (document: SessionDocumentInput) => document.extractionStatus === "ready",
     );
+
+    trace.log("info", "documents_loaded", {
+      totalDocuments: documents.length,
+      readyDocuments: readyDocuments.length,
+      documents: documents.map((document) => ({
+        fileName: document.fileName,
+        fileType: document.fileType,
+        extractionStatus: document.extractionStatus,
+        extractedTextLength: document.extractedText?.length ?? 0,
+      })),
+    });
+
     if (readyDocuments.length === 0) {
+      trace.log("warn", "no_ready_documents");
       throw new Error("Es ist kein verarbeitetes Material fuer die Vertiefung verfuegbar.");
     }
 
-    const { fileParts, sourceContext } = await buildModelInputFromDocuments(
-      ctx,
-      readyDocuments.map((document: SessionDocumentInput) => ({
-        storageId: document.storageId,
-        fileName: document.fileName,
-        fileType: document.fileType,
-        extractedText: document.extractedText,
+    let fileParts: Array<{
+      type: "file";
+      data: Buffer;
+      mediaType: string;
+      filename: string;
+    }> = [];
+    let sourceContext = "";
+
+    try {
+      const modelInput = await buildModelInputFromDocuments(
+        ctx,
+        readyDocuments.map((document: SessionDocumentInput) => ({
+          storageId: document.storageId,
+          fileName: document.fileName,
+          fileType: document.fileType,
+          extractedText: document.extractedText,
+        })),
+      );
+
+      fileParts = modelInput.fileParts;
+      sourceContext = modelInput.sourceContext;
+    } catch (error) {
+      trace.log("error", "model_input_preparation_failed", {
+        error: extractErrorForLog(error),
+      });
+      throw error;
+    }
+
+    trace.log("info", "model_input_prepared", {
+      sourceContextLength: sourceContext.length,
+      sourceContextPreview: sourceContext ? truncateForLog(sourceContext, 2_500) : undefined,
+      filePartCount: fileParts.length,
+      fileParts: fileParts.map((part) => ({
+        filename: part.filename,
+        mediaType: part.mediaType,
+        sizeBytes: part.data.byteLength,
       })),
-    );
+    });
 
     if (fileParts.length === 0 && !sourceContext) {
+      trace.log("error", "no_usable_input");
       throw new Error("Es konnten keine nutzbaren Inhalte fuer die Vertiefung gelesen werden.");
     }
 
@@ -648,17 +1441,62 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
     userContent.push(...fileParts);
 
     const model = createVertexModel();
-
-    const { output: generated }: { output: DeepDiveGenerationResult } = await generateText({
-      model: model("gemini-2.5-flash"),
-      temperature: 0.25,
-      maxOutputTokens: 1_700,
-      output: Output.object({
-        schema: deepDiveSchema,
-      }),
-      system: "Du bist ein fokussierter Tutor und erstellst anspruchsvolle, aber faire Vertiefungsfragen auf Deutsch.",
-      messages: [{ role: "user", content: userContent }],
+    trace.log("info", "vertex_model_initialized", {
+      modelId: "gemini-2.5-flash",
     });
+
+    let generated: DeepDiveGenerationResult;
+
+    try {
+      trace.log("info", "llm_request", {
+        temperature: 0.25,
+        maxOutputTokens: 1_700,
+        sourceContextLength: sourceContext.length,
+        filePartCount: fileParts.length,
+      });
+
+      const result = await generateText({
+        model: model("gemini-2.5-flash"),
+        temperature: 0.25,
+        maxOutputTokens: 1_700,
+        output: Output.object({
+          schema: deepDiveSchema,
+        }),
+        system: "Du bist ein fokussierter Tutor und erstellst anspruchsvolle, aber faire Vertiefungsfragen auf Deutsch.",
+        messages: [{ role: "user", content: userContent }],
+      });
+
+      const resultLog = extractGenerationResultForLog(result);
+      trace.addUsage(resultLog.usage);
+      trace.log("info", "llm_response", {
+        ...resultLog.details,
+        outputSummary: summarizeGeneratedDeepDive(result.output),
+      });
+
+      generated = result.output;
+    } catch (error) {
+      if (isNoOutputGeneratedError(error)) {
+        trace.addUsage(extractUsageFromError(error));
+        trace.log("error", "llm_no_output", {
+          error: extractErrorForLog(error),
+        });
+        throw new Error("Die KI hat keine Vertiefungsfragen erzeugt. Bitte versuche es erneut.");
+      }
+
+      trace.addUsage(extractUsageFromError(error));
+      trace.log("error", "llm_failed", {
+        error: extractErrorForLog(error),
+      });
+
+      throw error;
+    }
+
+    if (generated.questions.length === 0) {
+      trace.log("error", "validation_no_questions", {
+        outputSummary: summarizeGeneratedDeepDive(generated),
+      });
+      throw new Error("Die KI hat keine Vertiefungsfragen erzeugt. Bitte versuche es erneut.");
+    }
 
     const deepDiveQuestions = generated.questions.slice(0, 5).map((question, index) => ({
       id: `deep-${Date.now()}-${index + 1}`,
@@ -675,6 +1513,12 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
       quizQuestions: deepDiveQuestions,
       currentFocusTopic: args.topic,
       incrementRound: true,
+    });
+
+    trace.log("info", "completed", {
+      outputSummary: summarizeGeneratedDeepDive(generated),
+      questionCount: deepDiveQuestions.length,
+      usageTotals: trace.getUsageTotals(),
     });
 
     return {

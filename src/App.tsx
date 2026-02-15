@@ -62,8 +62,8 @@ const initialQuestions: Question[] = [
     text: 'Welches Molekül ist der finale Elektronenakzeptor in der Atmungskette?',
     expectedKeywords: ['sauerstoff', 'o2'],
     solution: 'Sauerstoff (O2)',
-    explanationTemplate: (name, answer, correct) => 
-      correct 
+    explanationTemplate: (name, answer, correct) =>
+      correct
         ? `Ganz genau, ${name}. Sauerstoff ist am Ende der Kette unverzichtbar, um die Elektronen aufzunehmen.`
         : `Nein, ${name}, „${answer}“ ist in diesem Fall leider nicht der finale Akzeptor. Es ist der Sauerstoff (O2). Er saugt die Elektronen am Ende quasi auf, damit der Prozess nicht zum Stillstand kommt.`
   },
@@ -77,8 +77,8 @@ const questionPool: Question[] = [
     text: 'Wie viel ATP gewinnt eine Zelle netto pro Glukose nur durch Glykolyse?',
     expectedKeywords: ['2', 'zwei'],
     solution: '2 ATP',
-    explanationTemplate: (name, answer, correct) => 
-      correct 
+    explanationTemplate: (name, answer, correct) =>
+      correct
         ? `Korrekt, ${name}! 2 investiert, 4 raus, macht 2 Gewinn.`
         : `Nein, ${answer} ATP sind es nicht. Es sind tatsächlich nur 2 ATP netto. Zwar entstehen insgesamt 4, aber da die Zelle am Anfang 2 investieren muss, bleibt am Ende nur ein Gewinn von 2 übrig.`
   },
@@ -89,8 +89,8 @@ const questionPool: Question[] = [
     text: 'Wann kam das erste iPhone auf den Markt?',
     expectedKeywords: ['2007'],
     solution: '2007',
-    explanationTemplate: (name, answer, correct) => 
-      correct 
+    explanationTemplate: (name, answer, correct) =>
+      correct
         ? `Richtig, ${name}! Im Jahr 2007 hat das iPhone die Smartphone-Welt revolutioniert.`
         : `Nein, ${answer} war es leider noch nicht. Das erste iPhone kam erst im Jahr 2007 heraus. 2006 war es noch in der Entwicklung.`
   }
@@ -249,7 +249,7 @@ function StudySessionPage({ userResponses, setUserResponses, setQuestionsFinishe
     setUserInput('');
     setChanges(0);
     setStartTime(Date.now());
-    
+
     let available = questionPool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
     available.sort((a, b) => b.relevance - a.relevance);
 

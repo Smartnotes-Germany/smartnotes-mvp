@@ -1,7 +1,6 @@
-import { type Dispatch, type ReactNode, type SetStateAction, useState, useMemo, useEffect, useRef } from 'react';
+import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft,
   ArrowRight,
   FileImage,
   Loader2,
@@ -12,15 +11,11 @@ import {
   Settings,
   Plus,
   X,
-  Target,
   StopCircle,
   Zap,
   CheckCircle2,
   AlertCircle,
   TrendingUp,
-  Clock,
-  BookOpen,
-  Keyboard,
   Timer,
   ShieldAlert,
   BarChart,
@@ -177,24 +172,24 @@ function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], set
   const removeFile = (name: string) => setFiles(prev => prev.filter(f => f !== name));
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-16 py-10">
-      <header className="text-center">
-        <h1 className="text-[3rem] md:text-[4rem] font-bold leading-tight tracking-tight text-ink">Unterlagen</h1>
-        <p className="mt-4 text-ink-secondary text-lg font-medium">Lade deine Dokumente für das Training hoch.</p>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-0 flex-col gap-6 py-4">
+      <header className="space-y-2 text-center">
+        <h1 className="text-[2.4rem] md:text-[3rem] font-bold leading-tight tracking-tight text-ink">Unterlagen</h1>
+        <p className="text-base font-medium text-ink-secondary md:text-lg">Lade deine Dokumente für das Training hoch.</p>
       </header>
 
       <div className="group relative rounded-[3rem] border-2 border-dashed border-cream-border bg-surface-white/40 hover:border-accent/30 transition-all duration-500">
-        <div className="flex flex-col items-center justify-center p-16 md:p-24 text-center">
-          <div className="mb-8 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-accent/5 text-accent shadow-inner"><Upload size={40} /></div>
-          <h2 className="text-2xl font-bold text-ink tracking-tight">Hier ablegen</h2>
-          <button className="mt-10 flex items-center gap-2 rounded-full border border-cream-border bg-surface-white px-10 py-4 text-[0.95rem] font-bold text-ink shadow-sm transition-all hover:bg-cream-light active:scale-95"><Plus size={18} />Datei auswählen</button>
+        <div className="flex flex-col items-center justify-center p-8 text-center md:p-10">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/5 text-accent shadow-inner"><Upload size={32} /></div>
+          <h2 className="text-xl font-bold tracking-tight text-ink">Hier ablegen</h2>
+          <button className="mt-6 flex items-center gap-2 rounded-full border border-cream-border bg-surface-white px-8 py-3 text-[0.9rem] font-bold text-ink shadow-sm transition-all hover:bg-cream-light active:scale-95"><Plus size={18} />Datei auswählen</button>
         </div>
       </div>
 
       {files.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {files.map((file) => (
-            <motion.div key={file} layout className="flex items-center justify-between gap-4 rounded-2xl border border-cream-border bg-surface-white/80 p-5 shadow-sm backdrop-blur-sm">
+            <motion.div key={file} layout className="flex items-center justify-between gap-4 rounded-2xl border border-cream-border bg-surface-white/80 p-4 shadow-sm backdrop-blur-sm">
               <div className="flex items-center gap-3 overflow-hidden"><FileImage size={20} className="shrink-0 text-accent" /><span className="truncate text-[0.9rem] font-bold text-ink-secondary">{file}</span></div>
               <button onClick={() => removeFile(file)} className="text-ink-muted hover:text-red-500 transition-colors p-1"><X size={18} /></button>
             </motion.div>
@@ -202,8 +197,8 @@ function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], set
         </div>
       )}
 
-      <div className="flex justify-center pt-12">
-        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="group flex items-center gap-4 rounded-full bg-accent px-14 py-6 text-[1.15rem] font-bold text-cream shadow-2xl transition-all hover:translate-y-[-4px] active:scale-95 disabled:opacity-30">
+      <div className="mt-auto flex justify-center pt-2">
+        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="group flex items-center gap-4 rounded-full bg-accent px-10 py-4 text-base font-bold text-cream shadow-2xl transition-all hover:translate-y-[-4px] active:scale-95 disabled:opacity-30">
           {isUploading ? <Loader2 size={24} className="animate-spin" /> : <>Training starten<ArrowRight size={26} className="transition-transform group-hover:translate-x-1" /></>}
         </button>
       </div>
@@ -217,7 +212,7 @@ function StudySessionPage({ userResponses, setUserResponses, setQuestionsFinishe
   const [currentIdx, setCurrentIdx] = useState(0);
   const [userInput, setUserInput] = useState('');
   const [changes, setChanges] = useState(0);
-  const [startTime, setStartTime] = useState(Date.now());
+  const [startTime, setStartTime] = useState(() => Date.now());
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
 
@@ -250,7 +245,7 @@ function StudySessionPage({ userResponses, setUserResponses, setQuestionsFinishe
     setChanges(0);
     setStartTime(Date.now());
 
-    let available = questionPool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
+    const available = questionPool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
     available.sort((a, b) => b.relevance - a.relevance);
 
     if (available.length > 0) {
@@ -309,7 +304,7 @@ function StudySessionPage({ userResponses, setUserResponses, setQuestionsFinishe
         </AnimatePresence>
       </div>
 
-      <footer className="mt-20 flex justify-center border-t border-cream-border/50 pt-8 w-full"><button onClick={() => navigate('/sicherheit')} className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-ink-muted hover:text-ink transition-colors"><StopCircle size={14} />Session Beenden</button></footer>
+      <footer className="mt-20 flex justify-center border-t border-cream-border/50 pt-8 w-full"><button onClick={() => { setQuestionsFinished(true); navigate('/sicherheit'); }} className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-ink-muted hover:text-ink transition-colors"><StopCircle size={14} />Session Beenden</button></footer>
     </div>
   );
 }

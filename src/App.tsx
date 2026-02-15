@@ -157,7 +157,7 @@ function MainLayout({ children, filesUploaded, questionsFinished }: { children: 
       <main className="flex-1 md:ml-64 p-6 md:p-12 lg:p-16 relative flex flex-col items-center">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -left-16 top-20 h-80 w-80 rounded-full bg-accent/5 blur-3xl" />
-          <div className="absolute right-0 top-0 h-[30rem] w-[30rem] rounded-full bg-cream-dark/40 blur-3xl" />
+          <div className="absolute right-0 top-0 h-120 w-120 rounded-full bg-cream-dark/40 blur-3xl" />
         </div>
         <div className="relative mx-auto w-full max-w-5xl flex-1 flex flex-col">{children}</div>
       </main>
@@ -198,7 +198,7 @@ function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], set
       )}
 
       <div className="mt-auto flex justify-center pt-2">
-        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="group flex items-center gap-4 rounded-full bg-accent px-10 py-4 text-base font-bold text-cream shadow-2xl transition-all hover:translate-y-[-4px] active:scale-95 disabled:opacity-30">
+        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="group flex items-center gap-4 rounded-full bg-accent px-10 py-4 text-base font-bold text-cream shadow-2xl transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-30">
           {isUploading ? <Loader2 size={24} className="animate-spin" /> : <>Training starten<ArrowRight size={26} className="transition-transform group-hover:translate-x-1" /></>}
         </button>
       </div>
@@ -338,7 +338,7 @@ function ConfidencePage({ userResponses }: { userResponses: UserResponse[] }) {
 
       {biggestWeakness && (
         <section className="bg-red-50 border border-red-100 rounded-[2.5rem] p-10 relative overflow-hidden">
-          <div className="absolute right-[-20px] top-[-20px] opacity-10 text-red-600 rotate-12"><ShieldAlert size={200} /></div>
+          <div className="absolute -right-5 -top-5 opacity-10 text-red-600 rotate-12"><ShieldAlert size={200} /></div>
           <div className="relative z-10"><span className="inline-block px-3 py-1 rounded-full bg-red-600 text-white text-[0.6rem] font-bold uppercase tracking-widest mb-4">Größte Lernlücke</span><h2 className="text-3xl font-bold text-red-900 mb-2">{biggestWeakness.name}</h2><p className="text-red-700 max-w-lg mb-8 font-medium italic">Hey {userName}, hier haben wir gemeinsam den größten Nachholbedarf festgestellt. Wollen wir das gezielt angehen?</p><button onClick={() => navigate('/session')} className="rounded-full bg-red-600 px-8 py-3 text-white font-bold text-sm hover:bg-red-700 transition-all flex items-center gap-2">Deep-Dive starten <Zap size={14} fill="white" /></button></div>
         </section>
       )}
@@ -347,7 +347,7 @@ function ConfidencePage({ userResponses }: { userResponses: UserResponse[] }) {
         <h2 className="text-[0.8rem] font-bold uppercase tracking-widest text-ink/40 px-2">Themen-Status</h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {analysis.map((topic) => (
-            <div key={topic.name} className={`rounded-[2rem] border-2 p-8 transition-all hover:translate-y-[-4px] ${topic.status === 'green' ? 'bg-emerald-50/30 border-emerald-100' : topic.status === 'yellow' ? 'bg-amber-50/30 border-amber-100' : 'bg-red-50/30 border-red-100'}`}>
+            <div key={topic.name} className={`rounded-4xl border-2 p-8 transition-all hover:-translate-y-1 ${topic.status === 'green' ? 'bg-emerald-50/30 border-emerald-100' : topic.status === 'yellow' ? 'bg-amber-50/30 border-amber-100' : 'bg-red-50/30 border-red-100'}`}>
               <div className="flex justify-between items-start mb-6"><div className={`p-3 rounded-2xl ${topic.status === 'green' ? 'bg-emerald-100 text-emerald-600' : topic.status === 'yellow' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>{topic.status === 'green' ? <CheckCircle2 size={20} /> : topic.status === 'yellow' ? <BarChart size={20} /> : <AlertCircle size={20} />}</div><span className={`text-2xl font-bold ${topic.status === 'green' ? 'text-emerald-700' : topic.status === 'yellow' ? 'text-amber-700' : 'text-red-700'}`}>{topic.score}%</span></div>
               <p className="font-bold text-ink text-lg tracking-tight mb-1">{topic.name}</p>
             </div>

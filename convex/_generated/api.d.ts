@@ -9,7 +9,11 @@
  */
 
 import type * as access from "../access.js";
+import type * as admin from "../admin.js";
 import type * as ai from "../ai.js";
+import type * as crons from "../crons.js";
+import type * as observability from "../observability.js";
+import type * as retention from "../retention.js";
 import type * as study from "../study.js";
 
 import type {
@@ -20,7 +24,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  admin: typeof admin;
   ai: typeof ai;
+  crons: typeof crons;
+  observability: typeof observability;
+  retention: typeof retention;
   study: typeof study;
 }>;
 

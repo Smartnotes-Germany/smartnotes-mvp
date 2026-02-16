@@ -8,6 +8,15 @@ import type { Id } from "./_generated/dataModel";
 import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import {
+  buildTelemetryConfig,
+  flushTelemetry,
+  getObservabilityMode,
+  getTelemetryProvider,
+  hashIdentifier,
+  isSensitiveCaptureEnabled,
+  redactTextForLog,
+} from "./observability";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -322,12 +331,17 @@ type VertexUsageSnapshot = {
 };
 
 type PersistedAiAnalyticsStatus = "success" | "error";
+type PersistedPrivacyMode = "balanced" | "full" | "off";
+type PersistedTelemetryProvider = "langfuse" | "none";
 
 type PersistedAiAnalyticsPayload = {
   traceId: string;
   sessionId: Id<"studySessions">;
   scope: string;
   status: PersistedAiAnalyticsStatus;
+  privacyMode?: PersistedPrivacyMode;
+  contentCaptured?: boolean;
+  telemetryProvider?: PersistedTelemetryProvider;
   modelId?: string;
   fallbackUsed?: boolean;
   llmAttempts?: number;
@@ -344,6 +358,27 @@ type PersistedAiAnalyticsPayload = {
   metadata?: Record<string, unknown>;
 };
 
+const analyticsMetadataAllowlist = new Set([
+  "responseCount",
+  "usedFallback",
+  "topic",
+  "questionId",
+  "round",
+  "questionTopic",
+  "questionScore",
+  "answerLength",
+  "timeSpentSeconds",
+  "documentsWithoutText",
+  "readyDocuments",
+  "totalDocuments",
+  "filePartCount",
+  "sourceContextLength",
+  "outputQuestionCount",
+  "fallbackStrategy",
+  "finishReason",
+  "currentFocusTopic",
+]);
+
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   if (value.length <= maxChars) {
     return value;
@@ -353,17 +388,75 @@ const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   return `${value.slice(0, maxChars)}\n...[gekürzt: ${omitted} Zeichen]`;
 };
 
-const serializeForLog = (value: unknown, maxChars = MAX_LOG_PREVIEW_CHARS) => {
-  if (value === undefined) {
+const toSafeAnalyticsMetadataValue = (value: unknown): string | number | boolean | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value.length > 400 ? `${value.slice(0, 400)}…` : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry;
+        }
+        if (typeof entry === "number" || typeof entry === "boolean") {
+          return String(entry);
+        }
+        return null;
+      })
+      .filter((entry): entry is string => Boolean(entry))
+      .slice(0, 20)
+      .join(",");
+  }
+
+  return "[object]";
+};
+
+const sanitizeAnalyticsMetadata = (metadata?: Record<string, unknown>) => {
+  if (!metadata) {
     return undefined;
   }
 
-  try {
-    const serialized = JSON.stringify(value, null, 2);
-    return truncateForLog(serialized, maxChars);
-  } catch {
-    return truncateForLog(String(value), maxChars);
+  const sanitizedEntries = Object.entries(metadata)
+    .filter(([key]) => analyticsMetadataAllowlist.has(key))
+    .slice(0, 20)
+    .map(([key, value]) => [key, toSafeAnalyticsMetadataValue(value)] as const);
+
+  if (sanitizedEntries.length === 0) {
+    return undefined;
   }
+
+  return JSON.stringify(Object.fromEntries(sanitizedEntries));
+};
+
+const buildAiSdkTelemetry = (
+  functionId: string,
+  sessionId: Id<"studySessions">,
+  traceId: string,
+  metadata?: Record<string, unknown>,
+) => {
+  const normalizedMetadata: Record<string, unknown> = {
+    ...(metadata ?? {}),
+  };
+
+  if (normalizedMetadata.scope !== undefined && normalizedMetadata.appScope === undefined) {
+    normalizedMetadata.appScope = normalizedMetadata.scope;
+  }
+  delete normalizedMetadata.scope;
+
+  return buildTelemetryConfig({
+    functionId,
+    metadata: {
+      traceId,
+      sessionHash: hashIdentifier(sessionId),
+      ...normalizedMetadata,
+    },
+  });
 };
 
 const toFiniteNumber = (value: unknown) => {
@@ -485,8 +578,8 @@ const extractResponseForLog = (response: unknown) => {
     modelId: toTrimmedString(record.modelId) || undefined,
     timestamp: toTrimmedString(record.timestamp) || undefined,
     headers: extractResponseHeaders(record.headers),
-    bodyPreview: serializeForLog(record.body),
-    messagesPreview: serializeForLog(record.messages),
+    hasBody: record.body !== undefined,
+    hasMessages: record.messages !== undefined,
   };
 };
 
@@ -494,7 +587,7 @@ const extractErrorForLog = (error: unknown) => {
   if (!(error instanceof Error)) {
     return {
       type: typeof error,
-      valuePreview: serializeForLog(error),
+      valueType: Object.prototype.toString.call(error),
     };
   }
 
@@ -504,12 +597,13 @@ const extractErrorForLog = (error: unknown) => {
     name: error.name,
     message: error.message,
     stack: truncateForLog(error.stack?.split("\n").slice(0, MAX_LOG_STACK_LINES).join("\n") ?? ""),
-    causePreview: serializeForLog(withUnknownFields.cause),
+    causeType:
+      withUnknownFields.cause === undefined || withUnknownFields.cause === null
+        ? undefined
+        : Object.prototype.toString.call(withUnknownFields.cause),
     finishReason: toTrimmedString(withUnknownFields.finishReason) || undefined,
     usage: extractUsage(withUnknownFields.totalUsage ?? withUnknownFields.usage),
-    rawUsagePreview: serializeForLog(withUnknownFields.totalUsage ?? withUnknownFields.usage),
     response: extractResponseForLog(withUnknownFields.response),
-    textPreview: truncateForLog(toTrimmedString(withUnknownFields.text), 6_000) || undefined,
   };
 };
 
@@ -585,7 +679,7 @@ const extractGenerationResultForLog = (result: unknown) => {
     return {
       usage: undefined,
       details: {
-        rawResultPreview: serializeForLog(result),
+        rawResultType: Object.prototype.toString.call(result),
       },
     };
   }
@@ -599,9 +693,7 @@ const extractGenerationResultForLog = (result: unknown) => {
     details: {
       finishReason: toTrimmedString(record.finishReason) || undefined,
       usage,
-      rawUsagePreview: serializeForLog(record.totalUsage ?? record.usage),
-      warningsPreview: serializeForLog(record.warnings),
-      providerMetadataPreview: serializeForLog(record.providerMetadata),
+      warningCount: Array.isArray(record.warnings) ? record.warnings.length : undefined,
       vertexUsage,
       response: extractResponseForLog(record.response),
       stepsCount: Array.isArray(record.steps) ? record.steps.length : undefined,
@@ -622,9 +714,7 @@ const summarizeGeneratedQuiz = (generated: QuizGenerationResult | null | undefin
     topicsCount: generated.topics.length,
     questionsCount: generated.questions.length,
     firstTopic: generated.topics[0] ?? null,
-    firstQuestionPreview: generated.questions[0]
-      ? truncateForLog(generated.questions[0].prompt, 600)
-      : undefined,
+    firstQuestionLength: generated.questions[0]?.prompt.length,
   };
 };
 
@@ -641,9 +731,7 @@ const summarizeGeneratedDeepDive = (generated: DeepDiveGenerationResult | null |
     topicsCount: generated.topics.length,
     questionsCount: generated.questions.length,
     firstTopic: generated.topics[0] ?? null,
-    firstQuestionPreview: generated.questions[0]
-      ? truncateForLog(generated.questions[0].prompt, 600)
-      : undefined,
+    firstQuestionLength: generated.questions[0]?.prompt.length,
   };
 };
 
@@ -655,12 +743,13 @@ const createAiTraceLogger = (scope: string, sessionId: string) => {
 
   const startedAt = Date.now();
   const accumulatedUsage: UsageSnapshot = {};
+  const sessionHash = hashIdentifier(sessionId);
 
   const log = (level: "info" | "warn" | "error", event: string, details?: Record<string, unknown>) => {
     const payload = {
       traceId,
       scope,
-      sessionId,
+      sessionHash,
       event,
       elapsedMs: Date.now() - startedAt,
       usageTotals: accumulatedUsage,
@@ -699,12 +788,18 @@ const persistAiAnalyticsEvent = async (
 ) => {
   try {
     const errorRecord = payload.error && typeof payload.error === "object" ? payload.error : undefined;
+    const privacyMode = payload.privacyMode ?? getObservabilityMode();
+    const contentCaptured = payload.contentCaptured ?? isSensitiveCaptureEnabled();
+    const telemetryProvider = payload.telemetryProvider ?? getTelemetryProvider();
 
     await ctx.runMutation(internal.study.storeAiAnalyticsEvent, {
       traceId: payload.traceId,
       sessionId: payload.sessionId,
       scope: payload.scope,
       status: payload.status,
+      privacyMode,
+      contentCaptured,
+      telemetryProvider,
       modelId: payload.modelId,
       fallbackUsed: payload.fallbackUsed,
       llmAttempts: payload.llmAttempts,
@@ -735,14 +830,14 @@ const persistAiAnalyticsEvent = async (
         errorRecord && "stack" in errorRecord && typeof errorRecord.stack === "string"
           ? errorRecord.stack
           : undefined,
-      metadataJson: payload.metadata ? serializeForLog(payload.metadata, 20_000) : undefined,
+      metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
     });
   } catch (error) {
     console.warn("[KI-Monitoring]", {
       event: "analytics_persist_failed",
       traceId: payload.traceId,
       scope: payload.scope,
-      sessionId: payload.sessionId,
+      sessionHash: hashIdentifier(payload.sessionId),
       error: extractErrorForLog(error),
     });
   }
@@ -962,7 +1057,7 @@ export const extractDocumentContent = action({
       trace.log("info", "text_extracted", {
         fileName: document.fileName,
         extractedLength: extractedText.length,
-        extractedPreview: truncateForLog(extractedText, 1_200),
+        extractedTextStats: redactTextForLog(extractedText),
       });
 
       await ctx.runMutation(internal.study.setDocumentExtractionResult, {
@@ -1097,7 +1192,7 @@ Anforderungen:
 
     trace.log("info", "model_input_prepared", {
       sourceContextLength: sourceContext.length,
-      sourceContextPreview: sourceContext ? truncateForLog(sourceContext, 2_500) : undefined,
+      sourceContextStats: redactTextForLog(sourceContext),
       filePartCount: fileParts.length,
       fileParts: fileParts.map((part) => ({
         filename: part.filename,
@@ -1156,6 +1251,13 @@ Anforderungen:
         providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: quizGenerationSchema,
+        }),
+        experimental_telemetry: buildAiSdkTelemetry("generateQuiz.primary", args.sessionId, trace.traceId, {
+          appScope: "generateQuiz",
+          stage: "primary",
+          readyDocuments: readyDocuments.length,
+          filePartCount: fileParts.length,
+          sourceContextLength: sourceContext.length,
         }),
         system:
           "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
@@ -1217,6 +1319,13 @@ Anforderungen:
             output: Output.object({
               schema: quizGenerationSchema,
             }),
+            experimental_telemetry: buildAiSdkTelemetry("generateQuiz.fallbackStructured", args.sessionId, trace.traceId, {
+              appScope: "generateQuiz",
+              stage: "fallback_structured",
+              readyDocuments: readyDocuments.length,
+              filePartCount: fileParts.length,
+              sourceContextLength: sourceContext.length,
+            }),
             system:
               "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
             prompt: `${quizInstruction}\n\nNutze ausschließlich das folgende Lernmaterial:\n${sourceContext}`,
@@ -1258,6 +1367,13 @@ Anforderungen:
             maxOutputTokens: 2_200,
             providerOptions: vertexProviderOptions,
             output: Output.json(),
+            experimental_telemetry: buildAiSdkTelemetry("generateQuiz.fallbackJson", args.sessionId, trace.traceId, {
+              appScope: "generateQuiz",
+              stage: "fallback_json",
+              readyDocuments: readyDocuments.length,
+              filePartCount: fileParts.length,
+              sourceContextLength: sourceContext.length,
+            }),
             system:
               "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {\"sourceSummary\": string, \"topics\": string[], \"questions\": [{\"topic\": string, \"prompt\": string, \"idealAnswer\": string, \"explanationHint\": string}]}. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder \"frage\", \"korrekte_antwort\" und \"hilfe_falsche_antwort\".",
             messages: [{ role: "user", content: userContent }],
@@ -1272,7 +1388,6 @@ Anforderungen:
 
           trace.log("info", "llm_fallback_response", {
             ...fallbackLog.details,
-            rawOutputPreview: serializeForLog(fallbackResult.output),
             normalizedOutputSummary: summarizeGeneratedQuiz(generated),
           });
 
@@ -1287,7 +1402,7 @@ Anforderungen:
 
           if (!generated) {
             trace.log("error", "llm_fallback_normalization_failed", {
-              rawOutputPreview: serializeForLog(fallbackResult.output),
+              outputType: typeof fallbackResult.output,
             });
             throw new Error(quizGenerationErrorMessage);
           }
@@ -1367,6 +1482,10 @@ Anforderungen:
         outputQuestionCount,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
       });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "generateQuiz",
+      });
     }
   },
 });
@@ -1409,7 +1528,7 @@ export const evaluateAnswer = action({
     trace.log("info", "context_loaded", {
       round,
       topic: question.topic,
-      promptPreview: truncateForLog(question.prompt, 600),
+      promptLength: question.prompt.length,
       expectedAnswerLength: question.idealAnswer.length,
     });
 
@@ -1434,6 +1553,12 @@ export const evaluateAnswer = action({
         output: Output.object({
           schema: answerEvaluationSchema,
         }),
+        experimental_telemetry: buildAiSdkTelemetry("evaluateAnswer", args.sessionId, trace.traceId, {
+          appScope: "evaluateAnswer",
+          round,
+          questionId: args.questionId,
+          questionTopic: question.topic,
+        }),
         system:
           "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
         prompt: `Thema: ${question.topic}
@@ -1456,7 +1581,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
         outputPreview: {
           isCorrect: result.output.isCorrect,
           score: result.output.score,
-          explanationPreview: truncateForLog(result.output.explanation, 800),
+          explanationLength: result.output.explanation.length,
         },
       });
 
@@ -1528,6 +1653,10 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
           timeSpentSeconds: args.timeSpentSeconds,
         },
       });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "evaluateAnswer",
+      });
     }
   },
 });
@@ -1590,6 +1719,12 @@ export const analyzePerformance = action({
         providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: analysisSchema,
+        }),
+        experimental_telemetry: buildAiSdkTelemetry("analyzePerformance", args.sessionId, trace.traceId, {
+          appScope: "analyzePerformance",
+          round: session.round,
+          responseCount: responses.length,
+          currentFocusTopic: session.currentFocusTopic ?? "",
         }),
         system:
           "Du bist ein Lerncoach. Analysiere Wissensluecken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
@@ -1677,6 +1812,10 @@ Sei streng, aber konstruktiv.`,
           responseCount,
           usedFallback,
         },
+      });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "analyzePerformance",
       });
     }
   },
@@ -1769,7 +1908,7 @@ export const generateTopicDeepDive = action({
 
     trace.log("info", "model_input_prepared", {
       sourceContextLength: sourceContext.length,
-      sourceContextPreview: sourceContext ? truncateForLog(sourceContext, 2_500) : undefined,
+      sourceContextStats: redactTextForLog(sourceContext),
       filePartCount: fileParts.length,
       fileParts: fileParts.map((part) => ({
         filename: part.filename,
@@ -1832,6 +1971,13 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         providerOptions: vertexProviderOptions,
         output: Output.object({
           schema: deepDiveSchema,
+        }),
+        experimental_telemetry: buildAiSdkTelemetry("generateTopicDeepDive", args.sessionId, trace.traceId, {
+          appScope: "generateTopicDeepDive",
+          topic: args.topic,
+          readyDocuments: readyDocuments.length,
+          filePartCount: fileParts.length,
+          sourceContextLength: sourceContext.length,
         }),
         system: "Du bist ein fokussierter Tutor und erstellst anspruchsvolle, aber faire Vertiefungsfragen auf Deutsch.",
         messages: [{ role: "user", content: userContent }],
@@ -1932,6 +2078,10 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         metadata: {
           topic: args.topic,
         },
+      });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "generateTopicDeepDive",
       });
     }
   },

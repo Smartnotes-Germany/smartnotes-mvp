@@ -40,7 +40,9 @@ export default defineSchema({
     createdAt: v.number(),
     expiresAt: v.number(),
     revokedAt: v.optional(v.number()),
-  }).index("by_token", ["token"]),
+  })
+    .index("by_token", ["token"])
+    .index("by_expiresAt", ["expiresAt"]),
 
   studySessions: defineTable({
     grantId: v.id("accessGrants"),
@@ -72,7 +74,9 @@ export default defineSchema({
     extractionError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_sessionId", ["sessionId"]),
+  })
+    .index("by_sessionId", ["sessionId"])
+    .index("by_createdAt", ["createdAt"]),
 
   quizResponses: defineTable({
     sessionId: v.id("studySessions"),
@@ -90,13 +94,17 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_session_round", ["sessionId", "round"])
-    .index("by_session_round_question", ["sessionId", "round", "questionId"]),
+    .index("by_session_round_question", ["sessionId", "round", "questionId"])
+    .index("by_createdAt", ["createdAt"]),
 
   aiAnalyticsEvents: defineTable({
     traceId: v.string(),
     sessionId: v.id("studySessions"),
     scope: v.string(),
     status: v.union(v.literal("success"), v.literal("error")),
+    privacyMode: v.union(v.literal("balanced"), v.literal("full"), v.literal("off")),
+    contentCaptured: v.boolean(),
+    telemetryProvider: v.union(v.literal("langfuse"), v.literal("none")),
     modelId: v.optional(v.string()),
     fallbackUsed: v.optional(v.boolean()),
     llmAttempts: v.optional(v.number()),
@@ -122,6 +130,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_session_createdAt", ["sessionId", "createdAt"])
+    .index("by_createdAt", ["createdAt"])
     .index("by_traceId", ["traceId"])
     .index("by_scope_createdAt", ["scope", "createdAt"])
     .index("by_status_createdAt", ["status", "createdAt"]),

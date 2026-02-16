@@ -26,6 +26,8 @@ const analysisValidator = v.object({
 });
 
 const aiAnalyticsStatusValidator = v.union(v.literal("success"), v.literal("error"));
+const aiAnalyticsPrivacyModeValidator = v.union(v.literal("balanced"), v.literal("full"), v.literal("off"));
+const aiAnalyticsTelemetryProviderValidator = v.union(v.literal("langfuse"), v.literal("none"));
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
@@ -436,6 +438,9 @@ export const storeAiAnalyticsEvent = internalMutation({
     sessionId: v.id("studySessions"),
     scope: v.string(),
     status: aiAnalyticsStatusValidator,
+    privacyMode: aiAnalyticsPrivacyModeValidator,
+    contentCaptured: v.boolean(),
+    telemetryProvider: aiAnalyticsTelemetryProviderValidator,
     modelId: v.optional(v.string()),
     fallbackUsed: v.optional(v.boolean()),
     llmAttempts: v.optional(v.number()),

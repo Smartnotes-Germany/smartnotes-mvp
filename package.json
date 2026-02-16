@@ -11,10 +11,15 @@
     "preview": "vite preview",
     "vite:dev": "vite",
     "convex:dev": "convex dev",
-    "convex:deploy": "convex deploy"
+    "convex:deploy": "convex deploy",
+    "observability:debug-window:start": "node ./scripts/observability-debug-window.mjs start",
+    "observability:debug-window:stop": "node ./scripts/observability-debug-window.mjs stop"
   },
   "dependencies": {
     "@ai-sdk/google-vertex": "^4.0.58",
+    "@langfuse/otel": "^4.6.1",
+    "@langfuse/tracing": "^4.6.1",
+    "@opentelemetry/sdk-node": "^0.212.0",
     "@tailwindcss/vite": "^4.1.18",
     "ai": "^6.0.86",
     "clsx": "^2.1.1",

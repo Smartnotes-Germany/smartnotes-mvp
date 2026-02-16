@@ -441,7 +441,7 @@ function App() {
       await generateQuiz({
         grantToken,
         sessionId,
-        questionCount: 6,
+        questionCount: 30, // Increased to 30 for "infinite" feel
       });
     } catch (error: unknown) {
       setUploadError(formatError(error));
@@ -450,11 +450,11 @@ function App() {
     }
   };
 
-  const handleSubmitAnswer = async () => {
+  const handleSubmitAnswer = async (dontKnowSubmission: boolean = false) => {
     if (!grantToken || !sessionId || !currentQuestion) {
       return;
     }
-    if (!answerInput.trim()) {
+    if (!answerInput.trim() && !dontKnowSubmission) {
       setQuizError("Bitte schreibe eine Antwort, bevor du sie abschickst.");
       return;
     }
@@ -469,7 +469,7 @@ function App() {
         grantToken,
         sessionId,
         questionId: currentQuestion.id,
-        userAnswer: answerInput,
+        userAnswer: dontKnowSubmission ? "" : answerInput,
         timeSpentSeconds,
       });
 
@@ -584,20 +584,19 @@ function App() {
 
   return (
     <div className="min-h-screen bg-cream text-ink">
-      <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 md:grid-cols-[260px_1fr] md:px-8">
-        <aside className="rounded-4xl border border-cream-border bg-surface-white p-5 shadow-sm md:h-[calc(100vh-3rem)] md:sticky md:top-6">
+      <div className="grid h-screen md:grid-cols-[300px_1fr]">
+        <aside className="flex flex-col border-r border-cream-border bg-surface-white p-6">
           <div className="mb-8 flex items-center gap-3">
             <img src={logoImage} alt="Smartnotes" className="h-10 w-10 rounded-xl border border-cream-border" />
             <div>
               <p className="text-base font-black uppercase tracking-[0.16em] text-accent">Smartnotes</p>
-              <p className="text-xs font-medium text-ink-muted">Anonymer Lernmodus</p>
             </div>
           </div>
 
           <nav className="space-y-3">
-            <StageBadge label="1. Materialien hochladen" active={stage === "upload"} done={stage !== "upload"} />
-            <StageBadge label="2. Testsimulation" active={stage === "quiz"} done={stage === "analysis"} />
-            <StageBadge label="3. Lernstands-Analyse" active={stage === "analysis"} done={false} />
+            <StageBadge label="1. Upload" active={stage === "upload"} done={stage !== "upload"} />
+            <StageBadge label="2. Training" active={stage === "quiz"} done={stage === "analysis"} />
+            <StageBadge label="3. Analyse Ergebnisse" active={stage === "analysis"} done={false} />
           </nav>
 
           <div className="mt-8 rounded-2xl border border-cream-border bg-cream-light p-4">
@@ -630,48 +629,39 @@ function App() {
           </div>
         </aside>
 
-        <main className="min-h-[70vh] rounded-4xl border border-cream-border bg-surface-white p-6 shadow-sm md:p-8">
+        <main className="overflow-y-auto p-8">
           {stage === "upload" && (
-            <section>
-              <header className="mb-6">
-                <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">Schritt 1</p>
-                <h1 className="text-3xl font-bold tracking-tight">Lernmaterial hochladen</h1>
-                <p className="mt-2 max-w-3xl text-sm text-ink-secondary">
-                  Lade PDFs, Vorlesungsfolien und digitale Notizen hoch. Der Inhalt wird im Backend extrahiert, damit die KI
-                  daraus passende Prüfungsfragen erstellt.
-                </p>
-              </header>
-
-              <label className="mb-5 flex cursor-pointer items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-cream-border bg-cream-light px-6 py-10 text-center transition hover:border-accent/40">
-                <Upload size={22} className="text-accent" />
+            <section className="flex h-full flex-col items-center justify-center text-center">
+              <label className="mb-5 flex w-full max-w-3xl cursor-pointer flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed border-cream-border bg-cream-light px-8 py-28 text-center transition hover:border-accent/40">
+                <Upload size={48} className="text-accent" />
                 <div>
-                  <p className="text-sm font-bold">Dateien zum Hochladen auswählen</p>
-                  <p className="text-xs text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON</p>
+                  <p className="text-2xl font-bold">Dateien zum Hochladen auswählen</p>
+                  <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON</p>
                 </div>
                 <input type="file" multiple accept={ACCEPTED_FILE_TYPES} className="hidden" onChange={onFileInputChange} />
               </label>
 
               {uploadError && (
-                <p className="mb-4 whitespace-pre-line rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <p className="mb-4 max-w-3xl whitespace-pre-line rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-base text-red-700">
                   {uploadError}
                 </p>
               )}
 
-              <div className="mb-6 space-y-3">
+              <div className="mb-6 w-full max-w-3xl space-y-3">
                 {documents.length === 0 ? (
-                  <p className="rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-sm text-ink-muted">
+                  <p className="rounded-2xl border border-cream-border bg-cream-light px-6 py-4 text-base text-ink-muted">
                     Noch keine Dateien hochgeladen.
                   </p>
                 ) : (
                   documents.map((document) => (
                     <div
                       key={document._id}
-                      className="flex items-center justify-between rounded-2xl border border-cream-border bg-surface-white px-4 py-3"
+                      className="flex items-center justify-between rounded-2xl border border-cream-border bg-surface-white px-6 py-4 text-left"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-ink">{document.fileName}</p>
-                        <p className="text-xs text-ink-muted">{renderExtractionStatus(document.extractionStatus)}</p>
-                        {document.extractionError && <p className="text-xs text-red-600">{document.extractionError}</p>}
+                        <p className="truncate text-lg font-semibold text-ink">{document.fileName}</p>
+                        <p className="text-sm text-ink-muted">{renderExtractionStatus(document.extractionStatus)}</p>
+                        {document.extractionError && <p className="text-sm text-red-600">{document.extractionError}</p>}
                       </div>
 
                       <button
@@ -682,131 +672,190 @@ function App() {
                           }
                           void removeDocument({ grantToken, sessionId, documentId: document._id });
                         }}
-                        className="ml-4 rounded-full p-1.5 text-ink-muted transition hover:bg-cream-light hover:text-ink"
+                        className="ml-4 rounded-full p-2 text-ink-muted transition hover:bg-cream-light hover:text-ink"
                         aria-label={`Datei ${document.fileName} entfernen`}
                       >
-                        <XCircle size={16} />
+                        <XCircle size={20} />
                       </button>
                     </div>
                   ))
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  void handleGenerateQuiz();
-                }}
-                disabled={isUploading || isGeneratingQuiz || readyDocuments.length === 0}
-                className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
-              >
-                {isUploading || isGeneratingQuiz ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                Prüfungsfragen generieren
-              </button>
+              {readyDocuments.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleGenerateQuiz();
+                  }}
+                  disabled={isUploading || isGeneratingQuiz}
+                  className="inline-flex items-center gap-2 rounded-full bg-accent px-8 py-4 text-base font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                >
+                  {isUploading || isGeneratingQuiz ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={18} />
+                  )}
+                  Prüfungsfragen generieren
+                </button>
+              )}
             </section>
           )}
 
           {stage === "quiz" && (
-            <section>
-              <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">Schritt 2</p>
-                  <h1 className="text-3xl font-bold tracking-tight">Testsimulation</h1>
-                  <p className="mt-2 text-sm text-ink-secondary">
-                    Beantworte wahrscheinliche Prüfungsfragen. Wenn du etwas nicht weißt, bekommst du sofort eine Erklärung und eine Musterantwort.
-                  </p>
-                </div>
+            <section className="flex h-full flex-col items-center justify-center px-4">
+              <div className="w-full max-w-4xl text-center">
+                {!currentQuestion && stats.totalQuestions > 0 && !feedback ? (
+                  <div className="rounded-3xl border border-cream-border bg-cream-light p-12 text-center">
+                    <h2 className="mb-4 text-4xl font-bold">Stark gemacht!</h2>
+                    <p className="mb-8 text-xl text-ink-secondary">
+                      Bereit für die Analyse? Wir nutzen deine Antworten, um deinen Lernstand zu schätzen.
+                    </p>
+                    
+                    <div className="flex flex-col items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleAnalyzeSession();
+                        }}
+                        disabled={isAnalyzing}
+                        className="inline-flex items-center gap-3 rounded-full bg-accent px-10 py-5 text-lg font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                      >
+                        {isAnalyzing ? <Loader2 size={24} className="animate-spin" /> : <Brain size={24} />}
+                        Lernstands-Analyse starten
+                      </button>
 
-                <div className="rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-right">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">Fortschritt</p>
-                  <p className="text-lg font-bold text-ink">
-                    {stats.answeredQuestions} / {stats.totalQuestions}
-                  </p>
-                </div>
-              </header>
-
-              {quizError && (
-                <p className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{quizError}</p>
-              )}
-
-              {!currentQuestion && stats.totalQuestions > 0 ? (
-                <div className="rounded-3xl border border-cream-border bg-cream-light p-6">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-accent">Quiz abgeschlossen</p>
-                  <h2 className="mb-2 text-2xl font-bold">Stark gemacht. Bereit für die Analyse?</h2>
-                  <p className="mb-5 text-sm text-ink-secondary">
-                    Wir nutzen deine Antworten, um deinen Lernstand pro Thema zu schätzen, Lücken zu erkennen und eine gezielte Vertiefung vorzuschlagen.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleAnalyzeSession();
-                    }}
-                    disabled={isAnalyzing}
-                    className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
-                  >
-                    {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Brain size={16} />}
-                    Lernstands-Analyse starten
-                  </button>
-                </div>
-              ) : currentQuestion ? (
-                <>
-                  <div className="mb-5 rounded-3xl border border-cream-border bg-cream-light p-6">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-accent">{currentQuestion.topic}</p>
-                    <h2 className="text-2xl font-bold leading-tight">{currentQuestion.prompt}</h2>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleGenerateQuiz();
+                        }}
+                        disabled={isGeneratingQuiz}
+                        className="inline-flex items-center gap-3 rounded-full border-2 border-cream-border bg-surface-white px-10 py-5 text-lg font-bold text-ink-secondary transition hover:bg-cream-light disabled:opacity-60"
+                      >
+                        {isGeneratingQuiz ? <Loader2 size={24} className="animate-spin" /> : <RefreshCcw size={24} />}
+                        Weiter üben (+30 Fragen)
+                      </button>
+                    </div>
                   </div>
-
-                  <textarea
-                    value={answerInput}
-                    onChange={(event) => setAnswerInput(event.target.value)}
-                    rows={6}
-                    placeholder="Schreibe hier deine Antwort..."
-                    className="mb-4 w-full rounded-3xl border border-cream-border bg-surface-white px-4 py-3 text-sm outline-none transition focus:border-accent"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleSubmitAnswer();
-                    }}
-                    disabled={isSubmittingAnswer}
-                    className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
-                  >
-                    {isSubmittingAnswer ? <Loader2 size={16} className="animate-spin" /> : <BadgeHelp size={16} />}
-                    Antwort abgeben
-                  </button>
-
-                  {feedback && (
-                    <div className="mt-6 rounded-3xl border border-cream-border bg-surface-white p-6">
-                      <div className="mb-4 flex flex-wrap items-center gap-3">
-                        <span
-                          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] ${
-                            feedback.isCorrect
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {feedback.isCorrect ? <CheckCircle2 size={14} /> : <Lightbulb size={14} />}
-                          {feedback.isCorrect ? "Richtig" : "Nicht ganz"}
-                        </span>
-
-                        <span className="rounded-full bg-cream-light px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-ink-secondary">
-                          Punkte {feedback.score}
-                        </span>
+                ) : feedback ? (
+                  /* Feedback "Page" */
+                  <div className="mx-auto max-w-3xl animate-in fade-in zoom-in duration-300">
+                    <div className="mb-12 flex flex-col items-center gap-4">
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
+                        feedback.isCorrect ? "bg-emerald-100 text-emerald-600" : feedback.score > 0 ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-600"
+                      }`}>
+                        {feedback.isCorrect ? <CheckCircle2 size={24} /> : feedback.score > 0 ? <Lightbulb size={24} /> : <XCircle size={24} />}
+                      </div>
+                      
+                      <div className="text-center">
+                        <p className={`text-xs font-bold uppercase tracking-[0.3em] ${
+                          feedback.isCorrect ? "text-emerald-600" : feedback.score > 0 ? "text-amber-600" : "text-red-600"
+                        }`}>
+                          {feedback.isCorrect ? "Richtig" : feedback.score > 0 ? "Teilweise" : "Falsch"}
+                        </p>
                       </div>
 
-                      <p className="mb-3 text-sm leading-relaxed text-ink-secondary">{feedback.explanation}</p>
-                      <p className="rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-sm text-ink">
-                        <span className="font-bold">Musterantwort:</span> {feedback.idealAnswer}
+                      <p className="text-lg leading-relaxed text-ink-secondary/60 italic px-4 max-w-xl text-center">
+                        {answerInput}
                       </p>
                     </div>
-                  )}
-                </>
-              ) : (
-                <p className="rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-sm text-ink-muted">
-                  Quiz wird vorbereitet...
-                </p>
-              )}
+
+                    <div className="text-left space-y-8 px-4">
+                      <div className="rounded-[2.5rem] border border-cream-border bg-surface-white p-10">
+                        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Erklärung</p>
+                        <p className="text-xl leading-relaxed text-ink-secondary">
+                          {feedback.explanation}
+                        </p>
+                      </div>
+
+                      <div className="rounded-[2.5rem] border border-cream-border bg-cream-light/50 p-10">
+                        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Ideale Antwort</p>
+                        <p className="text-xl font-medium leading-relaxed text-ink">
+                          {feedback.idealAnswer}
+                        </p>
+                      </div>
+
+                      <div className="pt-8 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFeedback(null);
+                            setAnswerInput("");
+                          }}
+                          className="inline-flex items-center gap-3 rounded-full bg-accent px-12 py-5 text-lg font-bold text-cream transition hover:-translate-y-1 hover:shadow-xl"
+                        >
+                          Nächste Frage
+                          <ArrowRight size={22} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : currentQuestion ? (
+                  /* Question Page */
+                  <>
+                    <div className="mb-20">
+                      <h2 className="text-4xl font-bold leading-[1.3] tracking-tight text-ink md:text-5xl">
+                        {currentQuestion.prompt}
+                      </h2>
+                    </div>
+
+                    <div className="mx-auto max-w-2xl">
+                      <textarea
+                        value={answerInput}
+                        onChange={(event) => setAnswerInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            void handleSubmitAnswer();
+                          }
+                        }}
+                        rows={1}
+                        placeholder="Deine Antwort hier tippen..."
+                        className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20"
+                        style={{ resize: "none" }}
+                      />
+                      
+                      <div className="mt-8 flex flex-col items-center gap-6">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted/50">
+                          Enter zum Bestätigen
+                        </p>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSubmitAnswer(true);
+                          }}
+                          disabled={isSubmittingAnswer}
+                          className="text-xs font-bold uppercase tracking-[0.15em] text-ink-muted transition hover:text-accent"
+                        >
+                          Weiß ich gerade nicht
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-32">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleAnalyzeSession();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full border border-cream-border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] text-ink-muted transition hover:bg-red-50 hover:text-red-500 hover:border-red-100"
+                      >
+                        <LogOut size={14} />
+                        Session beenden
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-4">
+                    <Loader2 size={40} className="animate-spin text-accent" />
+                    <p className="text-lg font-bold uppercase tracking-widest text-ink-muted">
+                      Wird vorbereitet...
+                    </p>
+                  </div>
+                )}
+              </div>
             </section>
           )}
 

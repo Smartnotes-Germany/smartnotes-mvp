@@ -14,7 +14,7 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 - Frontend: React 19, Vite, Tailwind CSS
 - Backend: Convex (database, file storage, server functions)
 - AI: `ai` + `@ai-sdk/google-vertex`
-- Document processing: Vertex file input (PDF/PPT/PPTX/DOC/DOCX) + `officeparser` fallback
+- Document processing: Vertex file input (PDF/PPT/PPTX/DOC/DOCX/JPG/JPEG/PNG/WEBP) + `officeparser` fallback
 
 ## Prerequisites
 

@@ -3,7 +3,6 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import {
   ArrowRight,
-  BadgeHelp,
   Brain,
   CheckCircle2,
   CircleDashed,
@@ -131,7 +130,7 @@ const STORAGE_KEYS = {
   sessionId: "smartnotes.session-id",
 } as const;
 
-const ACCEPTED_FILE_TYPES = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json";
+const ACCEPTED_FILE_TYPES = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json,.jpg,.jpeg,.png,.webp";
 
 type FeedbackState = {
   isCorrect: boolean;
@@ -213,7 +212,7 @@ function App() {
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [quizError, setQuizError] = useState<string | null>(null);
+  const [, setQuizError] = useState<string | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -636,7 +635,7 @@ function App() {
                 <Upload size={48} className="text-accent" />
                 <div>
                   <p className="text-2xl font-bold">Dateien zum Hochladen auswählen</p>
-                  <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON</p>
+                  <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON, JPG/JPEG, PNG, WEBP</p>
                 </div>
                 <input type="file" multiple accept={ACCEPTED_FILE_TYPES} className="hidden" onChange={onFileInputChange} />
               </label>

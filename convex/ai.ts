@@ -30,13 +30,16 @@ const vertexProviderOptions = {
 } as const;
 
 const plainTextExtensions = new Set(["txt", "md", "markdown", "csv", "json", "yaml", "yml"]);
-const vertexNativeFileExtensions = new Set(["pdf", "ppt", "pptx", "doc", "docx"]);
+const vertexNativeFileExtensions = new Set(["pdf", "ppt", "pptx", "doc", "docx", "jpg", "jpeg", "png", "webp"]);
 const vertexNativeMediaTypes = new Set([
   "application/pdf",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ]);
 
 const extensionToMediaType: Record<string, string> = {
@@ -45,6 +48,10 @@ const extensionToMediaType: Record<string, string> = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
 };
 
 const quizGenerationSchema = z.object({
@@ -1007,7 +1014,7 @@ export const extractDocumentContent = action({
     });
 
     // Hybrid approach:
-    // - Native Vertex file path for PDF/Slides/Word formats.
+    // - Native Vertex file path for PDF/Slides/Word/Image formats.
     // - officeparser/text extraction fallback for all other formats.
     if (isVertexNativeCandidate(document.fileType, document.fileName)) {
       trace.log("info", "skip_text_extraction_vertex_native", {

@@ -3,7 +3,6 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import {
   ArrowRight,
-  BadgeHelp,
   Brain,
   CheckCircle2,
   CircleDashed,
@@ -213,7 +212,6 @@ function App() {
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [quizError, setQuizError] = useState<string | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -314,7 +312,6 @@ function App() {
   useEffect(() => {
     setAnswerInput("");
     setFeedback(null);
-    setQuizError(null);
     setQuestionStartedAt(Date.now());
   }, [currentQuestion?.id]);
 
@@ -359,7 +356,6 @@ function App() {
 
     setIsCreatingSession(true);
     setAnalysisError(null);
-    setQuizError(null);
     setUploadError(null);
 
     try {
@@ -455,12 +451,10 @@ function App() {
       return;
     }
     if (!answerInput.trim() && !dontKnowSubmission) {
-      setQuizError("Bitte schreibe eine Antwort, bevor du sie abschickst.");
       return;
     }
 
     setIsSubmittingAnswer(true);
-    setQuizError(null);
 
     try {
       const timeSpentSeconds = Math.max(1, Math.round((Date.now() - questionStartedAt) / 1000));
@@ -475,7 +469,6 @@ function App() {
 
       setFeedback(result);
     } catch (error: unknown) {
-      setQuizError(formatError(error));
     } finally {
       setIsSubmittingAnswer(false);
     }

@@ -212,7 +212,6 @@ function App() {
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [, setQuizError] = useState<string | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -313,7 +312,6 @@ function App() {
   useEffect(() => {
     setAnswerInput("");
     setFeedback(null);
-    setQuizError(null);
     setQuestionStartedAt(Date.now());
   }, [currentQuestion?.id]);
 
@@ -358,7 +356,6 @@ function App() {
 
     setIsCreatingSession(true);
     setAnalysisError(null);
-    setQuizError(null);
     setUploadError(null);
 
     try {
@@ -454,12 +451,10 @@ function App() {
       return;
     }
     if (!answerInput.trim() && !dontKnowSubmission) {
-      setQuizError("Bitte schreibe eine Antwort, bevor du sie abschickst.");
       return;
     }
 
     setIsSubmittingAnswer(true);
-    setQuizError(null);
 
     try {
       const timeSpentSeconds = Math.max(1, Math.round((Date.now() - questionStartedAt) / 1000));
@@ -474,7 +469,6 @@ function App() {
 
       setFeedback(result);
     } catch (error: unknown) {
-      setQuizError(formatError(error));
     } finally {
       setIsSubmittingAnswer(false);
     }
@@ -710,7 +704,7 @@ function App() {
                     <p className="mb-8 text-xl text-ink-secondary">
                       Bereit für die Analyse? Wir nutzen deine Antworten, um deinen Lernstand zu schätzen.
                     </p>
-                    
+
                     <div className="flex flex-col items-center gap-4">
                       <button
                         type="button"
@@ -746,7 +740,7 @@ function App() {
                       }`}>
                         {feedback.isCorrect ? <CheckCircle2 size={24} /> : feedback.score > 0 ? <Lightbulb size={24} /> : <XCircle size={24} />}
                       </div>
-                      
+
                       <div className="text-center">
                         <p className={`text-xs font-bold uppercase tracking-[0.3em] ${
                           feedback.isCorrect ? "text-emerald-600" : feedback.score > 0 ? "text-amber-600" : "text-red-600"
@@ -814,12 +808,12 @@ function App() {
                         className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20"
                         style={{ resize: "none" }}
                       />
-                      
+
                       <div className="mt-8 flex flex-col items-center gap-6">
                         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted/50">
                           Enter zum Bestätigen
                         </p>
-                        
+
                         <button
                           type="button"
                           onClick={() => {

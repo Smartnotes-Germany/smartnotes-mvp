@@ -1,415 +1,983 @@
-import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useMemo, useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { makeFunctionReference } from "convex/server";
 import {
   ArrowRight,
-  FileImage,
-  Loader2,
-  Upload,
-  LayoutDashboard,
-  Files,
-  BarChart3,
-  Settings,
-  Plus,
-  X,
-  StopCircle,
-  Zap,
+  BadgeHelp,
+  Brain,
   CheckCircle2,
-  AlertCircle,
-  TrendingUp,
-  Timer,
-  ShieldAlert,
-  BarChart,
-  HelpCircle,
-  MessageSquareHeart,
-} from 'lucide-react';
-import { BrowserRouter, Navigate, Route, Routes, useNavigate, useLocation, Link } from 'react-router-dom';
-import logoImage from './assets/images/logo.png';
-import profileImage from './assets/images/profile.jpeg';
+  CircleDashed,
+  Lightbulb,
+  Loader2,
+  LogOut,
+  RefreshCcw,
+  Sparkles,
+  Upload,
+  XCircle,
+} from "lucide-react";
+import logoImage from "./assets/images/logo.png";
 
-// --- Types & Logic ---
-
-interface Question {
-  id: string;
-  topic: string;
-  relevance: number;
-  text: string;
-  expectedKeywords: string[];
-  solution: string;
-  explanationTemplate: (userName: string, userAnswer: string, isCorrect: boolean) => string;
-}
-
-interface UserResponse {
-  questionId: string;
-  topic: string;
-  answer: string;
-  timeSpent: number;
-  changes: number;
-  score: number;
-}
-
-const userName = "Max";
-
-const initialQuestions: Question[] = [
+const redeemAccessCodeRef = makeFunctionReference<"mutation", { code: string }, { grantToken: string }>(
+  "access:redeemAccessCode",
+);
+const startSessionRef = makeFunctionReference<"mutation", { grantToken: string; title?: string }, string>(
+  "study:startSession",
+);
+const generateUploadUrlRef = makeFunctionReference<"mutation", { grantToken: string; sessionId: string }, string>(
+  "study:generateUploadUrl",
+);
+const registerUploadedDocumentRef = makeFunctionReference<
+  "mutation",
   {
-    id: 'q1',
-    topic: 'Zellatmung',
-    relevance: 0.9,
-    text: 'Welches Molekül ist der finale Elektronenakzeptor in der Atmungskette?',
-    expectedKeywords: ['sauerstoff', 'o2'],
-    solution: 'Sauerstoff (O2)',
-    explanationTemplate: (name, answer, correct) =>
-      correct
-        ? `Ganz genau, ${name}. Sauerstoff ist am Ende der Kette unverzichtbar, um die Elektronen aufzunehmen.`
-        : `Nein, ${name}, „${answer}“ ist in diesem Fall leider nicht der finale Akzeptor. Es ist der Sauerstoff (O2). Er saugt die Elektronen am Ende quasi auf, damit der Prozess nicht zum Stillstand kommt.`
+    grantToken: string;
+    sessionId: string;
+    storageId: string;
+    fileName: string;
+    fileType: string;
+    fileSizeBytes: number;
   },
-];
+  string
+>("study:registerUploadedDocument");
+const removeDocumentRef = makeFunctionReference<
+  "mutation",
+  { grantToken: string; sessionId: string; documentId: string },
+  void
+>("study:removeDocument");
 
-const questionPool: Question[] = [
+const validateGrantRef = makeFunctionReference<
+  "query",
+  { grantToken: string },
+  { valid: boolean; reason?: string; expiresAt?: number }
+>("access:validateGrant");
+const latestSessionIdRef = makeFunctionReference<"query", { grantToken: string }, string | null>(
+  "study:getLatestSessionId",
+);
+const sessionSnapshotRef = makeFunctionReference<
+  "query",
+  { grantToken: string; sessionId: string },
   {
-    id: 'q2',
-    topic: 'ATP-Bilanz',
-    relevance: 1.0,
-    text: 'Wie viel ATP gewinnt eine Zelle netto pro Glukose nur durch Glykolyse?',
-    expectedKeywords: ['2', 'zwei'],
-    solution: '2 ATP',
-    explanationTemplate: (name, answer, correct) =>
-      correct
-        ? `Korrekt, ${name}! 2 investiert, 4 raus, macht 2 Gewinn.`
-        : `Nein, ${answer} ATP sind es nicht. Es sind tatsächlich nur 2 ATP netto. Zwar entstehen insgesamt 4, aber da die Zelle am Anfang 2 investieren muss, bleibt am Ende nur ein Gewinn von 2 übrig.`
-  },
-  {
-    id: 'q3',
-    topic: 'Stoffwechsel',
-    relevance: 0.7,
-    text: 'Wann kam das erste iPhone auf den Markt?',
-    expectedKeywords: ['2007'],
-    solution: '2007',
-    explanationTemplate: (name, answer, correct) =>
-      correct
-        ? `Richtig, ${name}! Im Jahr 2007 hat das iPhone die Smartphone-Welt revolutioniert.`
-        : `Nein, ${answer} war es leider noch nicht. Das erste iPhone kam erst im Jahr 2007 heraus. 2006 war es noch in der Entwicklung.`
+    session: {
+      title: string;
+      stage: "upload" | "quiz" | "analysis";
+      round: number;
+      quizQuestions: {
+        id: string;
+        topic: string;
+        prompt: string;
+      }[];
+      analysis?: {
+        overallReadiness: number;
+        strongestTopics: string[];
+        weakestTopics: string[];
+        recommendedNextStep: string;
+        topics: {
+          topic: string;
+          comfortScore: number;
+          rationale: string;
+          recommendation: string;
+        }[];
+      };
+    };
+    documents: {
+      _id: string;
+      fileName: string;
+      extractionStatus: "pending" | "processing" | "ready" | "failed";
+      extractionError?: string;
+    }[];
+    responses: {
+      questionId: string;
+      score: number;
+    }[];
+    stats: {
+      totalQuestions: number;
+      answeredQuestions: number;
+      readyDocuments: number;
+    };
   }
-];
+>("study:getSessionSnapshot");
 
-const calculateConfidenceScore = (isCorrect: boolean, time: number, changes: number, skipped: boolean = false) => {
-  if (skipped) return 0;
-  const accuracy = isCorrect ? 1 : 0;
-  const timeScore = Math.max(0, Math.min(1, 1 - (time - 10) / 30));
-  const changePenalty = Math.min(0.3, changes * 0.1);
-  return Math.max(0, (accuracy * 0.6) + (timeScore * 0.3) - (changePenalty));
+const extractDocumentContentRef = makeFunctionReference<
+  "action",
+  { grantToken: string; sessionId: string; documentId: string },
+  unknown
+>("ai:extractDocumentContent");
+const generateQuizRef = makeFunctionReference<
+  "action",
+  { grantToken: string; sessionId: string; questionCount?: number },
+  unknown
+>("ai:generateQuiz");
+const evaluateAnswerRef = makeFunctionReference<
+  "action",
+  {
+    grantToken: string;
+    sessionId: string;
+    questionId: string;
+    userAnswer: string;
+    timeSpentSeconds: number;
+  },
+  FeedbackState
+>("ai:evaluateAnswer");
+const analyzePerformanceRef = makeFunctionReference<"action", { grantToken: string; sessionId: string }, unknown>(
+  "ai:analyzePerformance",
+);
+const generateTopicDeepDiveRef = makeFunctionReference<
+  "action",
+  { grantToken: string; sessionId: string; topic: string },
+  unknown
+>("ai:generateTopicDeepDive");
+
+const STORAGE_KEYS = {
+  grantToken: "smartnotes.grant-token",
+  sessionId: "smartnotes.session-id",
+} as const;
+
+const ACCEPTED_FILE_TYPES = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json";
+
+type FeedbackState = {
+  isCorrect: boolean;
+  score: number;
+  explanation: string;
+  idealAnswer: string;
 };
 
-// --- Components ---
+const formatError = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
+};
 
-function Sidebar({ filesUploaded, questionsFinished }: { filesUploaded: boolean, questionsFinished: boolean }) {
-  const location = useLocation();
-  const navItems = [
-    { icon: Files, label: '1. Unterlagen', path: '/start', enabled: true },
-    { icon: Zap, label: '2. Training', path: '/session', enabled: filesUploaded },
-    { icon: BarChart3, label: '3. Ergebnis', path: '/sicherheit', enabled: questionsFinished },
-  ];
+const uploadFileToConvexStorage = (uploadUrl: string, file: File): Promise<{ storageId: string }> => {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", uploadUrl, true);
+    request.timeout = 130000;
 
-  return (
-    <aside className="fixed left-0 top-0 hidden h-full w-64 flex-col border-r border-cream-border bg-surface-white/80 backdrop-blur-md md:flex z-50">
-      <div className="flex items-center gap-3 p-6 pt-8">
-        <div className="h-10 w-10 overflow-hidden rounded-xl border border-cream-border shadow-sm">
-          <img src={logoImage} alt="Logo" className="h-full w-full object-cover" />
-        </div>
-        <p className="text-[1.1rem] font-bold uppercase tracking-[0.12em] text-accent leading-none">Smartnotes</p>
-      </div>
+    request.onload = () => {
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(`Hochladen fehlgeschlagen (${request.status}).`));
+        return;
+      }
 
-      <nav className="flex-1 px-3 py-6 space-y-2">
-        <Link to="/dashboard" className="flex items-center gap-3 rounded-xl px-4 py-3 text-ink-secondary hover:bg-cream-light transition-all">
-          <LayoutDashboard size={20} />
-          <span className="text-[0.9rem] font-semibold">Dashboard</span>
-        </Link>
-        <div className="pt-6 pb-2"><h3 className="px-4 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-ink-muted">Session</h3></div>
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path || (item.path === '/start' && location.pathname === '/');
-          const Icon = item.icon;
-          return !item.enabled ? (
-            <div key={item.path} className="flex items-center gap-3 px-4 py-3 text-ink-muted/30 cursor-not-allowed select-none"><Icon size={20} /><span className="text-[0.9rem] font-medium">{item.label}</span></div>
-          ) : (
-            <Link key={item.path} to={item.path} className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${isActive ? 'bg-accent text-cream shadow-lg' : 'text-ink-secondary hover:bg-cream-light'}`}>
-              <item.icon size={20} /><span className="text-[0.9rem] font-semibold">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      const responseText = request.responseText ?? "";
+      try {
+        const parsed = JSON.parse(responseText) as { storageId?: string };
+        if (!parsed.storageId) {
+          throw new Error("storageId fehlt");
+        }
+        resolve({ storageId: parsed.storageId });
+      } catch {
+        const match = responseText.match(/"storageId"\s*:\s*"([^"]+)"/);
+        if (match?.[1]) {
+          resolve({ storageId: match[1] });
+          return;
+        }
 
-      <div className="mt-auto border-t border-cream-border p-4">
-        <div className="flex items-center gap-3 px-2 py-3">
-          <div className="h-10 w-10 rounded-full border-2 border-cream-border overflow-hidden shadow-sm shrink-0"><img src={profileImage} alt="Profile" className="h-full w-full object-cover" /></div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5"><p className="truncate text-[0.85rem] font-bold text-ink leading-tight">Max Mustermann</p><Settings size={14} className="text-ink-muted hover:text-accent cursor-pointer" /></div>
-            <p className="truncate text-[0.7rem] text-ink-muted font-medium">Premium Account</p>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
+        reject(new Error("Upload-Antwort konnte nicht gelesen werden. Bitte versuche es erneut."));
+      }
+    };
 
-function MainLayout({ children, filesUploaded, questionsFinished }: { children: ReactNode, filesUploaded: boolean, questionsFinished: boolean }) {
-  return (
-    <div className="min-h-screen bg-cream text-ink flex">
-      <Sidebar filesUploaded={filesUploaded} questionsFinished={questionsFinished} />
-      <main className="flex-1 md:ml-64 p-6 md:p-12 lg:p-16 relative flex flex-col items-center">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-16 top-20 h-80 w-80 rounded-full bg-accent/5 blur-3xl" />
-          <div className="absolute right-0 top-0 h-120 w-120 rounded-full bg-cream-dark/40 blur-3xl" />
-        </div>
-        <div className="relative mx-auto w-full max-w-5xl flex-1 flex flex-col">{children}</div>
-      </main>
-    </div>
-  );
-}
+    request.onerror = () => {
+      reject(new Error("Netzwerkfehler beim Hochladen. Bitte prüfe Internetverbindung, VPN/Ad-Blocker und versuche es erneut."));
+    };
 
-function StartPage({ files, setFiles, setFilesUploaded }: { files: string[], setFiles: Dispatch<SetStateAction<string[]>>, setFilesUploaded: (v: boolean) => void }) {
-  const navigate = useNavigate();
+    request.ontimeout = () => {
+      reject(new Error("Zeitüberschreitung beim Hochladen. Bitte versuche eine kleinere Datei oder erneut."));
+    };
+
+    request.onabort = () => {
+      reject(new Error("Der Upload wurde abgebrochen."));
+    };
+
+    request.send(file);
+  });
+};
+
+function App() {
+  const [grantToken, setGrantToken] = useState<string | null>(() => localStorage.getItem(STORAGE_KEYS.grantToken));
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.sessionId);
+    return saved;
+  });
+
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isRedeemingCode, setIsRedeemingCode] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+
   const [isUploading, setIsUploading] = useState(false);
-  const handleUpload = () => { setIsUploading(true); setTimeout(() => { setFilesUploaded(true); navigate('/session'); }, 1000); };
-  const removeFile = (name: string) => setFiles(prev => prev.filter(f => f !== name));
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
 
-  return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-0 flex-col gap-6 py-4">
-      <header className="space-y-2 text-center">
-        <h1 className="text-[2.4rem] md:text-[3rem] font-bold leading-tight tracking-tight text-ink">Unterlagen</h1>
-        <p className="text-base font-medium text-ink-secondary md:text-lg">Lade deine Dokumente für deine Testvorbereitung hoch.</p>
-      </header>
+  const [answerInput, setAnswerInput] = useState("");
+  const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [quizError, setQuizError] = useState<string | null>(null);
 
-      <div className="group relative rounded-[3rem] border-2 border-dashed border-cream-border bg-surface-white/40 hover:border-accent/30 transition-all duration-500">
-        <div className="flex flex-col items-center justify-center p-8 text-center md:p-10">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/5 text-accent shadow-inner"><Upload size={32} /></div>
-          <h2 className="text-xl font-bold tracking-tight text-ink">Hier ablegen</h2>
-          <button className="mt-6 flex items-center gap-2 rounded-full border border-cream-border bg-surface-white px-8 py-3 text-[0.9rem] font-bold text-ink shadow-sm transition-all hover:bg-cream-light active:scale-95"><Plus size={18} />Datei auswählen</button>
-        </div>
-      </div>
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [topicLoading, setTopicLoading] = useState<string | null>(null);
 
-      {files.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {files.map((file) => (
-            <motion.div key={file} layout className="flex items-center justify-between gap-4 rounded-2xl border border-cream-border bg-surface-white/80 p-4 shadow-sm backdrop-blur-sm">
-              <div className="flex items-center gap-3 overflow-hidden"><FileImage size={20} className="shrink-0 text-accent" /><span className="truncate text-[0.9rem] font-bold text-ink-secondary">{file}</span></div>
-              <button onClick={() => removeFile(file)} className="text-ink-muted hover:text-red-500 transition-colors p-1"><X size={18} /></button>
-            </motion.div>
-          ))}
-        </div>
-      )}
+  const redeemAccessCode = useMutation(redeemAccessCodeRef);
+  const startSession = useMutation(startSessionRef);
+  const generateUploadUrl = useMutation(generateUploadUrlRef);
+  const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
+  const removeDocument = useMutation(removeDocumentRef);
 
-      <div className="mt-auto flex justify-center pt-2">
-        <button onClick={handleUpload} disabled={files.length === 0 || isUploading} className="group flex items-center gap-4 rounded-full bg-accent px-10 py-4 text-base font-bold text-cream shadow-2xl transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-30">
-          {isUploading ? <Loader2 size={24} className="animate-spin" /> : <>Training starten<ArrowRight size={26} className="transition-transform group-hover:translate-x-1" /></>}
-        </button>
-      </div>
-    </motion.div>
+  const extractDocumentContent = useAction(extractDocumentContentRef);
+  const generateQuiz = useAction(generateQuizRef);
+  const evaluateAnswer = useAction(evaluateAnswerRef);
+  const analyzePerformance = useAction(analyzePerformanceRef);
+  const generateTopicDeepDive = useAction(generateTopicDeepDiveRef);
+
+  const grantStatus = useQuery(validateGrantRef, grantToken ? { grantToken } : "skip");
+  const latestSessionId = useQuery(latestSessionIdRef, grantToken && grantStatus?.valid ? { grantToken } : "skip");
+  const snapshot = useQuery(
+    sessionSnapshotRef,
+    grantToken && grantStatus?.valid && sessionId && latestSessionId !== undefined && latestSessionId === sessionId
+      ? { grantToken, sessionId }
+      : "skip",
   );
-}
 
-function StudySessionPage({ userResponses, setUserResponses, setQuestionsFinished }: { userResponses: UserResponse[], setUserResponses: Dispatch<SetStateAction<UserResponse[]>>, setQuestionsFinished: (v: boolean) => void }) {
-  const navigate = useNavigate();
-  const [activeQuestions, setActiveQuestions] = useState<Question[]>(initialQuestions);
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [userInput, setUserInput] = useState('');
-  const [changes, setChanges] = useState(0);
-  const [startTime, setStartTime] = useState(() => Date.now());
-  const [showFeedback, setShowFeedback] = useState(false);
-  const [isCorrect, setIsCorrect] = useState(false);
+  useEffect(() => {
+    if (!grantToken || !grantStatus || grantStatus.valid) {
+      return;
+    }
 
-  const currentTask = activeQuestions[currentIdx];
+    setGrantToken(null);
+    setSessionId(null);
+    localStorage.removeItem(STORAGE_KEYS.grantToken);
+    localStorage.removeItem(STORAGE_KEYS.sessionId);
+  }, [grantStatus, grantToken]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUserInput(e.target.value);
-    setChanges(prev => prev + 1);
+  useEffect(() => {
+    if (!grantToken || !grantStatus?.valid || sessionId || latestSessionId === undefined || isCreatingSession) {
+      return;
+    }
+
+    if (latestSessionId) {
+      setSessionId(latestSessionId);
+      localStorage.setItem(STORAGE_KEYS.sessionId, latestSessionId);
+      return;
+    }
+
+    setIsCreatingSession(true);
+    void startSession({ grantToken })
+      .then((newSessionId) => {
+        setSessionId(newSessionId);
+        localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+      })
+      .catch((error: unknown) => {
+        setAuthError(formatError(error));
+      })
+      .finally(() => {
+        setIsCreatingSession(false);
+      });
+  }, [grantToken, grantStatus, isCreatingSession, latestSessionId, sessionId, startSession]);
+
+  useEffect(() => {
+    if (!grantToken || !grantStatus?.valid || latestSessionId === undefined) {
+      return;
+    }
+
+    if (!latestSessionId) {
+      if (sessionId) {
+        setSessionId(null);
+        localStorage.removeItem(STORAGE_KEYS.sessionId);
+      }
+      return;
+    }
+
+    if (sessionId !== latestSessionId) {
+      setSessionId(latestSessionId);
+      localStorage.setItem(STORAGE_KEYS.sessionId, latestSessionId);
+    }
+  }, [grantStatus, grantToken, latestSessionId, sessionId]);
+
+  const session = snapshot?.session ?? null;
+  const documents = snapshot?.documents ?? [];
+  const responses = snapshot?.responses;
+  const stats = snapshot?.stats;
+
+  const responseByQuestionId = useMemo(() => {
+    return new Map((responses ?? []).map((response) => [response.questionId, response]));
+  }, [responses]);
+
+  const currentQuestion = useMemo(() => {
+    if (!session) {
+      return null;
+    }
+    return session.quizQuestions.find((question) => !responseByQuestionId.has(question.id)) ?? null;
+  }, [responseByQuestionId, session]);
+
+  useEffect(() => {
+    setAnswerInput("");
+    setFeedback(null);
+    setQuizError(null);
+    setQuestionStartedAt(Date.now());
+  }, [currentQuestion?.id]);
+
+  const handleSignOut = () => {
+    setGrantToken(null);
+    setSessionId(null);
+    setAuthError(null);
+    localStorage.removeItem(STORAGE_KEYS.grantToken);
+    localStorage.removeItem(STORAGE_KEYS.sessionId);
   };
 
-  const handleSkip = () => {
-    const score = calculateConfidenceScore(false, 0, 0, true);
-    setUserResponses(prev => [...prev, { questionId: currentTask.id, topic: currentTask.topic, answer: 'Übersprungen', timeSpent: 0, changes: 0, score }]);
-    setIsCorrect(false);
-    setShowFeedback(true);
-  };
+  const handleRedeemCode = async () => {
+    if (!accessCodeInput.trim()) {
+      setAuthError("Bitte gib deinen Einmal-Zugangscode ein.");
+      return;
+    }
 
-  const handleSubmit = () => {
-    const timeSpent = (Date.now() - startTime) / 1000;
-    const correct = currentTask.expectedKeywords.some(k => userInput.toLowerCase().includes(k.toLowerCase()));
-    const score = calculateConfidenceScore(correct, timeSpent, changes);
-    setUserResponses(prev => [...prev, { questionId: currentTask.id, topic: currentTask.topic, answer: userInput, timeSpent, changes, score }]);
-    setIsCorrect(correct);
-    setShowFeedback(true);
-  };
+    setIsRedeemingCode(true);
+    setAuthError(null);
 
-  const nextQuestion = () => {
-    setShowFeedback(false);
-    setUserInput('');
-    setChanges(0);
-    setStartTime(Date.now());
+    try {
+      const auth = await redeemAccessCode({ code: accessCodeInput });
+      const newSessionId = await startSession({ grantToken: auth.grantToken });
 
-    const available = questionPool.filter(q => !activeQuestions.find(aq => aq.id === q.id));
-    available.sort((a, b) => b.relevance - a.relevance);
+      setGrantToken(auth.grantToken);
+      setSessionId(newSessionId);
 
-    if (available.length > 0) {
-      setActiveQuestions(prev => [...prev, available[0]]);
-      setCurrentIdx(prev => prev + 1);
-    } else {
-      setActiveQuestions(prev => [...prev, {
-          id: `gen-${Date.now()}`,
-          topic: 'Wiederholung',
-          relevance: 0.5,
-          text: `Erkläre mir kurz, ${userName}, was du heute als wichtigsten Punkt zur ${currentTask.topic} mitnimmst?`,
-          expectedKeywords: ['relevanz'],
-          solution: 'Individuelle Zusammenfassung',
-          explanationTemplate: (n) => `Tolle Reflexion, ${n}! Genau dieses aktive Abrufen festigt dein Wissen für den Test.`
-      }]);
-      setCurrentIdx(prev => prev + 1);
+      localStorage.setItem(STORAGE_KEYS.grantToken, auth.grantToken);
+      localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+      setAccessCodeInput("");
+    } catch (error: unknown) {
+      setAuthError(formatError(error));
+    } finally {
+      setIsRedeemingCode(false);
     }
   };
 
-  return (
-    <div className="flex-1 flex flex-col py-10">
-      <header className="mb-20 space-y-4 text-center">
-        <div className="flex items-center justify-center gap-4 text-accent">
-           <div className="flex items-center gap-2"><Timer size={14} /><span className="text-[0.7rem] font-bold uppercase tracking-widest">Analyse aktiv</span></div>
-           <div className="h-1 w-1 rounded-full bg-cream-border" />
-           <div className="flex items-center gap-2"><CheckCircle2 size={14} /><span className="text-[0.7rem] font-bold uppercase tracking-widest">{userResponses.length} Beantwortet</span></div>
+  const handleStartFreshSession = async () => {
+    if (!grantToken) {
+      return;
+    }
+
+    setIsCreatingSession(true);
+    setAnalysisError(null);
+    setQuizError(null);
+    setUploadError(null);
+
+    try {
+      const newSessionId = await startSession({ grantToken });
+      setSessionId(newSessionId);
+      localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+    } catch (error: unknown) {
+      setAnalysisError(formatError(error));
+    } finally {
+      setIsCreatingSession(false);
+    }
+  };
+
+  // Upload flow:
+  // 1) Ask Convex for a short-lived upload URL.
+  // 2) Upload raw bytes directly from browser.
+  // 3) Register metadata and trigger extraction action.
+  const handleFileUpload = async (files: File[]) => {
+    if (!grantToken || !sessionId || files.length === 0) {
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    const errors: string[] = [];
+
+    for (const file of files) {
+      try {
+        const uploadUrl = await generateUploadUrl({ grantToken, sessionId });
+
+        const uploadResult = await uploadFileToConvexStorage(uploadUrl, file);
+
+        const documentId = await registerUploadedDocument({
+          grantToken,
+          sessionId,
+          storageId: uploadResult.storageId,
+          fileName: file.name,
+          fileType: file.type || "application/octet-stream",
+          fileSizeBytes: file.size,
+        });
+
+        await extractDocumentContent({
+          grantToken,
+          sessionId,
+          documentId,
+        });
+      } catch (error: unknown) {
+        errors.push(`${file.name}: ${formatError(error)}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      setUploadError(errors.join("\n"));
+    }
+
+    setIsUploading(false);
+  };
+
+  const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    if (!fileList) {
+      return;
+    }
+
+    void handleFileUpload(Array.from(fileList));
+    event.target.value = "";
+  };
+
+  const handleGenerateQuiz = async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    setIsGeneratingQuiz(true);
+    setUploadError(null);
+
+    try {
+      await generateQuiz({
+        grantToken,
+        sessionId,
+        questionCount: 30, // Increased to 30 for "infinite" feel
+      });
+    } catch (error: unknown) {
+      setUploadError(formatError(error));
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  };
+
+  const handleSubmitAnswer = async (dontKnowSubmission: boolean = false) => {
+    if (!grantToken || !sessionId || !currentQuestion) {
+      return;
+    }
+    if (!answerInput.trim() && !dontKnowSubmission) {
+      setQuizError("Bitte schreibe eine Antwort, bevor du sie abschickst.");
+      return;
+    }
+
+    setIsSubmittingAnswer(true);
+    setQuizError(null);
+
+    try {
+      const timeSpentSeconds = Math.max(1, Math.round((Date.now() - questionStartedAt) / 1000));
+
+      const result = await evaluateAnswer({
+        grantToken,
+        sessionId,
+        questionId: currentQuestion.id,
+        userAnswer: dontKnowSubmission ? "" : answerInput,
+        timeSpentSeconds,
+      });
+
+      setFeedback(result);
+    } catch (error: unknown) {
+      setQuizError(formatError(error));
+    } finally {
+      setIsSubmittingAnswer(false);
+    }
+  };
+
+  const handleAnalyzeSession = async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      await analyzePerformance({
+        grantToken,
+        sessionId,
+      });
+    } catch (error: unknown) {
+      setAnalysisError(formatError(error));
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleDeepDive = async (topic: string) => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    setTopicLoading(topic);
+    setAnalysisError(null);
+
+    try {
+      await generateTopicDeepDive({ grantToken, sessionId, topic });
+    } catch (error: unknown) {
+      setAnalysisError(formatError(error));
+    } finally {
+      setTopicLoading(null);
+    }
+  };
+
+  if (!grantToken) {
+    return (
+      <div className="min-h-screen bg-cream px-6 py-10 text-ink md:px-10">
+        <div className="mx-auto max-w-xl">
+          <div className="mb-10 flex items-center justify-center gap-3">
+            <img src={logoImage} alt="Smartnotes" className="h-10 w-10 rounded-xl border border-cream-border" />
+            <p className="text-lg font-black uppercase tracking-[0.16em] text-accent">Smartnotes</p>
+          </div>
+
+          <div className="rounded-[2rem] border border-cream-border bg-surface-white p-8 shadow-sm">
+            <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">Anonymer Zugang</p>
+            <h1 className="mb-3 text-3xl font-bold tracking-tight">Einmal-Zugangscode eingeben</h1>
+            <p className="mb-6 text-sm text-ink-secondary">
+              Es werden keine Konten benötigt. Ein Einmal-Code gibt dir temporären, anonymen Zugang.
+            </p>
+
+            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-ink-muted">Zugangscode</label>
+            <input
+              value={accessCodeInput}
+              onChange={(event) => setAccessCodeInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void handleRedeemCode();
+                }
+              }}
+              placeholder="SMARTNOTES-DEMO-2026"
+              className="mb-5 w-full rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-sm font-medium outline-none transition focus:border-accent"
+            />
+
+            {authError && (
+              <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{authError}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                void handleRedeemCode();
+              }}
+              disabled={isRedeemingCode}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+            >
+              {isRedeemingCode ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+              Weiter
+            </button>
+          </div>
         </div>
-        <div className="h-1.5 w-full bg-cream-dark/20 rounded-full overflow-hidden relative"><motion.div className="h-full bg-accent" animate={{ width: `${Math.min((userResponses.length / 5) * 100, 100)}%` }} /></div>
-      </header>
-
-      <div className="flex-1 flex flex-col items-center">
-        <AnimatePresence mode="wait">
-          {!showFeedback ? (
-            <motion.div key={currentTask.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full text-center">
-              <span className="inline-block px-3 py-1 rounded-full bg-accent/5 text-accent text-[0.65rem] font-bold uppercase tracking-widest mb-6">{currentTask.topic}</span>
-              <h2 className="text-[2.2rem] md:text-[2.8rem] font-bold leading-tight tracking-tight text-ink mb-16">{currentTask.text}</h2>
-              <div className="relative max-w-xl mx-auto group mb-12"><input type="text" value={userInput} onChange={handleInputChange} autoFocus placeholder="Deine Antwort..." className="w-full bg-transparent border-b-2 border-cream-border py-4 px-2 text-xl font-medium outline-none focus:border-accent transition-colors text-center" onKeyDown={(e) => e.key === 'Enter' && userInput.length > 0 && handleSubmit()} /></div>
-              <button onClick={handleSkip} className="flex items-center gap-2 mx-auto text-ink-muted hover:text-accent transition-all text-[0.7rem] font-bold uppercase tracking-widest"><HelpCircle size={16} />Weiß ich gerade nicht</button>
-            </motion.div>
-          ) : (
-            <motion.div key="feedback" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-surface-white rounded-[2.5rem] p-10 border border-cream-border shadow-xl text-center">
-              <div className={`mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-6 ${isCorrect ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>{isCorrect ? <CheckCircle2 size={32} /> : <AlertCircle size={32} />}</div>
-              <div className="flex items-center justify-center gap-2 mb-2 text-accent">
-                <MessageSquareHeart size={16} />
-                <p className="text-[0.7rem] font-bold uppercase tracking-widest">{isCorrect ? 'Super!' : 'Klarstellung'}</p>
-              </div>
-              <p className="text-xl font-bold mb-6">{isCorrect ? 'Völlig richtig!' : 'Nicht ganz...'}</p>
-              <div className="bg-cream-light/30 rounded-2xl p-8 text-left mb-8 border border-cream-border/50">
-                <p className="text-[1.1rem] leading-relaxed text-ink-secondary font-medium italic">
-                  „{currentTask.explanationTemplate(userName, userInput, isCorrect)}“
-                </p>
-              </div>
-              <button onClick={nextQuestion} className="w-full rounded-full bg-ink py-4 text-cream font-bold flex items-center justify-center gap-2 hover:bg-accent transition-colors">Nächste Frage <ArrowRight size={18} /></button>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+    );
+  }
 
-      <footer className="mt-20 flex justify-center border-t border-cream-border/50 pt-8 w-full"><button onClick={() => { setQuestionsFinished(true); navigate('/sicherheit'); }} className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-ink-muted hover:text-ink transition-colors"><StopCircle size={14} />Session Beenden</button></footer>
+  if (!grantStatus || !grantStatus.valid || !sessionId || !session || !stats) {
+    return (
+      <div className="min-h-screen bg-cream px-6 py-10 text-ink">
+        <div className="mx-auto flex max-w-xl items-center justify-center gap-3 rounded-2xl border border-cream-border bg-surface-white p-5">
+          <Loader2 size={20} className="animate-spin text-accent" />
+          <p className="text-sm font-medium text-ink-secondary">Arbeitsbereich wird vorbereitet...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const stage = session.stage;
+  const readyDocuments = documents.filter((document) => document.extractionStatus === "ready");
+
+  return (
+    <div className="min-h-screen bg-cream text-ink">
+      <div className="grid h-screen md:grid-cols-[300px_1fr]">
+        <aside className="flex flex-col border-r border-cream-border bg-surface-white p-6">
+          <div className="mb-8 flex items-center gap-3">
+            <img src={logoImage} alt="Smartnotes" className="h-10 w-10 rounded-xl border border-cream-border" />
+            <div>
+              <p className="text-base font-black uppercase tracking-[0.16em] text-accent">Smartnotes</p>
+            </div>
+          </div>
+
+          <nav className="space-y-3">
+            <StageBadge label="1. Upload" active={stage === "upload"} done={stage !== "upload"} />
+            <StageBadge label="2. Training" active={stage === "quiz"} done={stage === "analysis"} />
+            <StageBadge label="3. Analyse Ergebnisse" active={stage === "analysis"} done={false} />
+          </nav>
+
+          <div className="mt-8 rounded-2xl border border-cream-border bg-cream-light p-4">
+            <p className="mb-1 text-xs font-bold uppercase tracking-[0.15em] text-accent">Aktuelle Sitzung</p>
+            <p className="text-sm font-semibold text-ink">{session.title}</p>
+            <p className="mt-2 text-xs text-ink-muted">Runde {session.round}</p>
+          </div>
+
+          <div className="mt-auto pt-6">
+            <button
+              type="button"
+              onClick={() => {
+                void handleStartFreshSession();
+              }}
+              disabled={isCreatingSession}
+              className="mb-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-cream-border bg-surface-white px-4 py-2.5 text-xs font-bold uppercase tracking-[0.12em] text-ink transition hover:bg-cream-light disabled:opacity-60"
+            >
+              {isCreatingSession ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+              Neue Sitzung
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-cream-border bg-surface-white px-4 py-2.5 text-xs font-bold uppercase tracking-[0.12em] text-ink-muted transition hover:text-ink"
+            >
+              <LogOut size={14} />
+              Abmelden
+            </button>
+          </div>
+        </aside>
+
+        <main className="overflow-y-auto p-8">
+          {stage === "upload" && (
+            <section className="flex h-full flex-col items-center justify-center text-center">
+              <label className="mb-5 flex w-full max-w-3xl cursor-pointer flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed border-cream-border bg-cream-light px-8 py-28 text-center transition hover:border-accent/40">
+                <Upload size={48} className="text-accent" />
+                <div>
+                  <p className="text-2xl font-bold">Dateien zum Hochladen auswählen</p>
+                  <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON</p>
+                </div>
+                <input type="file" multiple accept={ACCEPTED_FILE_TYPES} className="hidden" onChange={onFileInputChange} />
+              </label>
+
+              {uploadError && (
+                <p className="mb-4 max-w-3xl whitespace-pre-line rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-base text-red-700">
+                  {uploadError}
+                </p>
+              )}
+
+              <div className="mb-6 w-full max-w-3xl space-y-3">
+                {documents.length === 0 ? (
+                  <p className="rounded-2xl border border-cream-border bg-cream-light px-6 py-4 text-base text-ink-muted">
+                    Noch keine Dateien hochgeladen.
+                  </p>
+                ) : (
+                  documents.map((document) => (
+                    <div
+                      key={document._id}
+                      className="flex items-center justify-between rounded-2xl border border-cream-border bg-surface-white px-6 py-4 text-left"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-semibold text-ink">{document.fileName}</p>
+                        <p className="text-sm text-ink-muted">{renderExtractionStatus(document.extractionStatus)}</p>
+                        {document.extractionError && <p className="text-sm text-red-600">{document.extractionError}</p>}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!grantToken || !sessionId) {
+                            return;
+                          }
+                          void removeDocument({ grantToken, sessionId, documentId: document._id });
+                        }}
+                        className="ml-4 rounded-full p-2 text-ink-muted transition hover:bg-cream-light hover:text-ink"
+                        aria-label={`Datei ${document.fileName} entfernen`}
+                      >
+                        <XCircle size={20} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {readyDocuments.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleGenerateQuiz();
+                  }}
+                  disabled={isUploading || isGeneratingQuiz}
+                  className="inline-flex items-center gap-2 rounded-full bg-accent px-8 py-4 text-base font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                >
+                  {isUploading || isGeneratingQuiz ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={18} />
+                  )}
+                  Prüfungsfragen generieren
+                </button>
+              )}
+            </section>
+          )}
+
+          {stage === "quiz" && (
+            <section className="flex h-full flex-col items-center justify-center px-4">
+              <div className="w-full max-w-4xl text-center">
+                {!currentQuestion && stats.totalQuestions > 0 && !feedback ? (
+                  <div className="rounded-3xl border border-cream-border bg-cream-light p-12 text-center">
+                    <h2 className="mb-4 text-4xl font-bold">Stark gemacht!</h2>
+                    <p className="mb-8 text-xl text-ink-secondary">
+                      Bereit für die Analyse? Wir nutzen deine Antworten, um deinen Lernstand zu schätzen.
+                    </p>
+                    
+                    <div className="flex flex-col items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleAnalyzeSession();
+                        }}
+                        disabled={isAnalyzing}
+                        className="inline-flex items-center gap-3 rounded-full bg-accent px-10 py-5 text-lg font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                      >
+                        {isAnalyzing ? <Loader2 size={24} className="animate-spin" /> : <Brain size={24} />}
+                        Lernstands-Analyse starten
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleGenerateQuiz();
+                        }}
+                        disabled={isGeneratingQuiz}
+                        className="inline-flex items-center gap-3 rounded-full border-2 border-cream-border bg-surface-white px-10 py-5 text-lg font-bold text-ink-secondary transition hover:bg-cream-light disabled:opacity-60"
+                      >
+                        {isGeneratingQuiz ? <Loader2 size={24} className="animate-spin" /> : <RefreshCcw size={24} />}
+                        Weiter üben (+30 Fragen)
+                      </button>
+                    </div>
+                  </div>
+                ) : feedback ? (
+                  /* Feedback "Page" */
+                  <div className="mx-auto max-w-3xl animate-in fade-in zoom-in duration-300">
+                    <div className="mb-12 flex flex-col items-center gap-4">
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
+                        feedback.isCorrect ? "bg-emerald-100 text-emerald-600" : feedback.score > 0 ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-600"
+                      }`}>
+                        {feedback.isCorrect ? <CheckCircle2 size={24} /> : feedback.score > 0 ? <Lightbulb size={24} /> : <XCircle size={24} />}
+                      </div>
+                      
+                      <div className="text-center">
+                        <p className={`text-xs font-bold uppercase tracking-[0.3em] ${
+                          feedback.isCorrect ? "text-emerald-600" : feedback.score > 0 ? "text-amber-600" : "text-red-600"
+                        }`}>
+                          {feedback.isCorrect ? "Richtig" : feedback.score > 0 ? "Teilweise" : "Falsch"}
+                        </p>
+                      </div>
+
+                      <p className="text-lg leading-relaxed text-ink-secondary/60 italic px-4 max-w-xl text-center">
+                        {answerInput}
+                      </p>
+                    </div>
+
+                    <div className="text-left space-y-8 px-4">
+                      <div className="rounded-[2.5rem] border border-cream-border bg-surface-white p-10">
+                        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Erklärung</p>
+                        <p className="text-xl leading-relaxed text-ink-secondary">
+                          {feedback.explanation}
+                        </p>
+                      </div>
+
+                      <div className="rounded-[2.5rem] border border-cream-border bg-cream-light/50 p-10">
+                        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Ideale Antwort</p>
+                        <p className="text-xl font-medium leading-relaxed text-ink">
+                          {feedback.idealAnswer}
+                        </p>
+                      </div>
+
+                      <div className="pt-8 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFeedback(null);
+                            setAnswerInput("");
+                          }}
+                          className="inline-flex items-center gap-3 rounded-full bg-accent px-12 py-5 text-lg font-bold text-cream transition hover:-translate-y-1 hover:shadow-xl"
+                        >
+                          Nächste Frage
+                          <ArrowRight size={22} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : currentQuestion ? (
+                  /* Question Page */
+                  <>
+                    <div className="mb-20">
+                      <h2 className="text-4xl font-bold leading-[1.3] tracking-tight text-ink md:text-5xl">
+                        {currentQuestion.prompt}
+                      </h2>
+                    </div>
+
+                    <div className="mx-auto max-w-2xl">
+                      <textarea
+                        value={answerInput}
+                        onChange={(event) => setAnswerInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            void handleSubmitAnswer();
+                          }
+                        }}
+                        rows={1}
+                        placeholder="Deine Antwort hier tippen..."
+                        className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20"
+                        style={{ resize: "none" }}
+                      />
+                      
+                      <div className="mt-8 flex flex-col items-center gap-6">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted/50">
+                          Enter zum Bestätigen
+                        </p>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSubmitAnswer(true);
+                          }}
+                          disabled={isSubmittingAnswer}
+                          className="text-xs font-bold uppercase tracking-[0.15em] text-ink-muted transition hover:text-accent"
+                        >
+                          Weiß ich gerade nicht
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-32">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleAnalyzeSession();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full border border-cream-border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] text-ink-muted transition hover:bg-red-50 hover:text-red-500 hover:border-red-100"
+                      >
+                        <LogOut size={14} />
+                        Session beenden
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-4">
+                    <Loader2 size={40} className="animate-spin text-accent" />
+                    <p className="text-lg font-bold uppercase tracking-widest text-ink-muted">
+                      Wird vorbereitet...
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {stage === "analysis" && (
+            <section>
+              <header className="mb-6">
+                <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">Schritt 3</p>
+                <h1 className="text-3xl font-bold tracking-tight">Lernstands-Analyse</h1>
+                <p className="mt-2 text-sm text-ink-secondary">
+                  Wähle ein Thema mit Lernlücken für eine gezielte Vertiefung oder starte eine neue Sitzung.
+                </p>
+              </header>
+
+              {analysisError && (
+                <p className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{analysisError}</p>
+              )}
+
+              {!session.analysis ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAnalyzeSession();
+                  }}
+                  disabled={isAnalyzing}
+                  className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                >
+                  {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Brain size={16} />}
+                  Analyse erstellen
+                </button>
+              ) : (
+                <>
+                  <div className="mb-5 grid gap-4 md:grid-cols-3">
+                    <KpiCard label="Gesamter Lernstand" value={`${session.analysis.overallReadiness}%`} />
+                    <KpiCard label="Stärkste Themen" value={session.analysis.strongestTopics.join(", ") || "-"} />
+                    <KpiCard label="Schwächste Themen" value={session.analysis.weakestTopics.join(", ") || "-"} />
+                  </div>
+
+                  <div className="mb-5 rounded-3xl border border-cream-border bg-cream-light p-6">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-accent">Empfehlung</p>
+                    <p className="text-sm text-ink-secondary">{session.analysis.recommendedNextStep}</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {session.analysis.topics.map((topic) => (
+                      <div
+                        key={topic.topic}
+                        className="flex flex-col gap-3 rounded-3xl border border-cream-border bg-surface-white p-4 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div>
+                          <p className="text-base font-bold text-ink">{topic.topic}</p>
+                          <p className="text-xs text-ink-muted">Komfort-Score: {topic.comfortScore}%</p>
+                          <p className="mt-2 text-sm text-ink-secondary">{topic.rationale}</p>
+                          <p className="mt-1 text-xs text-ink-muted">{topic.recommendation}</p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleDeepDive(topic.topic);
+                          }}
+                          disabled={topicLoading === topic.topic}
+                          className="inline-flex items-center gap-2 self-start rounded-full bg-accent px-4 py-2 text-xs font-bold uppercase tracking-[0.11em] text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                        >
+                          {topicLoading === topic.topic ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={14} />
+                          )}
+                          Vertiefung
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
 
-function ConfidencePage({ userResponses }: { userResponses: UserResponse[] }) {
-  const navigate = useNavigate();
-  const analysis = useMemo(() => {
-    const topics: Record<string, { scores: number[], relevance: number }> = {};
-    userResponses.forEach(res => {
-      const q = [...initialQuestions, ...questionPool].find(q => q.id === res.questionId) || { relevance: 0.5 };
-      if (!topics[res.topic]) topics[res.topic] = { scores: [], relevance: q.relevance };
-      topics[res.topic].scores.push(res.score);
-    });
-    return Object.entries(topics).map(([name, data]) => {
-      const avg = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-      let status: 'green' | 'yellow' | 'red' = 'red';
-      if (avg > 0.75) status = 'green'; else if (avg > 0.45) status = 'yellow';
-      return { name, score: Math.round(avg * 100), status, relevance: data.relevance };
-    }).sort((a, b) => a.score - b.score);
-  }, [userResponses]);
-
-  const biggestWeakness = analysis[0];
-  const overallProgress = Math.round(analysis.reduce((acc, curr) => acc + curr.score, 0) / (analysis.length || 1));
-
+function StageBadge({ label, active, done }: { label: string; active: boolean; done: boolean }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full w-full min-h-0 flex-col gap-5 py-2">
-      <header className="grid items-center gap-4 md:grid-cols-2">
-        <div className="text-left">
-          <h1 className="mb-2 text-[2.4rem] font-bold leading-none tracking-tight">Ergebnis</h1>
-          <p className="text-base font-medium text-ink-secondary">Deine heutige Lernlücken-Analyse.</p>
-        </div>
-        <div className="flex items-center justify-between rounded-[2rem] border border-cream-border bg-surface-white px-6 py-5 shadow-sm">
-          <div>
-            <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-widest text-accent">Knowledge Growth</p>
-            <p className="text-2xl font-bold text-ink">+{overallProgress}%</p>
-          </div>
-          <div className="flex h-14 w-14 items-center justify-center rounded-full border-4 border-accent/20 border-t-accent">
-            <TrendingUp size={22} className="text-accent" />
-          </div>
-        </div>
-      </header>
-
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1.2fr_1.8fr]">
-        {biggestWeakness && (
-          <section className="relative overflow-hidden rounded-[2rem] border border-red-100 bg-red-50 p-6">
-            <div className="absolute -right-8 -top-8 rotate-12 text-red-600 opacity-10"><ShieldAlert size={150} /></div>
-            <div className="relative z-10">
-              <span className="mb-3 inline-block rounded-full bg-red-600 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-widest text-white">Größte Lernlücke</span>
-              <h2 className="mb-2 text-2xl font-bold text-red-900">{biggestWeakness.name}</h2>
-              <p className="mb-5 max-w-md text-sm font-medium italic text-red-700">Hey {userName}, hier haben wir gemeinsam den größten Nachholbedarf festgestellt.</p>
-              <button onClick={() => navigate('/session')} className="inline-flex items-center gap-2 rounded-full bg-red-600 px-6 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition-all hover:bg-red-700">
-                Deep-Dive starten
-                <Zap size={14} fill="white" />
-              </button>
-            </div>
-          </section>
-        )}
-
-        <section className="flex min-h-0 flex-col rounded-[2rem] border border-cream-border bg-surface-white/70 p-5">
-          <h2 className="mb-4 px-1 text-[0.72rem] font-bold uppercase tracking-widest text-ink/40">Themen-Status</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {analysis.map((topic) => (
-              <div key={topic.name} className={`rounded-3xl border p-4 transition-all ${topic.status === 'green' ? 'border-emerald-100 bg-emerald-50/30' : topic.status === 'yellow' ? 'border-amber-100 bg-amber-50/30' : 'border-red-100 bg-red-50/30'}`}>
-                <div className="mb-3 flex items-start justify-between">
-                  <div className={`rounded-xl p-2.5 ${topic.status === 'green' ? 'bg-emerald-100 text-emerald-600' : topic.status === 'yellow' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
-                    {topic.status === 'green' ? <CheckCircle2 size={18} /> : topic.status === 'yellow' ? <BarChart size={18} /> : <AlertCircle size={18} />}
-                  </div>
-                  <span className={`text-xl font-bold ${topic.status === 'green' ? 'text-emerald-700' : topic.status === 'yellow' ? 'text-amber-700' : 'text-red-700'}`}>{topic.score}%</span>
-                </div>
-                <p className="text-base font-bold tracking-tight text-ink">{topic.name}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <div className="flex justify-center pt-1">
-        <button onClick={() => navigate('/start')} className="group inline-flex items-center gap-2 rounded-full bg-accent px-8 py-3 text-sm font-bold uppercase tracking-[0.12em] text-cream shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl active:scale-95">
-          Neue Session starten
-          <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />
-        </button>
-      </div>
-    </motion.div>
+    <div
+      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold ${
+        active
+          ? "bg-accent text-cream"
+          : done
+            ? "bg-emerald-50 text-emerald-700"
+            : "bg-cream-light text-ink-secondary"
+      }`}
+    >
+      {done ? <CheckCircle2 size={14} /> : <CircleDashed size={14} />}
+      {label}
+    </div>
   );
 }
 
-function App() {
-  const [files, setFiles] = useState(['Bio.pdf']);
-  const [userResponses, setUserResponses] = useState<UserResponse[]>([]);
-  const [filesUploaded, setFilesUploaded] = useState(false);
-  const [questionsFinished, setQuestionsFinished] = useState(false);
-
+function KpiCard({ label, value }: { label: string; value: string }) {
   return (
-    <BrowserRouter>
-      <MainLayout filesUploaded={filesUploaded} questionsFinished={questionsFinished}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/start" replace />} />
-          <Route path="/start" element={<StartPage files={files} setFiles={setFiles} setFilesUploaded={setFilesUploaded} />} />
-          <Route path="/session" element={<StudySessionPage userResponses={userResponses} setUserResponses={setUserResponses} setQuestionsFinished={setQuestionsFinished} />} />
-          <Route path="/sicherheit" element={<ConfidencePage userResponses={userResponses} />} />
-          <Route path="*" element={<Navigate to="/start" replace />} />
-        </Routes>
-      </MainLayout>
-    </BrowserRouter>
+    <div className="rounded-3xl border border-cream-border bg-surface-white p-4">
+      <p className="mb-1 text-xs font-bold uppercase tracking-[0.13em] text-accent">{label}</p>
+      <p className="text-sm font-semibold text-ink">{value}</p>
+    </div>
   );
+}
+
+function renderExtractionStatus(status: "pending" | "processing" | "ready" | "failed") {
+  switch (status) {
+    case "pending":
+      return "Wartet auf Extraktion";
+    case "processing":
+      return "Inhalt wird extrahiert";
+    case "ready":
+      return "Bereit für Quiz-Generierung";
+    case "failed":
+      return "Extraktion fehlgeschlagen";
+    default:
+      return status;
+  }
 }
 
 export default App;

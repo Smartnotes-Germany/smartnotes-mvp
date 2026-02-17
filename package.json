@@ -5,20 +5,33 @@
   "type": "module",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
-    "dev": "vite",
+    "dev": "run-p convex:dev vite:dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "vite:dev": "vite",
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
+    "observability:debug-window:start": "node ./scripts/observability-debug-window.mjs start",
+    "observability:debug-window:stop": "node ./scripts/observability-debug-window.mjs stop"
   },
   "dependencies": {
+    "@ai-sdk/google-vertex": "^4.0.58",
+    "@langfuse/otel": "^4.6.1",
+    "@langfuse/tracing": "^4.6.1",
+    "@opentelemetry/sdk-node": "^0.212.0",
     "@tailwindcss/vite": "^4.1.18",
+    "ai": "^6.0.86",
     "clsx": "^2.1.1",
+    "convex": "^1.31.7",
     "framer-motion": "^12.33.0",
     "lucide-react": "^0.563.0",
+    "officeparser": "^6.0.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -32,6 +45,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "npm-run-all2": "^8.0.4",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
@@ -41,5 +55,5 @@
   "overrides": {
     "vite": "npm:rolldown-vite@7.2.5"
   },
-  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
+  "packageManager": "pnpm@10.29.3+sha512.498e1fb4cca5aa06c1dcf2611e6fafc50972ffe7189998c409e90de74566444298ffe43e6cd2acdc775ba1aa7cc5e092a8b7054c811ba8c5770f84693d33d2dc"
 }

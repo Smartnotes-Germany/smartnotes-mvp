@@ -1,87 +1,106 @@
-# React + TypeScript + Vite
+# Smartnotes
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Smartnotes is a Vite + React 19 single-page app backed by Convex.
+It runs an anonymous, three-step study flow:
 
-## Package manager
+1. Upload class material (PDFs, slides, Word/docs, notes).
+2. Generate and answer exam-style questions with explanations.
+3. Analyze topic readiness, then deep dive weak topics or start a new session.
 
-This project uses `pnpm` only.
+The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 
-- Install dependencies with `pnpm install`
-- Use `pnpm` to run scripts (for example, `pnpm dev`)
+## Tech Stack
 
-Installs with `npm` or `yarn` are blocked by `only-allow`.
+- Frontend: React 19, Vite, Tailwind CSS
+- Backend: Convex (database, file storage, server functions)
+- AI: `ai` + `@ai-sdk/google-vertex`
+- Document processing: Vertex file input (PDF/PPT/PPTX/DOC/DOCX) + `officeparser` fallback
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js 20+
+- `pnpm` (required)
+- A configured Convex project/deployment
+- Google Vertex AI credentials (API key in Express Mode, or project/location auth)
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Install dependencies:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. Configure Convex and generate types:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm exec convex dev
 ```
-# smartnotes-mockup
-# smartnotes-mockup
-# smartnotes-mockup
-# smartnotes-mockup
-# smartnotes-mockup
+
+3. Add frontend env vars in `.env.local`:
+
+```bash
+VITE_CONVEX_URL=<your-convex-url>
+```
+
+4. Configure backend env vars in Convex:
+
+```bash
+pnpm exec convex env set GOOGLE_VERTEX_API_KEY <your-api-key>
+# optional alternative auth path
+pnpm exec convex env set GOOGLE_VERTEX_PROJECT <your-project-id>
+pnpm exec convex env set GOOGLE_VERTEX_LOCATION us-central1
+pnpm exec convex env set ACCESS_CODE_ADMIN_SECRET <admin-secret>
+
+# Balanced observability mode (Langfuse + retention)
+pnpm exec convex env set LANGFUSE_PUBLIC_KEY <your-langfuse-public-key>
+pnpm exec convex env set LANGFUSE_SECRET_KEY <your-langfuse-secret-key>
+pnpm exec convex env set LANGFUSE_BASE_URL https://cloud.langfuse.com
+pnpm exec convex env set OBSERVABILITY_MODE balanced
+pnpm exec convex env set OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE false
+pnpm exec convex env set OBSERVABILITY_HASH_SALT <random-32+-chars>
+pnpm exec convex env set OBSERVABILITY_FLUSH_ON_EXIT true
+pnpm exec convex env set OBSERVABILITY_FLUSH_TIMEOUT_MS 300
+pnpm exec convex env set RETENTION_DAYS_RAW_CONTENT 14
+pnpm exec convex env set RETENTION_DAYS_ANALYTICS 180
+```
+
+5. Start the app:
+
+```bash
+pnpm dev
+```
+
+## Access Codes
+
+- The app is anonymous: no user accounts.
+- Users enter a one-time code to receive a temporary grant token.
+- Codes are consumed on the first successful redemption.
+
+For local development, `SMARTNOTES-DEMO-2026` auto-seeds if no code exists yet.
+
+To create production codes:
+
+```bash
+pnpm exec convex run access:createAccessCodes '{"adminSecret":"<admin-secret>","codes":["YOUR-CODE-1","YOUR-CODE-2"]}'
+```
+
+## Scripts
+
+- `pnpm dev` - start Vite + Convex dev server
+- `pnpm build` - typecheck + production build
+- `pnpm lint` - run ESLint
+- `pnpm observability:debug-window:start -- --minutes 45` - activate sensitive debug capture for a bounded window
+- `pnpm observability:debug-window:stop` - disable sensitive debug capture immediately
+
+## Balanced Observability
+
+- AI calls are traced with Langfuse telemetry in `balanced` mode.
+- By default, prompts/responses are not captured (`recordInputs: false`, `recordOutputs: false`).
+- Telemetry stores deep operational metadata (latency, token usage, fallback behavior, app scope, status).
+- AI actions flush telemetry on exit (`OBSERVABILITY_FLUSH_ON_EXIT`) with a bounded timeout (`OBSERVABILITY_FLUSH_TIMEOUT_MS`) to reduce trace loss.
+- A daily Convex cron redacts/deletes older sensitive data:
+  - Redacts `sessionDocuments.extractedText` and `quizResponses.userAnswer`.
+  - Deletes old `aiAnalyticsEvents` rows.
+
+See `docs/observability-balanced-mode.md` for implementation details and admin operations.

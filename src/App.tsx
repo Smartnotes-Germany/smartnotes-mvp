@@ -524,7 +524,7 @@ function App() {
             <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">Zugang</p>
             <h1 className="mb-3 text-3xl font-bold tracking-tight">Einmal-Zugangscode eingeben</h1>
             <p className="mb-6 text-sm text-ink-secondary">
-              Es werden keine Konten benötigt. Ein Einmal-Code gibt dir temporären, anonymen Zugang.
+              Es werden keine Konten benötigt. Ein Einmal-Code gibt dir temporären Zugang.
             </p>
 
             <label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-ink-muted">Zugangscode</label>

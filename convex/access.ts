@@ -155,7 +155,6 @@ export const consumeMagicLink = mutation({
     await ctx.db.insert("accessGrants", {
       token: grantToken,
       createdAt: now,
-      expiresAt,
     });
 
     // 4. DELETE everything immediately
@@ -198,13 +197,8 @@ export const validateGrant = query({
       return { valid: false, reason: "revoked" as const };
     }
 
-    if (grant.expiresAt <= Date.now()) {
-      return { valid: false, reason: "expired" as const };
-    }
-
     return {
       valid: true,
-      expiresAt: grant.expiresAt,
     };
   },
 });

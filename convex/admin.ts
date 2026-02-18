@@ -183,7 +183,6 @@ export const deleteData = mutation({
       await ctx.db.patch(target.grant._id, {
         token: `deleted-${crypto.randomUUID()}`,
         revokedAt: Date.now(),
-        expiresAt: Date.now(),
       });
     }
 

@@ -148,7 +148,7 @@ const STORAGE_KEYS = {
 } as const;
 
 /** Allowed file types for upload */
-const ACCEPTED_FILE_TYPES = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json";
+const ACCEPTED_FILE_TYPES = ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json,.jpg,.jpeg,.png,.webp";
 
 /**
  * Represents the AI feedback for a answered question.
@@ -772,7 +772,7 @@ function App() {
                 {isUploading ? <Loader2 size={48} className="animate-spin text-accent" /> : <Upload size={48} className="text-accent" />}
                 <div>
                   <p className="text-2xl font-bold">{isUploading ? "Inhalte werden verarbeitet..." : "Dateien zum Hochladen auswählen"}</p>
-                  <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON</p>
+                  <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON, JPG/JPEG, PNG, WEBP</p>
                 </div>
                 <input type="file" multiple accept={ACCEPTED_FILE_TYPES} className="hidden" onChange={onFileInputChange} disabled={isUploading} />
               </label>

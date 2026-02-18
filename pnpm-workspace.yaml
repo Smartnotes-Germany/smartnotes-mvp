@@ -3,4 +3,5 @@ ignoredBuiltDependencies:
 
 onlyBuiltDependencies:
   - esbuild
+  - protobufjs
   - tesseract.js

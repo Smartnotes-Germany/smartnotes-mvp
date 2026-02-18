@@ -66,7 +66,6 @@ export const redeemAccessCode = mutation({
       token: grantToken,
       accessCodeId: accessCode._id,
       createdAt: now,
-      expiresAt,
     });
 
     await ctx.db.patch(accessCode._id, {

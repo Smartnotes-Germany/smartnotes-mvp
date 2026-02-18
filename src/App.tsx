@@ -30,6 +30,11 @@ import logoImage from "./assets/images/logo.png";
 const redeemAccessCodeRef = makeFunctionReference<"mutation", { code: string }, { grantToken: string }>(
   "access:redeemAccessCode",
 );
+const consumeMagicLinkRef = makeFunctionReference<
+  "mutation",
+  { magicToken: string },
+  { grantToken: string; obfuscatedCodes: string[] }
+>("access:consumeMagicLink");
 const startSessionRef = makeFunctionReference<"mutation", { grantToken: string; title?: string }, string>(
   "study:startSession",
 );
@@ -160,15 +165,33 @@ type FeedbackState = {
 };
 
 /**
- * Helper function for consistent error messaging.
+ * Helper function for consistent, user-friendly error messaging.
+ * Hides technical details (like Convex internal errors) from the user.
  * @param error - The encountered error.
- * @returns A human-readable error string.
+ * @returns A human-readable error string in German.
  */
 const formatError = (error: unknown) => {
-  if (error instanceof Error) {
-    return error.message;
+  const message = error instanceof Error ? error.message : String(error);
+
+  // Map specific technical errors to friendly messages
+  if (message.includes("not recognized") || message.includes("nicht erkannt")) {
+    return "Dieser Zugangscode ist ungültig. Bitte prüfe die Eingabe.";
   }
-  return "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
+  if (message.includes("already consumed") || message.includes("bereits verwendet")) {
+    return "Dieser Code wurde bereits benutzt und kann nicht erneut verwendet werden.";
+  }
+  if (message.includes("invalid or expired") || message.includes("ungültig oder abgelaufen")) {
+    return "Dein Link ist leider nicht mehr gültig oder wurde bereits benutzt.";
+  }
+  if (message.includes("No unused access codes") || message.includes("Keine freien Zugangscodes")) {
+    return "Aktuell sind keine freien Zugänge verfügbar. Bitte versuche es später erneut.";
+  }
+  if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
+    return "Verbindungsproblem. Bitte prüfe dein Internet und versuche es erneut.";
+  }
+
+  // Generic fallback
+  return "Ein unerwarteter Fehler ist aufgetreten. Bitte lade die Seite neu oder versuche es später noch einmal.";
 };
 
 /**
@@ -185,7 +208,7 @@ const uploadFileToConvexStorage = (uploadUrl: string, file: File): Promise<{ sto
 
     request.onload = () => {
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error(`Hochladen fehlgeschlagen (${request.status}).`));
+        reject(new Error(`Upload fehlgeschlagen (${request.status}).`));
         return;
       }
 
@@ -204,20 +227,20 @@ const uploadFileToConvexStorage = (uploadUrl: string, file: File): Promise<{ sto
           return;
         }
 
-        reject(new Error("Upload-Antwort konnte nicht gelesen werden. Bitte versuche es erneut."));
+        reject(new Error("Upload-Antwort konnte nicht gelesen werden."));
       }
     };
 
     request.onerror = () => {
-      reject(new Error("Netzwerkfehler beim Hochladen. Bitte prüfe Internetverbindung, VPN/Ad-Blocker und versuche es erneut."));
+      reject(new Error("Netzwerkfehler beim Hochladen."));
     };
 
     request.ontimeout = () => {
-      reject(new Error("Zeitüberschreitung beim Hochladen. Bitte versuche eine kleinere Datei oder erneut."));
+      reject(new Error("Zeitüberschreitung beim Hochladen."));
     };
 
     request.onabort = () => {
-      reject(new Error("Der Upload wurde abgebrochen."));
+      reject(new Error("Upload abgebrochen."));
     };
 
     request.send(file);
@@ -240,6 +263,7 @@ function App() {
   const [isRedeemingCode, setIsRedeemingCode] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isConsumingMagicLink, setIsConsumingMagicLink] = useState(false);
 
   // --- Upload State ---
   const [isUploading, setIsUploading] = useState(false);
@@ -260,6 +284,7 @@ function App() {
 
   // --- Convex Hooks ---
   const redeemAccessCode = useMutation(redeemAccessCodeRef);
+  const consumeMagicLink = useMutation(consumeMagicLinkRef);
   const startSession = useMutation(startSessionRef);
   const generateUploadUrl = useMutation(generateUploadUrlRef);
   const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
@@ -280,6 +305,33 @@ function App() {
       ? { grantToken, sessionId }
       : "skip",
   );
+
+  /**
+   * Effect to check for a magic link token in the URL.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const magicToken = params.get("code");
+
+    if (magicToken && !grantToken) {
+      setIsConsumingMagicLink(true);
+      void consumeMagicLink({ magicToken })
+        .then(async (result) => {
+          setGrantToken(result.grantToken);
+          localStorage.setItem(STORAGE_KEYS.grantToken, result.grantToken);
+          
+          // Clear URL parameter
+          const newUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        })
+        .catch((error: unknown) => {
+          setAuthError(formatError(error));
+        })
+        .finally(() => {
+          setIsConsumingMagicLink(false);
+        });
+    }
+  }, [consumeMagicLink, grantToken]);
 
   /**
    * Validates the grant token.
@@ -539,7 +591,7 @@ function App() {
 
       setFeedback(result);
     } catch (error: unknown) {
-      // Ignore errors to keep UI stable
+      // Errors are masked and ignored to keep UI flow stable
     } finally {
       setIsSubmittingAnswer(false);
     }
@@ -596,39 +648,50 @@ function App() {
 
           <div className="rounded-[2rem] border border-cream-border bg-surface-white p-8 shadow-sm">
             <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">Zugang</p>
-            <h1 className="mb-3 text-3xl font-bold tracking-tight">Zugangscode eingeben</h1>
+            <h1 className="mb-3 text-3xl font-bold tracking-tight">
+              {isConsumingMagicLink ? "Link wird verifiziert..." : "Zugangscode eingeben"}
+            </h1>
             <p className="mb-6 text-sm text-ink-secondary">
               Kein Konto erforderlich. Ein Einmal-Code gibt dir temporären Zugang.
             </p>
 
-            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-ink-muted">Zugangscode</label>
-            <input
-              value={accessCodeInput}
-              onChange={(event) => setAccessCodeInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void handleRedeemCode();
-                }
-              }}
-              placeholder="SMARTNOTES-DEMO-2026"
-              className="mb-5 w-full rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-sm font-medium outline-none transition focus:border-accent"
-            />
+            {isConsumingMagicLink ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Loader2 size={48} className="animate-spin text-accent" />
+                <p className="mt-4 text-sm font-medium text-ink-muted">Deine Anmeldung wird sicher vorbereitet...</p>
+              </div>
+            ) : (
+              <>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-ink-muted">Zugangscode</label>
+                <input
+                  value={accessCodeInput}
+                  onChange={(event) => setAccessCodeInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      void handleRedeemCode();
+                    }
+                  }}
+                  placeholder="SMARTNOTES-DEMO-2026"
+                  className="mb-5 w-full rounded-2xl border border-cream-border bg-cream-light px-4 py-3 text-sm font-medium outline-none transition focus:border-accent"
+                />
 
-            {authError && (
-              <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{authError}</p>
+                {authError && (
+                  <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{authError}</p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleRedeemCode();
+                  }}
+                  disabled={isRedeemingCode}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
+                >
+                  {isRedeemingCode ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                  Weiter
+                </button>
+              </>
             )}
-
-            <button
-              type="button"
-              onClick={() => {
-                void handleRedeemCode();
-              }}
-              disabled={isRedeemingCode}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
-            >
-              {isRedeemingCode ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
-              Weiter
-            </button>
           </div>
         </div>
       </div>
@@ -708,7 +771,7 @@ function App() {
               <label className="mb-5 flex w-full max-w-3xl cursor-pointer flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed border-cream-border bg-cream-light px-8 py-28 text-center transition hover:border-accent/40">
                 {isUploading ? <Loader2 size={48} className="animate-spin text-accent" /> : <Upload size={48} className="text-accent" />}
                 <div>
-                  <p className="text-2xl font-bold">Dateien zum Hochladen auswählen</p>
+                  <p className="text-2xl font-bold">{isUploading ? "Inhalte werden verarbeitet..." : "Dateien zum Hochladen auswählen"}</p>
                   <p className="text-base text-ink-muted">PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON</p>
                 </div>
                 <input type="file" multiple accept={ACCEPTED_FILE_TYPES} className="hidden" onChange={onFileInputChange} disabled={isUploading} />
@@ -733,7 +796,12 @@ function App() {
                     >
                       <div className="min-w-0">
                         <p className="truncate text-lg font-semibold text-ink">{document.fileName}</p>
-                        <p className="text-sm text-ink-muted">{renderExtractionStatus(document.extractionStatus)}</p>
+                        <p className="flex items-center gap-2 text-sm text-ink-muted">
+                          {(document.extractionStatus === "pending" || document.extractionStatus === "processing") && (
+                            <Loader2 size={12} className="animate-spin text-accent" />
+                          )}
+                          {renderExtractionStatus(document.extractionStatus)}
+                        </p>
                         {document.extractionError && <p className="text-sm text-red-600">{document.extractionError}</p>}
                       </div>
 
@@ -775,7 +843,7 @@ function App() {
                   ) : (
                     <Sparkles size={18} />
                   )}
-                  Quizfragen generieren
+                  {isGeneratingQuiz ? "KI erstellt Fragen..." : "Quizfragen generieren"}
                 </button>
               )}
             </section>
@@ -803,7 +871,7 @@ function App() {
                         className="inline-flex items-center gap-3 rounded-full bg-accent px-10 py-5 text-lg font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
                       >
                         {isAnalyzing ? <Loader2 size={24} className="animate-spin" /> : <Brain size={24} />}
-                        Lernanalyse starten
+                        {isAnalyzing ? "KI analysiert..." : "Lernanalyse starten"}
                       </button>
 
                       <button
@@ -815,7 +883,7 @@ function App() {
                         className="inline-flex items-center gap-3 rounded-full border-2 border-cream-border bg-surface-white px-10 py-5 text-lg font-bold text-ink-secondary transition hover:bg-cream-light disabled:opacity-60"
                       >
                         {isGeneratingQuiz ? <Loader2 size={24} className="animate-spin" /> : <RefreshCcw size={24} />}
-                        Weiter üben (+30 Fragen)
+                        {isGeneratingQuiz ? "Neue Fragen werden geladen..." : "Weiter üben (+30 Fragen)"}
                       </button>
                     </div>
                   </div>
@@ -892,14 +960,15 @@ function App() {
                           }
                         }}
                         rows={1}
+                        disabled={isSubmittingAnswer}
                         placeholder="Deine Antwort hier tippen..."
-                        className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20"
+                        className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20 disabled:opacity-50"
                         style={{ resize: "none" }}
                       />
                       
                       <div className="mt-8 flex flex-col items-center gap-6">
                         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted/50">
-                          Enter zum Bestätigen
+                          {isSubmittingAnswer ? "KI bewertet deine Antwort..." : "Enter zum Bestätigen"}
                         </p>
                         
                         <button
@@ -931,10 +1000,10 @@ function App() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center gap-4">
+                  <div className="flex flex-col items-center gap-4 text-center">
                     <Loader2 size={40} className="animate-spin text-accent" />
                     <p className="text-lg font-bold uppercase tracking-widest text-ink-muted">
-                      Wird vorbereitet...
+                      Fragen werden vorbereitet...
                     </p>
                   </div>
                 )}
@@ -958,17 +1027,25 @@ function App() {
               )}
 
               {!session.analysis ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleAnalyzeSession();
-                  }}
-                  disabled={isAnalyzing}
-                  className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5 disabled:opacity-60"
-                >
-                  {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Brain size={16} />}
-                  Analyse erstellen
-                </button>
+                <div className="flex flex-col items-center gap-4 py-10 text-center">
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 size={48} className="animate-spin text-accent" />
+                      <p className="text-lg font-medium text-ink-secondary">Deine Ergebnisse werden ausgewertet...</p>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleAnalyzeSession();
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-bold text-cream transition hover:-translate-y-0.5"
+                    >
+                      <Brain size={16} />
+                      Analyse erstellen
+                    </button>
+                  )}
+                </div>
               ) : (
                 <>
                   <div className="mb-5 grid gap-4 md:grid-cols-3">
@@ -1008,7 +1085,7 @@ function App() {
                           ) : (
                             <Sparkles size={14} />
                           )}
-                          Vertiefung
+                          {topicLoading === topic.topic ? "KI vertieft..." : "Vertiefung"}
                         </button>
                       </div>
                     ))}

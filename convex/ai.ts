@@ -303,7 +303,7 @@ const buildFallbackAnalysis = (
     topics,
     recommendedNextStep: focusTopic
       ? `Starte eine Vertiefung zu ${focusTopic} mit gezielten Uebungsfragen.`
-      : "Waehle dein schwaechstes Thema und beginne eine fokussierte Vertiefung.",
+      : "Wähle dein schwächstes Thema und beginne eine fokussierte Vertiefung.",
   };
 };
 

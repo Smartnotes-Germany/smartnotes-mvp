@@ -1,6 +1,13 @@
+/**
+ * @file schema.ts
+ * @description Definiert das Datenbank-Schema für Convex.
+ * Enthält Tabellen für Zugangskontrolle, Lern-Sitzungen, Dokumente und KI-Analysen.
+ */
+
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+/** Validator für eine einzelne Quizfrage, die von der KI generiert wurde. */
 const quizQuestionValidator = v.object({
   id: v.string(),
   topic: v.string(),
@@ -9,13 +16,15 @@ const quizQuestionValidator = v.object({
   explanationHint: v.string(),
 });
 
+/** Validator für detaillierte Insights zu einem spezifischen Thema. */
 const topicInsightValidator = v.object({
   topic: v.string(),
-  comfortScore: v.number(),
-  rationale: v.string(),
-  recommendation: v.string(),
+  comfortScore: v.number(), // Wert von 0-100
+  rationale: v.string(),    // Begründung des Scores
+  recommendation: v.string(), // Handlungsempfehlung
 });
 
+/** Validator für das Gesamtergebnis einer Lernstandsanalyse. */
 const analysisValidator = v.object({
   overallReadiness: v.number(),
   strongestTopics: v.array(v.string()),
@@ -25,42 +34,52 @@ const analysisValidator = v.object({
 });
 
 export default defineSchema({
+  /** Einmal-Zugangscodes (z.B. für Demos oder zeitlich begrenzten Zugriff) */
   accessCodes: defineTable({
     code: v.string(),
-    normalizedCode: v.string(),
+    normalizedCode: v.string(), // Code in Großbuchstaben zur einfachen Suche
     createdAt: v.number(),
     consumedAt: v.optional(v.number()),
     consumedByGrantId: v.optional(v.id("accessGrants")),
     note: v.optional(v.string()),
   }).index("by_normalizedCode", ["normalizedCode"]),
 
-  accessGrants: defineTable({
+  /** Einmalige Magic Links zur automatischen Anmeldung */
+  magicLinks: defineTable({
     token: v.string(),
-    accessCodeId: v.id("accessCodes"),
     createdAt: v.number(),
     expiresAt: v.number(),
+    consumedAt: v.optional(v.number()),
+  }).index("by_token", ["token"]),
+
+  /** Aktive Zugriffsberechtigungen (Tokens), die einem Browser zugeordnet sind */
+  accessGrants: defineTable({
+    token: v.string(),
+    accessCodeId: v.optional(v.id("accessCodes")), // Jetzt optional, da Codes gelöscht werden können
+    createdAt: v.number(),
     revokedAt: v.optional(v.number()),
   })
-    .index("by_token", ["token"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("by_token", ["token"]),
 
+  /** Eine Lern-Sitzung, die mehrere Dokumente und Quiz-Runden umfasst */
   studySessions: defineTable({
     grantId: v.id("accessGrants"),
     title: v.string(),
     stage: v.union(v.literal("upload"), v.literal("quiz"), v.literal("analysis")),
-    round: v.number(),
+    round: v.number(), // Zähler für die aktuelle Übungsrunde
     currentFocusTopic: v.optional(v.string()),
-    sourceSummary: v.optional(v.string()),
-    sourceTopics: v.array(v.string()),
+    sourceSummary: v.optional(v.string()), // KI-Zusammenfassung aller Quellen
+    sourceTopics: v.array(v.string()),    // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),
-    analysis: v.optional(analysisValidator),
+    analysis: v.optional(analysisValidator), // KI-Analyse des Lernfortschritts
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_grantId", ["grantId"]),
 
+  /** Dokumente, die einer Sitzung hinzugefügt wurden (PDFs, Texte, etc.) */
   sessionDocuments: defineTable({
     sessionId: v.id("studySessions"),
-    storageId: v.id("_storage"),
+    storageId: v.id("_storage"), // Referenz auf den Convex File Storage
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),
@@ -70,7 +89,7 @@ export default defineSchema({
       v.literal("ready"),
       v.literal("failed"),
     ),
-    extractedText: v.optional(v.string()),
+    extractedText: v.optional(v.string()), // Der von der KI extrahierte Textinhalt
     extractionError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -78,6 +97,7 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_createdAt", ["createdAt"]),
 
+  /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({
     sessionId: v.id("studySessions"),
     round: v.number(),
@@ -86,10 +106,10 @@ export default defineSchema({
     prompt: v.string(),
     userAnswer: v.string(),
     isCorrect: v.boolean(),
-    score: v.number(),
+    score: v.number(), // Feinere Bewertung (0.0 bis 1.0)
     explanation: v.string(),
     idealAnswer: v.string(),
-    timeSpentSeconds: v.number(),
+    timeSpentSeconds: v.number(), // Benötigte Zeit für die Beantwortung
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -97,10 +117,11 @@ export default defineSchema({
     .index("by_session_round_question", ["sessionId", "round", "questionId"])
     .index("by_createdAt", ["createdAt"]),
 
+  /** Observability-Daten für KI-Operationen (Tracing, Token-Usage, Latenz) */
   aiAnalyticsEvents: defineTable({
     traceId: v.string(),
     sessionId: v.id("studySessions"),
-    scope: v.string(),
+    scope: v.string(), // z.B. "quiz_generation", "answer_evaluation"
     status: v.union(v.literal("success"), v.literal("error")),
     privacyMode: v.union(v.literal("balanced"), v.literal("full"), v.literal("off")),
     contentCaptured: v.boolean(),

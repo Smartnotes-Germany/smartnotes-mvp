@@ -31,7 +31,6 @@ const aiAnalyticsTelemetryProviderValidator = v.union(v.literal("langfuse"), v.l
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
-  expiresAt: number;
   revokedAt?: number;
 };
 
@@ -47,13 +46,9 @@ const ensureGrant = async (ctx: QueryCtx | MutationCtx, grantToken: string): Pro
   if (grant.revokedAt) {
     throw new Error("Zugangsfreigabe wurde widerrufen.");
   }
-  if (grant.expiresAt <= Date.now()) {
-    throw new Error("Zugangsfreigabe ist abgelaufen.");
-  }
 
   return {
     _id: grant._id,
-    expiresAt: grant.expiresAt,
     revokedAt: grant.revokedAt,
   };
 };

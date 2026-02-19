@@ -55,7 +55,6 @@ export default defineSchema({
   /** Aktive Zugriffsberechtigungen (Tokens), die einem Browser zugeordnet sind */
   accessGrants: defineTable({
     token: v.string(),
-    accessCodeId: v.optional(v.id("accessCodes")), // Jetzt optional, da Codes gelöscht werden können
     createdAt: v.number(),
     revokedAt: v.optional(v.number()),
   })

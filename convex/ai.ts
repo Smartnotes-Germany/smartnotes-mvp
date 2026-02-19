@@ -1570,6 +1570,9 @@ export const evaluateAnswer = action({
           "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
         prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
+Probiere dich bei deiner Antwort kurz und knapp zu halten. 
+Nutze für deine Antwort zudem das Internet um zu überprüfen ob deine 
+Antwort korrekt ist. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
 

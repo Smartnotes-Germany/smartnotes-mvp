@@ -64,7 +64,6 @@ export const redeemAccessCode = mutation({
 
     const grantId = await ctx.db.insert("accessGrants", {
       token: grantToken,
-      accessCodeId: accessCode._id,
       createdAt: now,
     });
 

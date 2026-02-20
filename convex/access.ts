@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "./errorTracking";
 import { v } from "convex/values";
 
 /** Constants for access management */

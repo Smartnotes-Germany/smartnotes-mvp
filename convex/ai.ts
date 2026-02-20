@@ -1,11 +1,11 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import {createVertex, vertex} from "@ai-sdk/google-vertex";
+import { createVertex, vertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
-import { action, type ActionCtx } from "./_generated/server";
+import { action, type ActionCtx } from "./errorTracking";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
@@ -424,6 +424,7 @@ type PersistedAiAnalyticsPayload = {
 };
 
 const analyticsMetadataAllowlist = new Set([
+  "clientRequestId",
   "responseCount",
   "usedFallback",
   "topic",
@@ -835,7 +836,11 @@ const summarizeGeneratedDeepDive = (
   };
 };
 
-const createAiTraceLogger = (scope: string, sessionId: string) => {
+const createAiTraceLogger = (
+  scope: string,
+  sessionId: string,
+  clientRequestId?: string,
+) => {
   const traceId =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -854,6 +859,7 @@ const createAiTraceLogger = (scope: string, sessionId: string) => {
       traceId,
       scope,
       sessionHash,
+      ...(clientRequestId ? { clientRequestId } : {}),
       event,
       elapsedMs: Date.now() - startedAt,
       usageTotals: accumulatedUsage,
@@ -1115,9 +1121,14 @@ export const extractDocumentContent = action({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     documentId: v.id("sessionDocuments"),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("extractDocumentContent", args.sessionId);
+    const trace = createAiTraceLogger(
+      "extractDocumentContent",
+      args.sessionId,
+      args.clientRequestId,
+    );
 
     trace.log("info", "start", {
       documentId: args.documentId,
@@ -1248,9 +1259,14 @@ export const generateQuiz = action({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     questionCount: v.optional(v.number()),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("generateQuiz", args.sessionId);
+    const trace = createAiTraceLogger(
+      "generateQuiz",
+      args.sessionId,
+      args.clientRequestId,
+    );
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -1667,6 +1683,9 @@ Anforderungen:
         sourceContextLength,
         outputQuestionCount,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          clientRequestId: args.clientRequestId,
+        },
       });
       await flushTelemetry({
         traceId: trace.traceId,
@@ -1683,9 +1702,14 @@ export const evaluateAnswer = action({
     questionId: v.string(),
     userAnswer: v.string(),
     timeSpentSeconds: v.number(),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<AnswerEvaluationResult> => {
-    const trace = createAiTraceLogger("evaluateAnswer", args.sessionId);
+    const trace = createAiTraceLogger(
+      "evaluateAnswer",
+      args.sessionId,
+      args.clientRequestId,
+    );
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -1846,6 +1870,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
         finishReason,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
+          clientRequestId: args.clientRequestId,
           questionId: args.questionId,
           answerLength: args.userAnswer.length,
           timeSpentSeconds: args.timeSpentSeconds,
@@ -1863,9 +1888,14 @@ export const analyzePerformance = action({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("analyzePerformance", args.sessionId);
+    const trace = createAiTraceLogger(
+      "analyzePerformance",
+      args.sessionId,
+      args.clientRequestId,
+    );
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -2019,6 +2049,7 @@ Sei streng, aber konstruktiv.`,
         finishReason,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
+          clientRequestId: args.clientRequestId,
           responseCount,
           usedFallback,
         },
@@ -2036,9 +2067,14 @@ export const generateTopicDeepDive = action({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     topic: v.string(),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("generateTopicDeepDive", args.sessionId);
+    const trace = createAiTraceLogger(
+      "generateTopicDeepDive",
+      args.sessionId,
+      args.clientRequestId,
+    );
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -2301,6 +2337,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         outputQuestionCount,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
+          clientRequestId: args.clientRequestId,
           topic: args.topic,
         },
       });

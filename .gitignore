@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 /.gemini/skills/frontend-design/SKILL.md
+
+*.tsbuildinfo

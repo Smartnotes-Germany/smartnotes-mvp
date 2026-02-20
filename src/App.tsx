@@ -177,36 +177,123 @@ type FeedbackState = {
   idealAnswer: string;
 };
 
+type FormatErrorOptions = {
+  fallback?: string;
+};
+
+const extractReadableErrorMessage = (error: unknown) => {
+  const rawMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : String(error ?? "");
+
+  if (!rawMessage.trim()) {
+    return "";
+  }
+
+  const uncaughtMatch = rawMessage.match(/Uncaught Error:\s*([\s\S]+)/i);
+  let cleanedMessage = uncaughtMatch?.[1]?.trim() ?? rawMessage.trim();
+
+  cleanedMessage = cleanedMessage
+    .replace(/\[CONVEX[^\]]*\]\s*/gi, "")
+    .replace(/\[Request ID:[^\]]+\]\s*/gi, "")
+    .replace(/^Server Error\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+
+  if (cleanedMessage.includes("\n")) {
+    cleanedMessage =
+      cleanedMessage
+        .split("\n")
+        .find((line) => line.trim().length > 0)
+        ?.trim() ?? cleanedMessage;
+  }
+
+  return cleanedMessage;
+};
+
 /**
  * Helper function for consistent, user-friendly error messaging.
  * @param error - The encountered error.
+ * @param options - Optional fallback message if no specific mapping applies.
  * @returns A human-readable error string in German.
  */
-const formatError = (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
+const formatError = (error: unknown, options?: FormatErrorOptions) => {
+  const message = extractReadableErrorMessage(error);
+  const normalizedMessage = message.toLowerCase();
 
-  if (message.includes("not recognized") || message.includes("nicht erkannt")) {
+  if (
+    !message ||
+    normalizedMessage === "undefined" ||
+    normalizedMessage === "null"
+  ) {
+    return (
+      options?.fallback ??
+      "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut."
+    );
+  }
+
+  if (
+    normalizedMessage.includes("network error") ||
+    normalizedMessage.includes("failed to fetch") ||
+    normalizedMessage.includes("load failed") ||
+    normalizedMessage.includes("netzwerkfehler")
+  ) {
+    return "Netzwerkfehler. Bitte prüfe deine Internetverbindung und versuche es erneut.";
+  }
+
+  if (
+    normalizedMessage.includes("timeout") ||
+    normalizedMessage.includes("timed out") ||
+    normalizedMessage.includes("zeitüberschreitung")
+  ) {
+    return "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut.";
+  }
+
+  if (
+    normalizedMessage.includes("aborted") ||
+    normalizedMessage.includes("abgebrochen")
+  ) {
+    return "Die Anfrage wurde abgebrochen. Bitte starte den Vorgang erneut.";
+  }
+
+  if (
+    normalizedMessage.includes("not recognized") ||
+    normalizedMessage.includes("nicht erkannt")
+  ) {
     return "Dieser Zugangscode ist ungültig. Bitte prüfe die Eingabe.";
   }
   if (
-    message.includes("already consumed") ||
-    message.includes("bereits verwendet")
+    normalizedMessage.includes("already consumed") ||
+    normalizedMessage.includes("bereits verwendet")
   ) {
     return "Dieser Code wurde bereits benutzt.";
   }
   if (
-    message.includes("invalid or expired") ||
-    message.includes("ungültig oder abgelaufen")
+    normalizedMessage.includes("invalid or expired") ||
+    normalizedMessage.includes("ungültig oder abgelaufen")
   ) {
     return "Dein Link ist leider nicht mehr gültig.";
   }
   if (
-    message.includes("No unused access codes") ||
-    message.includes("Keine freien Zugangscodes")
+    normalizedMessage.includes("no unused access codes") ||
+    normalizedMessage.includes("keine freien zugangscodes")
   ) {
     return "Aktuell sind keine freien Zugänge verfügbar.";
   }
-  return "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut.";
+
+  const technicalErrorPattern =
+    /\b(TypeError|ReferenceError|SyntaxError|RangeError|stack|cannot read)\b/i;
+  if (!technicalErrorPattern.test(message)) {
+    return message;
+  }
+
+  return (
+    options?.fallback ??
+    "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut."
+  );
 };
 
 /**
@@ -301,6 +388,7 @@ function App() {
   const [answerInput, setAnswerInput] = useState("");
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [quizError, setQuizError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
 
   // --- Analysis State ---
@@ -359,7 +447,12 @@ function App() {
           window.history.replaceState({}, document.title, newUrl);
         })
         .catch((error: unknown) => {
-          setAuthError(formatError(error));
+          setAuthError(
+            formatError(error, {
+              fallback:
+                "Die Anmeldung über den Link ist fehlgeschlagen. Bitte fordere einen neuen Link an.",
+            }),
+          );
         })
         .finally(() => {
           setIsConsumingMagicLink(false);
@@ -404,7 +497,14 @@ function App() {
         setSessionId(newSessionId);
         localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
       })
-      .catch((error: unknown) => setAuthError(formatError(error)))
+      .catch((error: unknown) =>
+        setAuthError(
+          formatError(error, {
+            fallback:
+              "Deine Sitzung konnte nicht gestartet werden. Bitte versuche es erneut.",
+          }),
+        ),
+      )
       .finally(() => setIsCreatingSession(false));
   }, [
     grantToken,
@@ -455,6 +555,7 @@ function App() {
   useEffect(() => {
     setAnswerInput("");
     setFeedback(null);
+    setQuizError(null);
     setQuestionStartedAt(Date.now());
   }, [currentQuestion?.id]);
 
@@ -487,7 +588,12 @@ function App() {
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
       setAccessCodeInput("");
     } catch (error: unknown) {
-      setAuthError(formatError(error));
+      setAuthError(
+        formatError(error, {
+          fallback:
+            "Die Anmeldung ist fehlgeschlagen. Bitte prüfe den Zugangscode und versuche es erneut.",
+        }),
+      );
     } finally {
       setIsRedeemingCode(false);
     }
@@ -504,7 +610,12 @@ function App() {
       setSessionId(newSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
     } catch (error: unknown) {
-      setAnalysisError(formatError(error));
+      setAnalysisError(
+        formatError(error, {
+          fallback:
+            "Die neue Sitzung konnte nicht gestartet werden. Bitte versuche es erneut.",
+        }),
+      );
     } finally {
       setIsCreatingSession(false);
     }
@@ -529,7 +640,11 @@ function App() {
         });
         await extractDocumentContent({ grantToken, sessionId, documentId });
       } catch (error: unknown) {
-        errors.push(`${file.name}: ${formatError(error)}`);
+        errors.push(
+          `${file.name}: ${formatError(error, {
+            fallback: "Datei konnte nicht hochgeladen oder verarbeitet werden.",
+          })}`,
+        );
       }
     }
     if (errors.length > 0) setUploadError(errors.join("\n"));
@@ -550,7 +665,11 @@ function App() {
     try {
       await generateQuiz({ grantToken, sessionId, questionCount: 30 });
     } catch (error: unknown) {
-      setUploadError(formatError(error));
+      setUploadError(
+        formatError(error, {
+          fallback: "Quizfragen konnten nicht erstellt werden.",
+        }),
+      );
     } finally {
       setIsGeneratingQuiz(false);
     }
@@ -560,6 +679,7 @@ function App() {
     if (!grantToken || !sessionId || !currentQuestion) return;
     if (!answerInput.trim() && !dontKnowSubmission) return;
     setIsSubmittingAnswer(true);
+    setQuizError(null);
     try {
       const timeSpentSeconds = Math.max(
         1,
@@ -574,6 +694,12 @@ function App() {
       });
       setFeedback(result);
     } catch (error: unknown) {
+      setQuizError(
+        formatError(error, {
+          fallback:
+            "Deine Antwort konnte nicht bewertet werden. Bitte versuche es erneut.",
+        }),
+      );
     } finally {
       setIsSubmittingAnswer(false);
     }
@@ -586,7 +712,12 @@ function App() {
     try {
       await analyzePerformance({ grantToken, sessionId });
     } catch (error: unknown) {
-      setAnalysisError(formatError(error));
+      setAnalysisError(
+        formatError(error, {
+          fallback:
+            "Die Lernanalyse konnte nicht erstellt werden. Bitte versuche es erneut.",
+        }),
+      );
     } finally {
       setIsAnalyzing(false);
     }
@@ -599,7 +730,11 @@ function App() {
     try {
       await generateTopicDeepDive({ grantToken, sessionId, topic });
     } catch (error: unknown) {
-      setAnalysisError(formatError(error));
+      setAnalysisError(
+        formatError(error, {
+          fallback: "Die Vertiefung konnte nicht geladen werden.",
+        }),
+      );
     } finally {
       setTopicLoading(null);
     }
@@ -925,6 +1060,13 @@ function App() {
                               sessionId,
                               documentId: doc._id,
                             });
+                          } catch (error: unknown) {
+                            setUploadError(
+                              formatError(error, {
+                                fallback:
+                                  "Die Datei konnte nicht entfernt werden.",
+                              }),
+                            );
                           } finally {
                             setIsRemovingDocument(null);
                           }
@@ -1099,6 +1241,13 @@ function App() {
                         className="border-cream-border focus:border-accent placeholder:text-ink-muted/20 w-full overflow-hidden border-b-2 bg-transparent pb-4 text-center text-xl font-medium transition outline-none disabled:opacity-50 md:text-3xl"
                         style={{ resize: "none" }}
                       />
+
+                      {quizError && (
+                        <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                          {quizError}
+                        </p>
+                      )}
+
                       <div className="mt-8 flex flex-col items-center gap-4 md:mt-12 md:gap-6">
                         <p className="text-ink-muted/50 text-[9px] font-bold tracking-[0.2em] uppercase md:text-[10px]">
                           {isSubmittingAnswer

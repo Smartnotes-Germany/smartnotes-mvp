@@ -10,15 +10,17 @@ const MAGIC_LINK_TTL_MS = 1000 * 60 * 15; // 15 minutes
  * Helper to generate a random token/UUID-like string.
  */
 const generateToken = () => {
-  try {
-    // @ts-ignore
-    if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
-    ) {
-      return crypto.randomUUID();
-    }
-  } catch (e) {}
+  const maybeCrypto = globalThis as {
+    crypto?: {
+      randomUUID?: () => string;
+    };
+  };
+
+  const randomUuid = maybeCrypto.crypto?.randomUUID?.();
+  if (randomUuid) {
+    return randomUuid;
+  }
+
   return (
     Math.random().toString(36).substring(2) +
     Math.random().toString(36).substring(2)
@@ -227,7 +229,7 @@ export const createAccessCodes = mutation({
       throw new Error("ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.");
     }
     if (args.adminSecret !== expectedSecret) {
-      throw new Error("Ungueltiges Admin-Secret.");
+      throw new Error("Ungültiges Admin-Secret.");
     }
 
     const now = Date.now();

@@ -20,7 +20,7 @@ const quizQuestionValidator = v.object({
 const topicInsightValidator = v.object({
   topic: v.string(),
   comfortScore: v.number(), // Wert von 0-100
-  rationale: v.string(),    // Begründung des Scores
+  rationale: v.string(), // Begründung des Scores
   recommendation: v.string(), // Handlungsempfehlung
 });
 
@@ -57,18 +57,21 @@ export default defineSchema({
     token: v.string(),
     createdAt: v.number(),
     revokedAt: v.optional(v.number()),
-  })
-    .index("by_token", ["token"]),
+  }).index("by_token", ["token"]),
 
   /** Eine Lern-Sitzung, die mehrere Dokumente und Quiz-Runden umfasst */
   studySessions: defineTable({
     grantId: v.id("accessGrants"),
     title: v.string(),
-    stage: v.union(v.literal("upload"), v.literal("quiz"), v.literal("analysis")),
+    stage: v.union(
+      v.literal("upload"),
+      v.literal("quiz"),
+      v.literal("analysis"),
+    ),
     round: v.number(), // Zähler für die aktuelle Übungsrunde
     currentFocusTopic: v.optional(v.string()),
     sourceSummary: v.optional(v.string()), // KI-Zusammenfassung aller Quellen
-    sourceTopics: v.array(v.string()),    // Alle in den Quellen erkannten Themen
+    sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),
     analysis: v.optional(analysisValidator), // KI-Analyse des Lernfortschritts
     createdAt: v.number(),
@@ -122,7 +125,11 @@ export default defineSchema({
     sessionId: v.id("studySessions"),
     scope: v.string(), // z.B. "quiz_generation", "answer_evaluation"
     status: v.union(v.literal("success"), v.literal("error")),
-    privacyMode: v.union(v.literal("balanced"), v.literal("full"), v.literal("off")),
+    privacyMode: v.union(
+      v.literal("balanced"),
+      v.literal("full"),
+      v.literal("off"),
+    ),
     contentCaptured: v.boolean(),
     telemetryProvider: v.union(v.literal("langfuse"), v.literal("none")),
     modelId: v.optional(v.string()),

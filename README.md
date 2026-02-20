@@ -82,7 +82,7 @@ For local development, `SMARTNOTES-DEMO-2026` auto-seeds if no code exists yet.
 To create production codes:
 
 ```bash
-pnpm exec convex run access:createAccessCodes '{"adminSecret":"<admin-secret>","codes":["YOUR-CODE-1","YOUR-CODE-2"]}'
+pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',codes:['YOUR-CODE-1','YOUR-CODE-2']}"
 ```
 
 ## Scripts
@@ -90,6 +90,8 @@ pnpm exec convex run access:createAccessCodes '{"adminSecret":"<admin-secret>","
 - `pnpm dev` - start Vite + Convex dev server
 - `pnpm build` - typecheck + production build
 - `pnpm lint` - run ESLint
+- `pnpm format` - format code with Prettier
+- `pnpm format:check` - check code formatting
 - `pnpm observability:debug-window:start -- --minutes 45` - activate sensitive debug capture for a bounded window
 - `pnpm observability:debug-window:stop` - disable sensitive debug capture immediately
 

@@ -10,10 +10,18 @@ const MAX_BATCHES_PER_RUN = 20;
 const runRetentionBatchRef = makeFunctionReference<
   "mutation",
   { rawRetentionMs: number; analyticsRetentionMs: number; batchSize: number },
-  { done: boolean; redactedDocuments: number; redactedResponses: number; deletedAnalyticsEvents: number }
+  {
+    done: boolean;
+    redactedDocuments: number;
+    redactedResponses: number;
+    deletedAnalyticsEvents: number;
+  }
 >("retention:runRetentionBatch");
 
-const sanitizePositiveInt = (value: string | undefined, fallbackValue: number) => {
+const sanitizePositiveInt = (
+  value: string | undefined,
+  fallbackValue: number,
+) => {
   const parsed = Number.parseInt(value ?? "", 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return fallbackValue;
@@ -22,7 +30,10 @@ const sanitizePositiveInt = (value: string | undefined, fallbackValue: number) =
 };
 
 const resolveRetentionConfig = () => {
-  const rawRetentionDays = sanitizePositiveInt(process.env.RETENTION_DAYS_RAW_CONTENT, DEFAULT_RAW_RETENTION_DAYS);
+  const rawRetentionDays = sanitizePositiveInt(
+    process.env.RETENTION_DAYS_RAW_CONTENT,
+    DEFAULT_RAW_RETENTION_DAYS,
+  );
   const analyticsRetentionDays = sanitizePositiveInt(
     process.env.RETENTION_DAYS_ANALYTICS,
     DEFAULT_ANALYTICS_RETENTION_DAYS,

@@ -82,7 +82,7 @@ For local development, `SMARTNOTES-DEMO-2026` auto-seeds if no code exists yet.
 To create production codes:
 
 ```bash
-pnpm exec convex run access:createAccessCodes '{"adminSecret":"<admin-secret>","codes":["YOUR-CODE-1","YOUR-CODE-2"]}'
+pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',codes:['YOUR-CODE-1','YOUR-CODE-2']}"
 ```
 
 ## Scripts

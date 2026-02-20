@@ -800,65 +800,70 @@ function App() {
                     </div>
                   </div>
                 ) : feedback ? (
-                  <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
-                    <div className="mb-12 flex flex-col items-center gap-4">
-                      <div className={`flex h-16 w-16 items-center justify-center rounded-full shadow-lg ${
+                  <div className="animate-in fade-in slide-in-from-bottom-8 duration-500 w-full">
+                    <div className="mb-8 md:mb-12 flex flex-col items-center gap-4">
+                      <div className={`flex h-14 w-14 md:h-16 md:w-16 items-center justify-center rounded-full shadow-lg ${
                         feedback.isCorrect ? "bg-emerald-100 text-emerald-600" : feedback.score > 0 ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-600"
                       }`}>
-                        {feedback.isCorrect ? <CheckCircle2 size={32} /> : feedback.score > 0 ? <Lightbulb size={32} /> : <XCircle size={32} />}
+                        {feedback.isCorrect ? <CheckCircle2 size={28} className="md:w-8 md:h-8" /> : feedback.score > 0 ? <Lightbulb size={28} className="md:w-8 md:h-8" /> : <XCircle size={28} className="md:w-8 md:h-8" />}
                       </div>
-                      <p className={`text-sm font-black uppercase tracking-[0.3em] ${
+                      <p className={`text-[10px] md:text-sm font-black uppercase tracking-[0.3em] ${
                         feedback.isCorrect ? "text-emerald-600" : feedback.score > 0 ? "text-amber-600" : "text-red-600"
                       }`}>
                         {feedback.isCorrect ? "Richtig" : feedback.score > 0 ? "Teilweise" : "Falsch"}
                       </p>
                     </div>
-                    <div className="space-y-6">
-                      <div className="rounded-[2rem] border border-cream-border bg-surface-white p-6 md:p-10 shadow-sm">
-                        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Erklärung</p>
-                        <p className="text-lg md:text-xl leading-relaxed text-ink-secondary">{feedback.explanation}</p>
+                    <div className="space-y-4 md:space-y-6">
+                      <div className="rounded-[1.5rem] md:rounded-[2rem] border border-cream-border bg-surface-white p-5 md:p-10 shadow-sm text-left">
+                        <p className="mb-3 md:mb-4 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Erklärung</p>
+                        <p className="text-base md:text-xl leading-relaxed text-ink-secondary">{feedback.explanation}</p>
                       </div>
-                      <div className="rounded-[2rem] border border-cream-border bg-cream-light/50 p-6 md:p-10">
-                        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Ideale Antwort</p>
-                        <p className="text-lg md:text-xl font-medium leading-relaxed text-ink">{feedback.idealAnswer}</p>
+                      <div className="rounded-[1.5rem] md:rounded-[2rem] border border-cream-border bg-cream-light/50 p-5 md:p-10 text-left">
+                        <p className="mb-3 md:mb-4 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Ideale Antwort</p>
+                        <p className="text-base md:text-xl font-medium leading-relaxed text-ink">{feedback.idealAnswer}</p>
                       </div>
-                      <div className="pt-8 flex justify-center">
+                      <div className="pt-6 md:pt-8 flex justify-center">
                         <button
                           onClick={() => { setFeedback(null); setAnswerInput(""); }}
-                          className="inline-flex items-center gap-3 rounded-full bg-accent px-12 py-5 text-lg font-bold text-cream transition hover:scale-105 active:scale-95 shadow-xl shadow-accent/30"
+                          className="inline-flex items-center gap-2 md:gap-3 rounded-full bg-accent px-8 py-4 md:px-12 md:py-5 text-base md:text-lg font-bold text-cream transition hover:scale-105 active:scale-95 shadow-xl shadow-accent/30"
                         >
                           Nächste Frage
-                          <ArrowRight size={22} />
+                          <ArrowRight size={20} className="md:w-[22px] md:h-[22px]" />
                         </button>
                       </div>
                     </div>
                   </div>
                 ) : currentQuestion ? (
-                  <div className="animate-in fade-in duration-700">
-                    <div className="mb-16 md:mb-24">
-                      <h2 className="text-3xl md:text-5xl font-black leading-tight tracking-tighter text-ink">
+                  <div className="animate-in fade-in duration-700 w-full">
+                    <div className="mb-10 md:mb-24">
+                      <h2 className="text-2xl md:text-5xl font-black leading-tight tracking-tighter text-ink text-center md:text-left">
                         {currentQuestion.prompt}
                       </h2>
                     </div>
-                    <div className="mx-auto max-w-2xl">
+                    <div className="mx-auto max-w-2xl w-full">
                       <textarea
                         value={answerInput}
-                        onChange={(e) => setAnswerInput(e.target.value)}
+                        onChange={(e) => {
+                          setAnswerInput(e.target.value);
+                          // Simple auto-resize logic
+                          e.target.style.height = "auto";
+                          e.target.style.height = `${e.target.scrollHeight}px`;
+                        }}
                         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void handleSubmitAnswer())}
                         rows={1}
                         disabled={isSubmittingAnswer}
                         placeholder="Deine Antwort hier tippen..."
-                        className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-2xl md:text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20 disabled:opacity-50"
+                        className="w-full border-b-2 border-cream-border bg-transparent pb-4 text-center text-xl md:text-3xl font-medium outline-none transition focus:border-accent placeholder:text-ink-muted/20 disabled:opacity-50 overflow-hidden"
                         style={{ resize: "none" }}
                       />
-                      <div className="mt-8 flex flex-col items-center gap-6">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted/50">
+                      <div className="mt-8 md:mt-12 flex flex-col items-center gap-4 md:gap-6">
+                        <p className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] text-ink-muted/50">
                           {isSubmittingAnswer ? "KI bewertet..." : "Enter zum Bestätigen"}
                         </p>
                         <button
                           onClick={() => void handleSubmitAnswer(true)}
                           disabled={isSubmittingAnswer}
-                          className="inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-accent px-8 py-4 text-xs font-bold uppercase tracking-[0.12em] text-cream transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 shadow-lg shadow-accent/25"
+                          className="inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-accent px-6 py-3.5 md:px-8 md:py-4 text-[10px] md:text-xs font-bold uppercase tracking-[0.12em] text-cream transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 shadow-lg shadow-accent/25"
                         >
                           {isSubmittingAnswer && <Loader2 size={14} className="animate-spin" />}
                           Ich weiß es gerade nicht
@@ -867,9 +872,9 @@ function App() {
                         <button
                           onClick={() => void handleAnalyzeSession()}
                           disabled={isAnalyzing}
-                          className="inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-8 py-4 text-xs font-bold uppercase tracking-[0.12em] text-red-600 transition hover:bg-red-500 hover:text-cream hover:border-red-500 shadow-lg shadow-red-500/10 disabled:opacity-60"
+                          className="inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 md:px-8 md:py-4 text-[10px] md:text-xs font-bold uppercase tracking-[0.12em] text-red-600 transition hover:bg-red-500 hover:text-cream hover:border-red-500 shadow-lg shadow-red-500/10 disabled:opacity-60"
                         >
-                          {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+                          {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
                           {isAnalyzing ? "Analysiere..." : "Session beenden"}
                         </button>
                       </div>
@@ -923,25 +928,25 @@ function App() {
                     <KpiCard label="Lücken" value={session.analysis.weakestTopics.join(", ") || "Keine"} />
                   </div>
 
-                  <div className="mb-10 rounded-[2rem] border-2 border-accent/10 bg-surface-white p-6 md:p-10 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles size={80} /></div>
-                    <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Empfehlung</p>
-                    <p className="text-lg md:text-xl font-medium leading-relaxed text-ink-secondary">{session.analysis.recommendedNextStep}</p>
+                  <div className="mb-8 md:mb-10 rounded-[1.5rem] md:rounded-[2rem] border-2 border-accent/10 bg-surface-white p-5 md:p-10 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles size={60} className="md:w-20 md:h-20" /></div>
+                    <p className="mb-3 md:mb-4 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Empfehlung</p>
+                    <p className="text-base md:text-xl font-medium leading-relaxed text-ink-secondary">{session.analysis.recommendedNextStep}</p>
                   </div>
 
                   <div className="space-y-4">
                     {session.analysis.topics.map((topic) => (
-                      <div key={topic.topic} className="flex flex-col md:flex-row md:items-center justify-between gap-6 rounded-[2rem] border border-cream-border bg-surface-white p-6 md:p-8 transition hover:border-accent/30 shadow-sm">
+                      <div key={topic.topic} className="flex flex-col md:flex-row md:items-center justify-between gap-6 rounded-[1.5rem] md:rounded-[2rem] border border-cream-border bg-surface-white p-5 md:p-8 transition hover:border-accent/30 shadow-sm">
                         <div className="flex-1">
-                          <h3 className="text-xl font-bold mb-1">{topic.topic}</h3>
+                          <h3 className="text-lg md:text-xl font-bold mb-1">{topic.topic}</h3>
                           <div className="flex items-center gap-2 mb-4">
-                            <div className="h-1.5 w-32 bg-cream-light rounded-full overflow-hidden">
+                            <div className="h-1.5 w-24 md:w-32 bg-cream-light rounded-full overflow-hidden">
                               <div className="h-full bg-accent transition-all duration-1000" style={{ width: `${topic.comfortScore}%` }} />
                             </div>
-                            <span className="text-[10px] font-black text-accent">{topic.comfortScore}% Comfort</span>
+                            <span className="text-[9px] md:text-[10px] font-black text-accent">{topic.comfortScore}% Comfort</span>
                           </div>
-                          <p className="text-sm md:text-base text-ink-secondary leading-relaxed mb-4">{topic.rationale}</p>
-                          <div className="inline-block rounded-lg bg-cream-light px-3 py-1.5 text-[10px] font-bold text-ink-muted uppercase tracking-wider">
+                          <p className="text-xs md:text-base text-ink-secondary leading-relaxed mb-4">{topic.rationale}</p>
+                          <div className="inline-block rounded-lg bg-cream-light px-2.5 py-1 text-[9px] md:text-[10px] font-bold text-ink-muted uppercase tracking-wider">
                             Tipp: {topic.recommendation}
                           </div>
                         </div>
@@ -949,9 +954,9 @@ function App() {
                         <button
                           onClick={() => void handleDeepDive(topic.topic)}
                           disabled={topicLoading === topic.topic}
-                          className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] text-cream transition hover:scale-105 active:scale-95 disabled:opacity-60 shadow-lg shadow-accent/20"
+                          className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 md:px-6 md:py-3 text-[10px] md:text-xs font-bold uppercase tracking-[0.1em] text-cream transition hover:scale-105 active:scale-95 disabled:opacity-60 shadow-lg shadow-accent/20"
                         >
-                          {topicLoading === topic.topic ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                          {topicLoading === topic.topic ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                           {topicLoading === topic.topic ? "KI vertieft..." : "Vertiefung"}
                         </button>
                       </div>
@@ -983,9 +988,9 @@ function StageBadge({ label, active, done }: { label: string; active: boolean; d
 /** Simple KPI card for analysis overview */
 function KpiCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[2rem] border border-cream-border bg-surface-white p-6 md:p-8 shadow-sm transition hover:scale-[1.02] duration-300">
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-accent">{label}</p>
-      <p className="text-xl md:text-2xl font-black tracking-tight text-ink">{value}</p>
+    <div className="rounded-[1.5rem] md:rounded-[2rem] border border-cream-border bg-surface-white p-5 md:p-8 shadow-sm transition hover:scale-[1.02] duration-300">
+      <p className="mb-2 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] text-accent">{label}</p>
+      <p className="text-lg md:text-2xl font-black tracking-tight text-ink">{value}</p>
     </div>
   );
 }

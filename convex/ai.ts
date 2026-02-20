@@ -29,8 +29,26 @@ const vertexProviderOptions = {
   },
 } as const;
 
-const plainTextExtensions = new Set(["txt", "md", "markdown", "csv", "json", "yaml", "yml"]);
-const vertexNativeFileExtensions = new Set(["pdf", "ppt", "pptx", "doc", "docx", "jpg", "jpeg", "png", "webp"]);
+const plainTextExtensions = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "csv",
+  "json",
+  "yaml",
+  "yml",
+]);
+const vertexNativeFileExtensions = new Set([
+  "pdf",
+  "ppt",
+  "pptx",
+  "doc",
+  "docx",
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+]);
 const vertexNativeMediaTypes = new Set([
   "application/pdf",
   "application/vnd.ms-powerpoint",
@@ -124,7 +142,11 @@ type AnalysisResult = z.infer<typeof analysisSchema>;
 type DeepDiveGenerationResult = z.infer<typeof deepDiveSchema>;
 
 const compactText = (value: string, maxChars: number) => {
-  const normalized = value.replace(/\r/g, "").replace(/\t/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  const normalized = value
+    .replace(/\r/g, "")
+    .replace(/\t/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   if (normalized.length <= maxChars) {
     return normalized;
   }
@@ -143,7 +165,10 @@ const decodeUtf8 = (buffer: Buffer) => new TextDecoder("utf-8").decode(buffer);
 
 const isVertexNativeCandidate = (fileType: string, fileName: string) => {
   const extension = filenameExtension(fileName);
-  return vertexNativeMediaTypes.has(fileType) || vertexNativeFileExtensions.has(extension);
+  return (
+    vertexNativeMediaTypes.has(fileType) ||
+    vertexNativeFileExtensions.has(extension)
+  );
 };
 
 const resolveMediaType = (fileType: string, fileName: string) => {
@@ -173,7 +198,11 @@ const createVertexModel = () => {
   });
 };
 
-const extractTextFromBytes = async (fileName: string, fileType: string, fileBuffer: Buffer) => {
+const extractTextFromBytes = async (
+  fileName: string,
+  fileType: string,
+  fileBuffer: Buffer,
+) => {
   const extension = filenameExtension(fileName);
 
   if (fileType.startsWith("text/") || plainTextExtensions.has(extension)) {
@@ -187,20 +216,26 @@ const extractTextFromBytes = async (fileName: string, fileType: string, fileBuff
   return compactText(parsedAst.toText(), MAX_EXTRACTED_TEXT_CHARS);
 };
 
-const buildSourceContext = (documents: Array<{ fileName: string; extractedText?: string }>) => {
+const buildSourceContext = (
+  documents: Array<{ fileName: string; extractedText?: string }>,
+) => {
   const sections: string[] = [];
   for (const [index, document] of documents.entries()) {
     if (!document.extractedText) {
       continue;
     }
-    sections.push(`Dokument ${index + 1}: ${document.fileName}\n${document.extractedText}`);
+    sections.push(
+      `Dokument ${index + 1}: ${document.fileName}\n${document.extractedText}`,
+    );
   }
 
   return compactText(sections.join("\n\n---\n\n"), MAX_PROMPT_CONTEXT_CHARS);
 };
 
 const buildModelInputFromDocuments = async <TStorageId>(
-  ctx: { storage: { getUrl: (storageId: TStorageId) => Promise<string | null> } },
+  ctx: {
+    storage: { getUrl: (storageId: TStorageId) => Promise<string | null> };
+  },
   documents: Array<{
     storageId: TStorageId;
     fileName: string;
@@ -214,26 +249,37 @@ const buildModelInputFromDocuments = async <TStorageId>(
     mediaType: string;
     filename: string;
   }> = [];
-  const textOnlyDocuments: Array<{ fileName: string; extractedText?: string }> = [];
+  const textOnlyDocuments: Array<{ fileName: string; extractedText?: string }> =
+    [];
 
   for (const document of documents) {
     if (isVertexNativeCandidate(document.fileType, document.fileName)) {
       const fileUrl = await ctx.storage.getUrl(document.storageId);
       if (!fileUrl) {
         if (document.extractedText) {
-          textOnlyDocuments.push({ fileName: document.fileName, extractedText: document.extractedText });
+          textOnlyDocuments.push({
+            fileName: document.fileName,
+            extractedText: document.extractedText,
+          });
           continue;
         }
-        throw new Error(`Datei konnte nicht gelesen werden: ${document.fileName}`);
+        throw new Error(
+          `Datei konnte nicht gelesen werden: ${document.fileName}`,
+        );
       }
 
       const response = await fetch(fileUrl);
       if (!response.ok) {
         if (document.extractedText) {
-          textOnlyDocuments.push({ fileName: document.fileName, extractedText: document.extractedText });
+          textOnlyDocuments.push({
+            fileName: document.fileName,
+            extractedText: document.extractedText,
+          });
           continue;
         }
-        throw new Error(`Datei-Download fehlgeschlagen (${response.status}) fuer ${document.fileName}`);
+        throw new Error(
+          `Datei-Download fehlgeschlagen (${response.status}) fuer ${document.fileName}`,
+        );
       }
 
       fileParts.push({
@@ -246,7 +292,10 @@ const buildModelInputFromDocuments = async <TStorageId>(
     }
 
     if (document.extractedText) {
-      textOnlyDocuments.push({ fileName: document.fileName, extractedText: document.extractedText });
+      textOnlyDocuments.push({
+        fileName: document.fileName,
+        extractedText: document.extractedText,
+      });
     }
   }
 
@@ -268,7 +317,9 @@ const buildFallbackAnalysis = (
   }
 
   const topics = [...grouped.entries()].map(([topic, scores]) => {
-    const average = scores.reduce((total, value) => total + value, 0) / Math.max(scores.length, 1);
+    const average =
+      scores.reduce((total, value) => total + value, 0) /
+      Math.max(scores.length, 1);
     const comfortScore = Math.round(Math.max(0, Math.min(100, average)));
     const rationale =
       comfortScore >= 75
@@ -293,12 +344,18 @@ const buildFallbackAnalysis = (
   topics.sort((a, b) => a.comfortScore - b.comfortScore);
 
   const overallReadiness = topics.length
-    ? Math.round(topics.reduce((total, topic) => total + topic.comfortScore, 0) / topics.length)
+    ? Math.round(
+        topics.reduce((total, topic) => total + topic.comfortScore, 0) /
+          topics.length,
+      )
     : 0;
 
   return {
     overallReadiness,
-    strongestTopics: topics.slice(-3).reverse().map((topic) => topic.topic),
+    strongestTopics: topics
+      .slice(-3)
+      .reverse()
+      .map((topic) => topic.topic),
     weakestTopics: topics.slice(0, 3).map((topic) => topic.topic),
     topics,
     recommendedNextStep: focusTopic
@@ -307,7 +364,8 @@ const buildFallbackAnalysis = (
   };
 };
 
-const toTrimmedString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const toTrimmedString = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
 
 const MAX_LOG_PREVIEW_CHARS = 12_000;
 const MAX_LOG_STACK_LINES = 8;
@@ -395,7 +453,9 @@ const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   return `${value.slice(0, maxChars)}\n...[gekürzt: ${omitted} Zeichen]`;
 };
 
-const toSafeAnalyticsMetadataValue = (value: unknown): string | number | boolean | null => {
+const toSafeAnalyticsMetadataValue = (
+  value: unknown,
+): string | number | boolean | null => {
   if (value === null || value === undefined) {
     return null;
   }
@@ -451,7 +511,10 @@ const buildAiSdkTelemetry = (
     ...(metadata ?? {}),
   };
 
-  if (normalizedMetadata.scope !== undefined && normalizedMetadata.appScope === undefined) {
+  if (
+    normalizedMetadata.scope !== undefined &&
+    normalizedMetadata.appScope === undefined
+  ) {
     normalizedMetadata.appScope = normalizedMetadata.scope;
   }
   delete normalizedMetadata.scope;
@@ -513,28 +576,37 @@ const mergeUsage = (target: UsageSnapshot, incoming?: UsageSnapshot) => {
   }
 };
 
-const mergeVertexUsage = (target: VertexUsageSnapshot, incoming?: VertexUsageSnapshot) => {
+const mergeVertexUsage = (
+  target: VertexUsageSnapshot,
+  incoming?: VertexUsageSnapshot,
+) => {
   if (!incoming) {
     return;
   }
 
   if (incoming.promptTokenCount !== undefined) {
-    target.promptTokenCount = (target.promptTokenCount ?? 0) + incoming.promptTokenCount;
+    target.promptTokenCount =
+      (target.promptTokenCount ?? 0) + incoming.promptTokenCount;
   }
   if (incoming.candidatesTokenCount !== undefined) {
-    target.candidatesTokenCount = (target.candidatesTokenCount ?? 0) + incoming.candidatesTokenCount;
+    target.candidatesTokenCount =
+      (target.candidatesTokenCount ?? 0) + incoming.candidatesTokenCount;
   }
   if (incoming.thoughtsTokenCount !== undefined) {
-    target.thoughtsTokenCount = (target.thoughtsTokenCount ?? 0) + incoming.thoughtsTokenCount;
+    target.thoughtsTokenCount =
+      (target.thoughtsTokenCount ?? 0) + incoming.thoughtsTokenCount;
   }
   if (incoming.totalTokenCount !== undefined) {
-    target.totalTokenCount = (target.totalTokenCount ?? 0) + incoming.totalTokenCount;
+    target.totalTokenCount =
+      (target.totalTokenCount ?? 0) + incoming.totalTokenCount;
   }
   if (incoming.documentPromptTokens !== undefined) {
-    target.documentPromptTokens = (target.documentPromptTokens ?? 0) + incoming.documentPromptTokens;
+    target.documentPromptTokens =
+      (target.documentPromptTokens ?? 0) + incoming.documentPromptTokens;
   }
   if (incoming.textPromptTokens !== undefined) {
-    target.textPromptTokens = (target.textPromptTokens ?? 0) + incoming.textPromptTokens;
+    target.textPromptTokens =
+      (target.textPromptTokens ?? 0) + incoming.textPromptTokens;
   }
 };
 
@@ -548,12 +620,18 @@ const extractResponseHeaders = (headers: unknown) => {
   if (typeof Headers !== "undefined" && headers instanceof Headers) {
     headers.forEach((value, key) => {
       const lower = key.toLowerCase();
-      if (IMPORTANT_RESPONSE_HEADER_KEYS.has(lower) || lower.includes("request") || lower.includes("trace")) {
+      if (
+        IMPORTANT_RESPONSE_HEADER_KEYS.has(lower) ||
+        lower.includes("request") ||
+        lower.includes("trace")
+      ) {
         extracted[key] = value;
       }
     });
   } else if (typeof headers === "object") {
-    for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(
+      headers as Record<string, unknown>,
+    )) {
       const lower = key.toLowerCase();
       if (
         IMPORTANT_RESPONSE_HEADER_KEYS.has(lower) ||
@@ -603,13 +681,17 @@ const extractErrorForLog = (error: unknown) => {
   return {
     name: error.name,
     message: error.message,
-    stack: truncateForLog(error.stack?.split("\n").slice(0, MAX_LOG_STACK_LINES).join("\n") ?? ""),
+    stack: truncateForLog(
+      error.stack?.split("\n").slice(0, MAX_LOG_STACK_LINES).join("\n") ?? "",
+    ),
     causeType:
       withUnknownFields.cause === undefined || withUnknownFields.cause === null
         ? undefined
         : Object.prototype.toString.call(withUnknownFields.cause),
     finishReason: toTrimmedString(withUnknownFields.finishReason) || undefined,
-    usage: extractUsage(withUnknownFields.totalUsage ?? withUnknownFields.usage),
+    usage: extractUsage(
+      withUnknownFields.totalUsage ?? withUnknownFields.usage,
+    ),
     response: extractResponseForLog(withUnknownFields.response),
   };
 };
@@ -623,7 +705,9 @@ const extractUsageFromError = (error: unknown) => {
   return extractUsage(record.totalUsage ?? record.usage);
 };
 
-const extractVertexUsage = (providerMetadata: unknown): VertexUsageSnapshot | undefined => {
+const extractVertexUsage = (
+  providerMetadata: unknown,
+): VertexUsageSnapshot | undefined => {
   if (typeof providerMetadata !== "object" || providerMetadata === null) {
     return undefined;
   }
@@ -638,7 +722,8 @@ const extractVertexUsage = (providerMetadata: unknown): VertexUsageSnapshot | un
   }
 
   const usageMetadata =
-    typeof vertexRecord.usageMetadata === "object" && vertexRecord.usageMetadata !== null
+    typeof vertexRecord.usageMetadata === "object" &&
+    vertexRecord.usageMetadata !== null
       ? (vertexRecord.usageMetadata as Record<string, unknown>)
       : null;
   if (!usageMetadata) {
@@ -677,7 +762,9 @@ const extractVertexUsage = (providerMetadata: unknown): VertexUsageSnapshot | un
     textPromptTokens,
   };
 
-  const hasValues = Object.values(snapshot).some((value) => value !== undefined && value !== 0);
+  const hasValues = Object.values(snapshot).some(
+    (value) => value !== undefined && value !== 0,
+  );
   return hasValues ? snapshot : undefined;
 };
 
@@ -700,7 +787,9 @@ const extractGenerationResultForLog = (result: unknown) => {
     details: {
       finishReason: toTrimmedString(record.finishReason) || undefined,
       usage,
-      warningCount: Array.isArray(record.warnings) ? record.warnings.length : undefined,
+      warningCount: Array.isArray(record.warnings)
+        ? record.warnings.length
+        : undefined,
       vertexUsage,
       response: extractResponseForLog(record.response),
       stepsCount: Array.isArray(record.steps) ? record.steps.length : undefined,
@@ -708,7 +797,9 @@ const extractGenerationResultForLog = (result: unknown) => {
   };
 };
 
-const summarizeGeneratedQuiz = (generated: QuizGenerationResult | null | undefined) => {
+const summarizeGeneratedQuiz = (
+  generated: QuizGenerationResult | null | undefined,
+) => {
   if (!generated) {
     return {
       hasOutput: false,
@@ -725,7 +816,9 @@ const summarizeGeneratedQuiz = (generated: QuizGenerationResult | null | undefin
   };
 };
 
-const summarizeGeneratedDeepDive = (generated: DeepDiveGenerationResult | null | undefined) => {
+const summarizeGeneratedDeepDive = (
+  generated: DeepDiveGenerationResult | null | undefined,
+) => {
   if (!generated) {
     return {
       hasOutput: false,
@@ -752,7 +845,11 @@ const createAiTraceLogger = (scope: string, sessionId: string) => {
   const accumulatedUsage: UsageSnapshot = {};
   const sessionHash = hashIdentifier(sessionId);
 
-  const log = (level: "info" | "warn" | "error", event: string, details?: Record<string, unknown>) => {
+  const log = (
+    level: "info" | "warn" | "error",
+    event: string,
+    details?: Record<string, unknown>,
+  ) => {
     const payload = {
       traceId,
       scope,
@@ -794,10 +891,15 @@ const persistAiAnalyticsEvent = async (
   payload: PersistedAiAnalyticsPayload,
 ) => {
   try {
-    const errorRecord = payload.error && typeof payload.error === "object" ? payload.error : undefined;
+    const errorRecord =
+      payload.error && typeof payload.error === "object"
+        ? payload.error
+        : undefined;
     const privacyMode = payload.privacyMode ?? getObservabilityMode();
-    const contentCaptured = payload.contentCaptured ?? isSensitiveCaptureEnabled();
-    const telemetryProvider = payload.telemetryProvider ?? getTelemetryProvider();
+    const contentCaptured =
+      payload.contentCaptured ?? isSensitiveCaptureEnabled();
+    const telemetryProvider =
+      payload.telemetryProvider ?? getTelemetryProvider();
 
     await ctx.runMutation(internal.study.storeAiAnalyticsEvent, {
       traceId: payload.traceId,
@@ -826,15 +928,21 @@ const persistAiAnalyticsEvent = async (
       sourceContextLength: payload.sourceContextLength,
       outputQuestionCount: payload.outputQuestionCount,
       errorName:
-        errorRecord && "name" in errorRecord && typeof errorRecord.name === "string"
+        errorRecord &&
+        "name" in errorRecord &&
+        typeof errorRecord.name === "string"
           ? errorRecord.name
           : undefined,
       errorMessage:
-        errorRecord && "message" in errorRecord && typeof errorRecord.message === "string"
+        errorRecord &&
+        "message" in errorRecord &&
+        typeof errorRecord.message === "string"
           ? errorRecord.message
           : undefined,
       errorStackPreview:
-        errorRecord && "stack" in errorRecord && typeof errorRecord.stack === "string"
+        errorRecord &&
+        "stack" in errorRecord &&
+        typeof errorRecord.stack === "string"
           ? errorRecord.stack
           : undefined,
       metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
@@ -882,8 +990,11 @@ const pickFirstString = (record: Record<string, unknown>, keys: string[]) => {
   return "";
 };
 
-const normalizeQuizGenerationOutput = (value: unknown): QuizGenerationResult | null => {
-  const parsedValue = typeof value === "string" ? parseJsonStringSafely(value) : value;
+const normalizeQuizGenerationOutput = (
+  value: unknown,
+): QuizGenerationResult | null => {
+  const parsedValue =
+    typeof value === "string" ? parseJsonStringSafely(value) : value;
 
   const record = toObjectRecord(parsedValue);
   const rawQuestions = Array.isArray(parsedValue)
@@ -925,7 +1036,12 @@ const normalizeQuizGenerationOutput = (value: unknown): QuizGenerationResult | n
       }
 
       return {
-        topic: pickFirstString(questionRecord, ["topic", "thema", "bereich", "kapitel"]),
+        topic: pickFirstString(questionRecord, [
+          "topic",
+          "thema",
+          "bereich",
+          "kapitel",
+        ]),
         prompt,
         idealAnswer,
         explanationHint:
@@ -939,7 +1055,10 @@ const normalizeQuizGenerationOutput = (value: unknown): QuizGenerationResult | n
           "Fokussiere dich auf die Kernbegriffe und erkläre sie in eigenen Worten.",
       };
     })
-    .filter((question): question is QuizGenerationResult["questions"][number] => question !== null);
+    .filter(
+      (question): question is QuizGenerationResult["questions"][number] =>
+        question !== null,
+    );
 
   if (questions.length === 0) {
     return null;
@@ -950,9 +1069,16 @@ const normalizeQuizGenerationOutput = (value: unknown): QuizGenerationResult | n
     : Array.isArray(record?.themen)
       ? record.themen
       : [];
-  const parsedTopics = rawTopics.map(toTrimmedString).filter((topic) => topic.length > 0);
-  const inferredTopics = questions.map((question) => question.topic).filter((topic) => topic.length > 0);
-  const topics = [...new Set([...parsedTopics, ...inferredTopics])].slice(0, 12);
+  const parsedTopics = rawTopics
+    .map(toTrimmedString)
+    .filter((topic) => topic.length > 0);
+  const inferredTopics = questions
+    .map((question) => question.topic)
+    .filter((topic) => topic.length > 0);
+  const topics = [...new Set([...parsedTopics, ...inferredTopics])].slice(
+    0,
+    12,
+  );
 
   if (topics.length === 0) {
     topics.push("Allgemeines Verständnis");
@@ -962,7 +1088,11 @@ const normalizeQuizGenerationOutput = (value: unknown): QuizGenerationResult | n
 
   return {
     sourceSummary:
-      pickFirstString(record ?? {}, ["sourceSummary", "zusammenfassung", "summary"]) ||
+      pickFirstString(record ?? {}, [
+        "sourceSummary",
+        "zusammenfassung",
+        "summary",
+      ]) ||
       "Die wichtigsten Inhalte wurden aus dem hochgeladenen Lernmaterial zusammengefasst.",
     topics,
     questions: questions.map((question) => ({
@@ -998,11 +1128,14 @@ export const extractDocumentContent = action({
       extractionStatus: "processing",
     });
 
-    const { document } = await ctx.runQuery(internal.study.getDocumentExtractionContext, {
-      grantToken: args.grantToken,
-      sessionId: args.sessionId,
-      documentId: args.documentId,
-    });
+    const { document } = await ctx.runQuery(
+      internal.study.getDocumentExtractionContext,
+      {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+        documentId: args.documentId,
+      },
+    );
 
     trace.log("info", "context_loaded", {
       fileName: document.fileName,
@@ -1036,7 +1169,9 @@ export const extractDocumentContent = action({
     try {
       const fileUrl = await ctx.storage.getUrl(document.storageId);
       if (!fileUrl) {
-        throw new Error("Auf das hochgeladene Dokument kann nicht zugegriffen werden.");
+        throw new Error(
+          "Auf das hochgeladene Dokument kann nicht zugegriffen werden.",
+        );
       }
 
       trace.log("info", "storage_url_loaded", {
@@ -1055,7 +1190,11 @@ export const extractDocumentContent = action({
       });
 
       const fileBuffer = Buffer.from(await response.arrayBuffer());
-      const extractedText = await extractTextFromBytes(document.fileName, document.fileType, fileBuffer);
+      const extractedText = await extractTextFromBytes(
+        document.fileName,
+        document.fileType,
+        fileBuffer,
+      );
 
       if (!extractedText) {
         throw new Error("Aus dieser Datei konnte kein Text extrahiert werden.");
@@ -1078,7 +1217,10 @@ export const extractDocumentContent = action({
         extractionStatus: "ready" as const,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unbekannter Fehler bei der Extraktion.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unbekannter Fehler bei der Extraktion.";
 
       trace.log("error", "extraction_failed", {
         documentId: args.documentId,
@@ -1122,8 +1264,11 @@ export const generateQuiz = action({
     let analyticsError: unknown;
 
     try {
-    const desiredCount = Math.max(3, Math.min(10, Math.floor(args.questionCount ?? 6)));
-    const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
+      const desiredCount = Math.max(
+        3,
+        Math.min(10, Math.floor(args.questionCount ?? 6)),
+      );
+      const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
 
 Anforderungen:
 - Fragen sollen zu wahrscheinlichen Klausur-/Testfragen passen.
@@ -1131,341 +1276,375 @@ Anforderungen:
 - Antworthinweise müssen fachlich korrekt und konkret sein.
 - Gib eine kurze Hilfezeile für den Fall einer falschen Antwort.`;
 
-    trace.log("info", "start", {
-      desiredCount,
-      instructionLength: quizInstruction.length,
-    });
+      trace.log("info", "start", {
+        desiredCount,
+        instructionLength: quizInstruction.length,
+      });
 
-    const quizContext: { documents: SessionDocumentInput[] } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
-      grantToken: args.grantToken,
-      sessionId: args.sessionId,
-    });
+      const quizContext: { documents: SessionDocumentInput[] } =
+        await ctx.runQuery(internal.study.getQuizGenerationContext, {
+          grantToken: args.grantToken,
+          sessionId: args.sessionId,
+        });
 
-    const documents = quizContext.documents;
-    totalDocuments = documents.length;
+      const documents = quizContext.documents;
+      totalDocuments = documents.length;
 
-    const readyDocuments = documents.filter(
-      (document: SessionDocumentInput) => document.extractionStatus === "ready",
-    );
-    readyDocumentsCount = readyDocuments.length;
+      const readyDocuments = documents.filter(
+        (document: SessionDocumentInput) =>
+          document.extractionStatus === "ready",
+      );
+      readyDocumentsCount = readyDocuments.length;
 
-    trace.log("info", "documents_loaded", {
-      totalDocuments: documents.length,
-      readyDocuments: readyDocuments.length,
-      documents: documents.map((document) => ({
-        fileName: document.fileName,
-        fileType: document.fileType,
-        extractionStatus: document.extractionStatus,
-        extractedTextLength: document.extractedText?.length ?? 0,
-      })),
-    });
-
-    if (readyDocuments.length === 0) {
-      trace.log("warn", "no_ready_documents");
-      throw new Error("Lade mindestens ein Dokument hoch und verarbeite es, bevor du Quizfragen generierst.");
-    }
-
-    const model = createVertexModel();
-    trace.log("info", "vertex_model_initialized", {
-      modelId: "gemini-2.5-flash",
-    });
-
-    let fileParts: Array<{
-      type: "file";
-      data: Buffer;
-      mediaType: string;
-      filename: string;
-    }> = [];
-    let sourceContext = "";
-
-    try {
-      const modelInput = await buildModelInputFromDocuments(
-        ctx,
-        readyDocuments.map((document: SessionDocumentInput) => ({
-          storageId: document.storageId,
+      trace.log("info", "documents_loaded", {
+        totalDocuments: documents.length,
+        readyDocuments: readyDocuments.length,
+        documents: documents.map((document) => ({
           fileName: document.fileName,
           fileType: document.fileType,
-          extractedText: document.extractedText,
+          extractionStatus: document.extractionStatus,
+          extractedTextLength: document.extractedText?.length ?? 0,
         })),
-      );
-      fileParts = modelInput.fileParts;
-      sourceContext = modelInput.sourceContext;
-    } catch (error) {
-      trace.log("error", "model_input_preparation_failed", {
-        error: extractErrorForLog(error),
-      });
-      throw error;
-    }
-
-    trace.log("info", "model_input_prepared", {
-      sourceContextLength: sourceContext.length,
-      sourceContextStats: redactTextForLog(sourceContext),
-      filePartCount: fileParts.length,
-      fileParts: fileParts.map((part) => ({
-        filename: part.filename,
-        mediaType: part.mediaType,
-        sizeBytes: part.data.byteLength,
-      })),
-    });
-
-    filePartCount = fileParts.length;
-    sourceContextLength = sourceContext.length;
-
-    if (fileParts.length === 0 && !sourceContext) {
-      trace.log("error", "no_usable_input");
-      throw new Error("Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.");
-    }
-
-    const userContent: Array<
-      | { type: "text"; text: string }
-      | { type: "file"; data: Buffer; mediaType: string; filename: string }
-    > = [
-      {
-        type: "text",
-        text: quizInstruction,
-      },
-    ];
-
-    if (sourceContext) {
-      userContent.push({
-        type: "text",
-        text: `Zusätzliche Textauszüge aus den Dateien:\n${sourceContext}`,
-      });
-    }
-
-    userContent.push(...fileParts);
-
-    let generated: QuizGenerationResult | null = null;
-    const quizGenerationErrorMessage =
-      "Die KI hat keine Fragen erzeugt. Bitte versuche es erneut oder lade das Dokument neu hoch.";
-
-    try {
-      trace.log("info", "llm_primary_request", {
-        strategy: "structured_messages",
-        temperature: 0.3,
-        maxOutputTokens: 2_000,
-        thinkingBudget: 0,
-        sourceContextLength: sourceContext.length,
-        filePartCount: fileParts.length,
       });
 
-      llmAttempts += 1;
-
-      const result = await generateText({
-        model: model("gemini-2.5-flash"),
-        temperature: 0.3,
-        maxOutputTokens: 2_000,
-        providerOptions: vertexProviderOptions,
-        output: Output.object({
-          schema: quizGenerationSchema,
-        }),
-        experimental_telemetry: buildAiSdkTelemetry("generateQuiz.primary", args.sessionId, trace.traceId, {
-          appScope: "generateQuiz",
-          stage: "primary",
-          readyDocuments: readyDocuments.length,
-          filePartCount: fileParts.length,
-          sourceContextLength: sourceContext.length,
-        }),
-        system:
-          "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
-        messages: [{ role: "user", content: userContent }],
-      });
-
-      const resultLog = extractGenerationResultForLog(result);
-      trace.addUsage(resultLog.usage);
-      finishReason = resultLog.details.finishReason;
-      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-      trace.log("info", "llm_primary_response", {
-        ...resultLog.details,
-        outputSummary: summarizeGeneratedQuiz(result.output),
-      });
-
-      const primaryDocumentTokens = resultLog.details.vertexUsage?.documentPromptTokens ?? 0;
-      if (fileParts.length > 0 && primaryDocumentTokens <= 0) {
-        trace.log("warn", "no_document_tokens_detected", {
-          stage: "primary",
-          filePartCount: fileParts.length,
-          vertexUsage: resultLog.details.vertexUsage,
-        });
+      if (readyDocuments.length === 0) {
+        trace.log("warn", "no_ready_documents");
+        throw new Error(
+          "Lade mindestens ein Dokument hoch und verarbeite es, bevor du Quizfragen generierst.",
+        );
       }
 
-      generated = result.output;
-    } catch (error) {
-      if (!isNoOutputGeneratedError(error)) {
-        trace.addUsage(extractUsageFromError(error));
-        trace.log("error", "llm_primary_failed", {
+      const model = createVertexModel();
+      trace.log("info", "vertex_model_initialized", {
+        modelId: "gemini-2.5-flash",
+      });
+
+      let fileParts: Array<{
+        type: "file";
+        data: Buffer;
+        mediaType: string;
+        filename: string;
+      }> = [];
+      let sourceContext = "";
+
+      try {
+        const modelInput = await buildModelInputFromDocuments(
+          ctx,
+          readyDocuments.map((document: SessionDocumentInput) => ({
+            storageId: document.storageId,
+            fileName: document.fileName,
+            fileType: document.fileType,
+            extractedText: document.extractedText,
+          })),
+        );
+        fileParts = modelInput.fileParts;
+        sourceContext = modelInput.sourceContext;
+      } catch (error) {
+        trace.log("error", "model_input_preparation_failed", {
           error: extractErrorForLog(error),
         });
         throw error;
       }
 
-      trace.addUsage(extractUsageFromError(error));
-      trace.log("warn", "llm_primary_no_output", {
-        error: extractErrorForLog(error),
+      trace.log("info", "model_input_prepared", {
+        sourceContextLength: sourceContext.length,
+        sourceContextStats: redactTextForLog(sourceContext),
+        filePartCount: fileParts.length,
+        fileParts: fileParts.map((part) => ({
+          filename: part.filename,
+          mediaType: part.mediaType,
+          sizeBytes: part.data.byteLength,
+        })),
       });
 
-      fallbackUsed = true;
+      filePartCount = fileParts.length;
+      sourceContextLength = sourceContext.length;
+
+      if (fileParts.length === 0 && !sourceContext) {
+        trace.log("error", "no_usable_input");
+        throw new Error(
+          "Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.",
+        );
+      }
+
+      const userContent: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; data: Buffer; mediaType: string; filename: string }
+      > = [
+        {
+          type: "text",
+          text: quizInstruction,
+        },
+      ];
+
+      if (sourceContext) {
+        userContent.push({
+          type: "text",
+          text: `Zusätzliche Textauszüge aus den Dateien:\n${sourceContext}`,
+        });
+      }
+
+      userContent.push(...fileParts);
+
+      let generated: QuizGenerationResult | null = null;
+      const quizGenerationErrorMessage =
+        "Die KI hat keine Fragen erzeugt. Bitte versuche es erneut oder lade das Dokument neu hoch.";
 
       try {
-        if (sourceContext) {
-          trace.log("info", "llm_fallback_request", {
-            strategy: "structured_prompt",
-            temperature: 0.2,
-            maxOutputTokens: 2_000,
-            thinkingBudget: 0,
-            sourceContextLength: sourceContext.length,
-          });
+        trace.log("info", "llm_primary_request", {
+          strategy: "structured_messages",
+          temperature: 0.3,
+          maxOutputTokens: 2_000,
+          thinkingBudget: 0,
+          sourceContextLength: sourceContext.length,
+          filePartCount: fileParts.length,
+        });
 
-          llmAttempts += 1;
+        llmAttempts += 1;
 
-          const fallbackResult = await generateText({
-            model: model("gemini-2.5-flash"),
-            temperature: 0.2,
-            maxOutputTokens: 2_000,
-            providerOptions: vertexProviderOptions,
-            output: Output.object({
-              schema: quizGenerationSchema,
-            }),
-            experimental_telemetry: buildAiSdkTelemetry("generateQuiz.fallbackStructured", args.sessionId, trace.traceId, {
+        const result = await generateText({
+          model: model("gemini-2.5-flash"),
+          temperature: 0.3,
+          maxOutputTokens: 2_000,
+          providerOptions: vertexProviderOptions,
+          output: Output.object({
+            schema: quizGenerationSchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "generateQuiz.primary",
+            args.sessionId,
+            trace.traceId,
+            {
               appScope: "generateQuiz",
-              stage: "fallback_structured",
+              stage: "primary",
               readyDocuments: readyDocuments.length,
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
-            }),
-            system:
-              "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
-            prompt: `${quizInstruction}\n\nNutze ausschließlich das folgende Lernmaterial:\n${sourceContext}`,
+            },
+          ),
+          system:
+            "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
+          messages: [{ role: "user", content: userContent }],
+        });
+
+        const resultLog = extractGenerationResultForLog(result);
+        trace.addUsage(resultLog.usage);
+        finishReason = resultLog.details.finishReason;
+        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+        trace.log("info", "llm_primary_response", {
+          ...resultLog.details,
+          outputSummary: summarizeGeneratedQuiz(result.output),
+        });
+
+        const primaryDocumentTokens =
+          resultLog.details.vertexUsage?.documentPromptTokens ?? 0;
+        if (fileParts.length > 0 && primaryDocumentTokens <= 0) {
+          trace.log("warn", "no_document_tokens_detected", {
+            stage: "primary",
+            filePartCount: fileParts.length,
+            vertexUsage: resultLog.details.vertexUsage,
           });
+        }
 
-          const fallbackLog = extractGenerationResultForLog(fallbackResult);
-          trace.addUsage(fallbackLog.usage);
-          finishReason = fallbackLog.details.finishReason;
-          mergeVertexUsage(vertexUsageTotals, fallbackLog.details.vertexUsage);
-          trace.log("info", "llm_fallback_response", {
-            ...fallbackLog.details,
-            outputSummary: summarizeGeneratedQuiz(fallbackResult.output),
+        generated = result.output;
+      } catch (error) {
+        if (!isNoOutputGeneratedError(error)) {
+          trace.addUsage(extractUsageFromError(error));
+          trace.log("error", "llm_primary_failed", {
+            error: extractErrorForLog(error),
           });
+          throw error;
+        }
 
-          const fallbackDocumentTokens = fallbackLog.details.vertexUsage?.documentPromptTokens ?? 0;
-          if (fileParts.length > 0 && fallbackDocumentTokens <= 0) {
-            trace.log("warn", "no_document_tokens_detected", {
-              stage: "fallback_structured",
-              filePartCount: fileParts.length,
-              vertexUsage: fallbackLog.details.vertexUsage,
-            });
-          }
+        trace.addUsage(extractUsageFromError(error));
+        trace.log("warn", "llm_primary_no_output", {
+          error: extractErrorForLog(error),
+        });
 
-          generated = fallbackResult.output;
-        } else {
-          trace.log("info", "llm_fallback_request", {
-            strategy: "json_messages",
-            temperature: 0.2,
-            maxOutputTokens: 2_200,
-            thinkingBudget: 0,
-            sourceContextLength: 0,
-          });
+        fallbackUsed = true;
 
-          llmAttempts += 1;
-
-          const fallbackResult = await generateText({
-            model: model("gemini-2.5-flash"),
-            temperature: 0.2,
-            maxOutputTokens: 2_200,
-            providerOptions: vertexProviderOptions,
-            output: Output.json(),
-            experimental_telemetry: buildAiSdkTelemetry("generateQuiz.fallbackJson", args.sessionId, trace.traceId, {
-              appScope: "generateQuiz",
-              stage: "fallback_json",
-              readyDocuments: readyDocuments.length,
-              filePartCount: fileParts.length,
+        try {
+          if (sourceContext) {
+            trace.log("info", "llm_fallback_request", {
+              strategy: "structured_prompt",
+              temperature: 0.2,
+              maxOutputTokens: 2_000,
+              thinkingBudget: 0,
               sourceContextLength: sourceContext.length,
-            }),
-            system:
-              "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {\"sourceSummary\": string, \"topics\": string[], \"questions\": [{\"topic\": string, \"prompt\": string, \"idealAnswer\": string, \"explanationHint\": string}]}. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder \"frage\", \"korrekte_antwort\" und \"hilfe_falsche_antwort\".",
-            messages: [{ role: "user", content: userContent }],
-          });
-
-          const fallbackLog = extractGenerationResultForLog(fallbackResult);
-          trace.addUsage(fallbackLog.usage);
-          finishReason = fallbackLog.details.finishReason;
-          mergeVertexUsage(vertexUsageTotals, fallbackLog.details.vertexUsage);
-
-          generated = normalizeQuizGenerationOutput(fallbackResult.output);
-
-          trace.log("info", "llm_fallback_response", {
-            ...fallbackLog.details,
-            normalizedOutputSummary: summarizeGeneratedQuiz(generated),
-          });
-
-          const fallbackDocumentTokens = fallbackLog.details.vertexUsage?.documentPromptTokens ?? 0;
-          if (fileParts.length > 0 && fallbackDocumentTokens <= 0) {
-            trace.log("warn", "no_document_tokens_detected", {
-              stage: "fallback_json",
-              filePartCount: fileParts.length,
-              vertexUsage: fallbackLog.details.vertexUsage,
             });
-          }
 
-          if (!generated) {
-            trace.log("error", "llm_fallback_normalization_failed", {
-              outputType: typeof fallbackResult.output,
+            llmAttempts += 1;
+
+            const fallbackResult = await generateText({
+              model: model("gemini-2.5-flash"),
+              temperature: 0.2,
+              maxOutputTokens: 2_000,
+              providerOptions: vertexProviderOptions,
+              output: Output.object({
+                schema: quizGenerationSchema,
+              }),
+              experimental_telemetry: buildAiSdkTelemetry(
+                "generateQuiz.fallbackStructured",
+                args.sessionId,
+                trace.traceId,
+                {
+                  appScope: "generateQuiz",
+                  stage: "fallback_structured",
+                  readyDocuments: readyDocuments.length,
+                  filePartCount: fileParts.length,
+                  sourceContextLength: sourceContext.length,
+                },
+              ),
+              system:
+                "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
+              prompt: `${quizInstruction}\n\nNutze ausschließlich das folgende Lernmaterial:\n${sourceContext}`,
+            });
+
+            const fallbackLog = extractGenerationResultForLog(fallbackResult);
+            trace.addUsage(fallbackLog.usage);
+            finishReason = fallbackLog.details.finishReason;
+            mergeVertexUsage(
+              vertexUsageTotals,
+              fallbackLog.details.vertexUsage,
+            );
+            trace.log("info", "llm_fallback_response", {
+              ...fallbackLog.details,
+              outputSummary: summarizeGeneratedQuiz(fallbackResult.output),
+            });
+
+            const fallbackDocumentTokens =
+              fallbackLog.details.vertexUsage?.documentPromptTokens ?? 0;
+            if (fileParts.length > 0 && fallbackDocumentTokens <= 0) {
+              trace.log("warn", "no_document_tokens_detected", {
+                stage: "fallback_structured",
+                filePartCount: fileParts.length,
+                vertexUsage: fallbackLog.details.vertexUsage,
+              });
+            }
+
+            generated = fallbackResult.output;
+          } else {
+            trace.log("info", "llm_fallback_request", {
+              strategy: "json_messages",
+              temperature: 0.2,
+              maxOutputTokens: 2_200,
+              thinkingBudget: 0,
+              sourceContextLength: 0,
+            });
+
+            llmAttempts += 1;
+
+            const fallbackResult = await generateText({
+              model: model("gemini-2.5-flash"),
+              temperature: 0.2,
+              maxOutputTokens: 2_200,
+              providerOptions: vertexProviderOptions,
+              output: Output.json(),
+              experimental_telemetry: buildAiSdkTelemetry(
+                "generateQuiz.fallbackJson",
+                args.sessionId,
+                trace.traceId,
+                {
+                  appScope: "generateQuiz",
+                  stage: "fallback_json",
+                  readyDocuments: readyDocuments.length,
+                  filePartCount: fileParts.length,
+                  sourceContextLength: sourceContext.length,
+                },
+              ),
+              system:
+                'Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {"sourceSummary": string, "topics": string[], "questions": [{"topic": string, "prompt": string, "idealAnswer": string, "explanationHint": string}]}. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder "frage", "korrekte_antwort" und "hilfe_falsche_antwort".',
+              messages: [{ role: "user", content: userContent }],
+            });
+
+            const fallbackLog = extractGenerationResultForLog(fallbackResult);
+            trace.addUsage(fallbackLog.usage);
+            finishReason = fallbackLog.details.finishReason;
+            mergeVertexUsage(
+              vertexUsageTotals,
+              fallbackLog.details.vertexUsage,
+            );
+
+            generated = normalizeQuizGenerationOutput(fallbackResult.output);
+
+            trace.log("info", "llm_fallback_response", {
+              ...fallbackLog.details,
+              normalizedOutputSummary: summarizeGeneratedQuiz(generated),
+            });
+
+            const fallbackDocumentTokens =
+              fallbackLog.details.vertexUsage?.documentPromptTokens ?? 0;
+            if (fileParts.length > 0 && fallbackDocumentTokens <= 0) {
+              trace.log("warn", "no_document_tokens_detected", {
+                stage: "fallback_json",
+                filePartCount: fileParts.length,
+                vertexUsage: fallbackLog.details.vertexUsage,
+              });
+            }
+
+            if (!generated) {
+              trace.log("error", "llm_fallback_normalization_failed", {
+                outputType: typeof fallbackResult.output,
+              });
+              throw new Error(quizGenerationErrorMessage);
+            }
+          }
+        } catch (fallbackError) {
+          if (isNoOutputGeneratedError(fallbackError)) {
+            trace.addUsage(extractUsageFromError(fallbackError));
+            trace.log("error", "llm_fallback_no_output", {
+              error: extractErrorForLog(fallbackError),
             });
             throw new Error(quizGenerationErrorMessage);
           }
-        }
-      } catch (fallbackError) {
-        if (isNoOutputGeneratedError(fallbackError)) {
+
           trace.addUsage(extractUsageFromError(fallbackError));
-          trace.log("error", "llm_fallback_no_output", {
+          trace.log("error", "llm_fallback_failed", {
             error: extractErrorForLog(fallbackError),
           });
-          throw new Error(quizGenerationErrorMessage);
+
+          throw fallbackError;
         }
-
-        trace.addUsage(extractUsageFromError(fallbackError));
-        trace.log("error", "llm_fallback_failed", {
-          error: extractErrorForLog(fallbackError),
-        });
-
-        throw fallbackError;
       }
-    }
 
-    if (!generated || generated.questions.length === 0) {
-      trace.log("error", "validation_no_questions", {
-        outputSummary: summarizeGeneratedQuiz(generated),
+      if (!generated || generated.questions.length === 0) {
+        trace.log("error", "validation_no_questions", {
+          outputSummary: summarizeGeneratedQuiz(generated),
+        });
+        throw new Error(
+          "Die KI hat keine Fragen erzeugt. Bitte versuche es erneut.",
+        );
+      }
+
+      const normalizedQuestions = generated.questions
+        .slice(0, desiredCount)
+        .map((question, index) => ({
+          id: `${Date.now()}-${index + 1}`,
+          topic: question.topic,
+          prompt: question.prompt,
+          idealAnswer: question.idealAnswer,
+          explanationHint: question.explanationHint,
+        }));
+
+      await ctx.runMutation(internal.study.storeGeneratedQuiz, {
+        sessionId: args.sessionId,
+        sourceSummary: generated.sourceSummary,
+        sourceTopics: generated.topics.slice(0, 10),
+        quizQuestions: normalizedQuestions,
+        incrementRound: false,
       });
-      throw new Error("Die KI hat keine Fragen erzeugt. Bitte versuche es erneut.");
-    }
 
-    const normalizedQuestions = generated.questions.slice(0, desiredCount).map((question, index) => ({
-      id: `${Date.now()}-${index + 1}`,
-      topic: question.topic,
-      prompt: question.prompt,
-      idealAnswer: question.idealAnswer,
-      explanationHint: question.explanationHint,
-    }));
+      trace.log("info", "completed", {
+        outputSummary: summarizeGeneratedQuiz(generated),
+        normalizedQuestionCount: normalizedQuestions.length,
+        usageTotals: trace.getUsageTotals(),
+      });
 
-    await ctx.runMutation(internal.study.storeGeneratedQuiz, {
-      sessionId: args.sessionId,
-      sourceSummary: generated.sourceSummary,
-      sourceTopics: generated.topics.slice(0, 10),
-      quizQuestions: normalizedQuestions,
-      incrementRound: false,
-    });
+      outputQuestionCount = normalizedQuestions.length;
 
-    trace.log("info", "completed", {
-      outputSummary: summarizeGeneratedQuiz(generated),
-      normalizedQuestionCount: normalizedQuestions.length,
-      usageTotals: trace.getUsageTotals(),
-    });
-
-    outputQuestionCount = normalizedQuestions.length;
-
-    return {
-      questionCount: normalizedQuestions.length,
-    };
+      return {
+        questionCount: normalizedQuestions.length,
+      };
     } catch (error) {
       analyticsError = error;
       throw error;
@@ -1514,61 +1693,65 @@ export const evaluateAnswer = action({
     let analyticsError: unknown;
 
     try {
-
-    trace.log("info", "start", {
-      questionId: args.questionId,
-      answerLength: args.userAnswer.length,
-      timeSpentSeconds: args.timeSpentSeconds,
-    });
-
-    const evaluationContext: { round: number; question: QuestionForEvaluation } = await ctx.runQuery(
-      internal.study.getQuestionForEvaluation,
-      {
-      grantToken: args.grantToken,
-      sessionId: args.sessionId,
-      questionId: args.questionId,
-      },
-    );
-
-    const { round, question } = evaluationContext;
-
-    trace.log("info", "context_loaded", {
-      round,
-      topic: question.topic,
-      promptLength: question.prompt.length,
-      expectedAnswerLength: question.idealAnswer.length,
-    });
-
-    const model = createVertexModel();
-    let generated: AnswerEvaluationResult;
-
-    try {
-      trace.log("info", "llm_request", {
-        modelId: "gemini-2.5-flash",
-        temperature: 0.1,
-        maxOutputTokens: 800,
-        thinkingBudget: 0,
+      trace.log("info", "start", {
+        questionId: args.questionId,
+        answerLength: args.userAnswer.length,
+        timeSpentSeconds: args.timeSpentSeconds,
       });
 
-      llmAttempts += 1;
+      const evaluationContext: {
+        round: number;
+        question: QuestionForEvaluation;
+      } = await ctx.runQuery(internal.study.getQuestionForEvaluation, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+        questionId: args.questionId,
+      });
 
-      const result = await generateText({
-        model: model("gemini-2.5-flash"),
-        temperature: 0.1,
-        maxOutputTokens: 800,
-        providerOptions: vertexProviderOptions,
-        output: Output.object({
-          schema: answerEvaluationSchema,
-        }),
-        experimental_telemetry: buildAiSdkTelemetry("evaluateAnswer", args.sessionId, trace.traceId, {
-          appScope: "evaluateAnswer",
-          round,
-          questionId: args.questionId,
-          questionTopic: question.topic,
-        }),
-        system:
-          "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
-        prompt: `Thema: ${question.topic}
+      const { round, question } = evaluationContext;
+
+      trace.log("info", "context_loaded", {
+        round,
+        topic: question.topic,
+        promptLength: question.prompt.length,
+        expectedAnswerLength: question.idealAnswer.length,
+      });
+
+      const model = createVertexModel();
+      let generated: AnswerEvaluationResult;
+
+      try {
+        trace.log("info", "llm_request", {
+          modelId: "gemini-2.5-flash",
+          temperature: 0.1,
+          maxOutputTokens: 800,
+          thinkingBudget: 0,
+        });
+
+        llmAttempts += 1;
+
+        const result = await generateText({
+          model: model("gemini-2.5-flash"),
+          temperature: 0.1,
+          maxOutputTokens: 800,
+          providerOptions: vertexProviderOptions,
+          output: Output.object({
+            schema: answerEvaluationSchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "evaluateAnswer",
+            args.sessionId,
+            trace.traceId,
+            {
+              appScope: "evaluateAnswer",
+              round,
+              questionId: args.questionId,
+              questionTopic: question.topic,
+            },
+          ),
+          system:
+            "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
+          prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
 Nutze für deine Antwort zudem das Internet um zu überprüfen ob deine 
@@ -1580,67 +1763,71 @@ Antwort der lernenden Person:
 ${args.userAnswer}
 
 Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
-      });
+        });
 
-      const resultLog = extractGenerationResultForLog(result);
-      trace.addUsage(resultLog.usage);
-      finishReason = resultLog.details.finishReason;
-      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-      trace.log("info", "llm_response", {
-        ...resultLog.details,
-        outputPreview: {
-          isCorrect: result.output.isCorrect,
-          score: result.output.score,
-          explanationLength: result.output.explanation.length,
-        },
-      });
+        const resultLog = extractGenerationResultForLog(result);
+        trace.addUsage(resultLog.usage);
+        finishReason = resultLog.details.finishReason;
+        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+        trace.log("info", "llm_response", {
+          ...resultLog.details,
+          outputPreview: {
+            isCorrect: result.output.isCorrect,
+            score: result.output.score,
+            explanationLength: result.output.explanation.length,
+          },
+        });
 
-      generated = result.output;
-    } catch (error) {
-      if (isNoOutputGeneratedError(error)) {
+        generated = result.output;
+      } catch (error) {
+        if (isNoOutputGeneratedError(error)) {
+          trace.addUsage(extractUsageFromError(error));
+          trace.log("error", "llm_no_output", {
+            error: extractErrorForLog(error),
+          });
+          throw new Error(
+            "Die KI konnte keine Auswertung erzeugen. Bitte versuche es erneut.",
+          );
+        }
+
         trace.addUsage(extractUsageFromError(error));
-        trace.log("error", "llm_no_output", {
+        trace.log("error", "llm_failed", {
           error: extractErrorForLog(error),
         });
-        throw new Error("Die KI konnte keine Auswertung erzeugen. Bitte versuche es erneut.");
+
+        throw error;
       }
 
-      trace.addUsage(extractUsageFromError(error));
-      trace.log("error", "llm_failed", {
-        error: extractErrorForLog(error),
+      const roundedScore = Math.round(
+        Math.max(0, Math.min(100, generated.score)),
+      );
+
+      await ctx.runMutation(internal.study.storeQuizResponse, {
+        sessionId: args.sessionId,
+        round,
+        questionId: question.id,
+        topic: question.topic,
+        prompt: question.prompt,
+        userAnswer: args.userAnswer,
+        isCorrect: generated.isCorrect,
+        score: roundedScore,
+        explanation: generated.explanation,
+        idealAnswer: generated.idealAnswer,
+        timeSpentSeconds: Math.max(1, Math.round(args.timeSpentSeconds)),
       });
 
-      throw error;
-    }
+      trace.log("info", "completed", {
+        roundedScore,
+        isCorrect: generated.isCorrect,
+        usageTotals: trace.getUsageTotals(),
+      });
 
-    const roundedScore = Math.round(Math.max(0, Math.min(100, generated.score)));
-
-    await ctx.runMutation(internal.study.storeQuizResponse, {
-      sessionId: args.sessionId,
-      round,
-      questionId: question.id,
-      topic: question.topic,
-      prompt: question.prompt,
-      userAnswer: args.userAnswer,
-      isCorrect: generated.isCorrect,
-      score: roundedScore,
-      explanation: generated.explanation,
-      idealAnswer: generated.idealAnswer,
-      timeSpentSeconds: Math.max(1, Math.round(args.timeSpentSeconds)),
-    });
-
-    trace.log("info", "completed", {
-      roundedScore,
-      isCorrect: generated.isCorrect,
-      usageTotals: trace.getUsageTotals(),
-    });
-
-    return {
-      isCorrect: generated.isCorrect,
-      score: roundedScore,
-      explanation: generated.explanation,
-      idealAnswer: generated.idealAnswer,
-    };
+      return {
+        isCorrect: generated.isCorrect,
+        score: roundedScore,
+        explanation: generated.explanation,
+        idealAnswer: generated.idealAnswer,
+      };
     } catch (error) {
       analyticsError = error;
       throw error;
@@ -1687,120 +1874,132 @@ export const analyzePerformance = action({
     let analyticsError: unknown;
 
     try {
+      trace.log("info", "start");
 
-    trace.log("info", "start");
+      const { session, responses } = await ctx.runQuery(
+        internal.study.getAnalysisContext,
+        {
+          grantToken: args.grantToken,
+          sessionId: args.sessionId,
+        },
+      );
 
-    const { session, responses } = await ctx.runQuery(internal.study.getAnalysisContext, {
-      grantToken: args.grantToken,
-      sessionId: args.sessionId,
-    });
-
-    trace.log("info", "context_loaded", {
-      responseCount: responses.length,
-      currentFocusTopic: session.currentFocusTopic ?? null,
-      round: session.round,
-    });
-    responseCount = responses.length;
-
-    if (responses.length === 0) {
-      trace.log("warn", "no_responses_available");
-      throw new Error("Beantworte mindestens eine Frage, bevor du die Analyse startest.");
-    }
-
-    const model = createVertexModel();
-    const fallback = buildFallbackAnalysis(responses, session.currentFocusTopic);
-
-    let analysis = fallback;
-
-    try {
-      trace.log("info", "llm_request", {
-        modelId: "gemini-2.5-flash",
-        temperature: 0.2,
-        maxOutputTokens: 1_500,
-        thinkingBudget: 0,
+      trace.log("info", "context_loaded", {
+        responseCount: responses.length,
+        currentFocusTopic: session.currentFocusTopic ?? null,
+        round: session.round,
       });
+      responseCount = responses.length;
 
-      llmAttempts += 1;
+      if (responses.length === 0) {
+        trace.log("warn", "no_responses_available");
+        throw new Error(
+          "Beantworte mindestens eine Frage, bevor du die Analyse startest.",
+        );
+      }
 
-      const result = await generateText({
-        model: model("gemini-2.5-flash"),
-        temperature: 0.2,
-        maxOutputTokens: 1_500,
-        providerOptions: vertexProviderOptions,
-        output: Output.object({
-          schema: analysisSchema,
-        }),
-        experimental_telemetry: buildAiSdkTelemetry("analyzePerformance", args.sessionId, trace.traceId, {
-          appScope: "analyzePerformance",
-          round: session.round,
-          responseCount: responses.length,
-          currentFocusTopic: session.currentFocusTopic ?? "",
-        }),
-        system:
-          "Du bist ein Lerncoach. Analysiere Wissensluecken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
-        prompt: `Analysiere diese Uebungssitzung und erstelle einen themenbasierten Lernstandsbericht.
+      const model = createVertexModel();
+      const fallback = buildFallbackAnalysis(
+        responses,
+        session.currentFocusTopic,
+      );
+
+      let analysis = fallback;
+
+      try {
+        trace.log("info", "llm_request", {
+          modelId: "gemini-2.5-flash",
+          temperature: 0.2,
+          maxOutputTokens: 1_500,
+          thinkingBudget: 0,
+        });
+
+        llmAttempts += 1;
+
+        const result = await generateText({
+          model: model("gemini-2.5-flash"),
+          temperature: 0.2,
+          maxOutputTokens: 1_500,
+          providerOptions: vertexProviderOptions,
+          output: Output.object({
+            schema: analysisSchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "analyzePerformance",
+            args.sessionId,
+            trace.traceId,
+            {
+              appScope: "analyzePerformance",
+              round: session.round,
+              responseCount: responses.length,
+              currentFocusTopic: session.currentFocusTopic ?? "",
+            },
+          ),
+          system:
+            "Du bist ein Lerncoach. Analysiere Wissensluecken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
+          prompt: `Analysiere diese Uebungssitzung und erstelle einen themenbasierten Lernstandsbericht.
 
 Fokus-Thema der Sitzung: ${session.currentFocusTopic ?? "kein spezielles Fokus-Thema"}
 Antworten:
 ${JSON.stringify(responses, null, 2)}
 
 Sei streng, aber konstruktiv.`,
+        });
+
+        const resultLog = extractGenerationResultForLog(result);
+        trace.addUsage(resultLog.usage);
+        finishReason = resultLog.details.finishReason;
+        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+        trace.log("info", "llm_response", {
+          ...resultLog.details,
+          outputPreview: {
+            overallReadiness: result.output.overallReadiness,
+            strongestTopics: result.output.strongestTopics,
+            weakestTopics: result.output.weakestTopics,
+            topicCount: result.output.topics.length,
+          },
+        });
+
+        const generated: AnalysisResult = result.output;
+
+        analysis = {
+          overallReadiness: Math.round(generated.overallReadiness),
+          strongestTopics: generated.strongestTopics,
+          weakestTopics: generated.weakestTopics,
+          topics: generated.topics.map((topic) => ({
+            topic: topic.topic,
+            comfortScore: Math.round(topic.comfortScore),
+            rationale: topic.rationale,
+            recommendation: topic.recommendation,
+          })),
+          recommendedNextStep: generated.recommendedNextStep,
+        };
+      } catch (error) {
+        trace.addUsage(extractUsageFromError(error));
+        usedFallback = true;
+        trace.log("warn", "llm_failed_using_fallback", {
+          error: extractErrorForLog(error),
+          fallbackOverallReadiness: fallback.overallReadiness,
+          fallbackTopicCount: fallback.topics.length,
+        });
+        // Keep deterministic fallback analysis when the LLM call fails.
+      }
+
+      await ctx.runMutation(internal.study.storeSessionAnalysis, {
+        sessionId: args.sessionId,
+        analysis,
       });
 
-      const resultLog = extractGenerationResultForLog(result);
-      trace.addUsage(resultLog.usage);
-      finishReason = resultLog.details.finishReason;
-      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-      trace.log("info", "llm_response", {
-        ...resultLog.details,
-        outputPreview: {
-          overallReadiness: result.output.overallReadiness,
-          strongestTopics: result.output.strongestTopics,
-          weakestTopics: result.output.weakestTopics,
-          topicCount: result.output.topics.length,
-        },
+      trace.log("info", "completed", {
+        usedFallback: analysis === fallback,
+        overallReadiness: analysis.overallReadiness,
+        topicCount: analysis.topics.length,
+        usageTotals: trace.getUsageTotals(),
       });
 
-      const generated: AnalysisResult = result.output;
+      usedFallback = analysis === fallback;
 
-      analysis = {
-        overallReadiness: Math.round(generated.overallReadiness),
-        strongestTopics: generated.strongestTopics,
-        weakestTopics: generated.weakestTopics,
-        topics: generated.topics.map((topic) => ({
-          topic: topic.topic,
-          comfortScore: Math.round(topic.comfortScore),
-          rationale: topic.rationale,
-          recommendation: topic.recommendation,
-        })),
-        recommendedNextStep: generated.recommendedNextStep,
-      };
-    } catch (error) {
-      trace.addUsage(extractUsageFromError(error));
-      usedFallback = true;
-      trace.log("warn", "llm_failed_using_fallback", {
-        error: extractErrorForLog(error),
-        fallbackOverallReadiness: fallback.overallReadiness,
-        fallbackTopicCount: fallback.topics.length,
-      });
-      // Keep deterministic fallback analysis when the LLM call fails.
-    }
-
-    await ctx.runMutation(internal.study.storeSessionAnalysis, {
-      sessionId: args.sessionId,
-      analysis,
-    });
-
-    trace.log("info", "completed", {
-      usedFallback: analysis === fallback,
-      overallReadiness: analysis.overallReadiness,
-      topicCount: analysis.topics.length,
-      usageTotals: trace.getUsageTotals(),
-    });
-
-    usedFallback = analysis === fallback;
-
-    return analysis;
+      return analysis;
     } catch (error) {
       analyticsError = error;
       throw error;
@@ -1851,219 +2050,234 @@ export const generateTopicDeepDive = action({
     let analyticsError: unknown;
 
     try {
+      trace.log("info", "start", {
+        topic: args.topic,
+      });
 
-    trace.log("info", "start", {
-      topic: args.topic,
-    });
+      const deepDiveContext: { documents: SessionDocumentInput[] } =
+        await ctx.runQuery(internal.study.getQuizGenerationContext, {
+          grantToken: args.grantToken,
+          sessionId: args.sessionId,
+        });
 
-    const deepDiveContext: { documents: SessionDocumentInput[] } = await ctx.runQuery(
-      internal.study.getQuizGenerationContext,
-      {
-      grantToken: args.grantToken,
-      sessionId: args.sessionId,
-      },
-    );
+      const documents = deepDiveContext.documents;
+      totalDocuments = documents.length;
 
-    const documents = deepDiveContext.documents;
-    totalDocuments = documents.length;
+      const readyDocuments = documents.filter(
+        (document: SessionDocumentInput) =>
+          document.extractionStatus === "ready",
+      );
+      readyDocumentsCount = readyDocuments.length;
 
-    const readyDocuments = documents.filter(
-      (document: SessionDocumentInput) => document.extractionStatus === "ready",
-    );
-    readyDocumentsCount = readyDocuments.length;
-
-    trace.log("info", "documents_loaded", {
-      totalDocuments: documents.length,
-      readyDocuments: readyDocuments.length,
-      documents: documents.map((document) => ({
-        fileName: document.fileName,
-        fileType: document.fileType,
-        extractionStatus: document.extractionStatus,
-        extractedTextLength: document.extractedText?.length ?? 0,
-      })),
-    });
-
-    if (readyDocuments.length === 0) {
-      trace.log("warn", "no_ready_documents");
-      throw new Error("Es ist kein verarbeitetes Material fuer die Vertiefung verfuegbar.");
-    }
-
-    let fileParts: Array<{
-      type: "file";
-      data: Buffer;
-      mediaType: string;
-      filename: string;
-    }> = [];
-    let sourceContext = "";
-
-    try {
-      const modelInput = await buildModelInputFromDocuments(
-        ctx,
-        readyDocuments.map((document: SessionDocumentInput) => ({
-          storageId: document.storageId,
+      trace.log("info", "documents_loaded", {
+        totalDocuments: documents.length,
+        readyDocuments: readyDocuments.length,
+        documents: documents.map((document) => ({
           fileName: document.fileName,
           fileType: document.fileType,
-          extractedText: document.extractedText,
+          extractionStatus: document.extractionStatus,
+          extractedTextLength: document.extractedText?.length ?? 0,
         })),
-      );
-
-      fileParts = modelInput.fileParts;
-      sourceContext = modelInput.sourceContext;
-    } catch (error) {
-      trace.log("error", "model_input_preparation_failed", {
-        error: extractErrorForLog(error),
-      });
-      throw error;
-    }
-
-    trace.log("info", "model_input_prepared", {
-      sourceContextLength: sourceContext.length,
-      sourceContextStats: redactTextForLog(sourceContext),
-      filePartCount: fileParts.length,
-      fileParts: fileParts.map((part) => ({
-        filename: part.filename,
-        mediaType: part.mediaType,
-        sizeBytes: part.data.byteLength,
-      })),
-    });
-
-    filePartCount = fileParts.length;
-    sourceContextLength = sourceContext.length;
-
-    if (fileParts.length === 0 && !sourceContext) {
-      trace.log("error", "no_usable_input");
-      throw new Error("Es konnten keine nutzbaren Inhalte fuer die Vertiefung gelesen werden.");
-    }
-
-    const userContent: Array<
-      | { type: "text"; text: string }
-      | { type: "file"; data: Buffer; mediaType: string; filename: string }
-    > = [
-      {
-        type: "text",
-        text: `Erstelle 5 kurze Vertiefungsfragen zu folgendem Thema: ${args.topic}
-
-Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah.`,
-      },
-    ];
-
-    if (sourceContext) {
-      userContent.push({
-        type: "text",
-        text: `Zusaetzliche Textauszuege aus den Dateien:\n${sourceContext}`,
-      });
-    }
-
-    userContent.push(...fileParts);
-
-    const model = createVertexModel();
-    trace.log("info", "vertex_model_initialized", {
-      modelId: "gemini-2.5-flash",
-    });
-
-    let generated: DeepDiveGenerationResult;
-
-    try {
-      trace.log("info", "llm_request", {
-        temperature: 0.25,
-        maxOutputTokens: 1_700,
-        thinkingBudget: 0,
-        sourceContextLength: sourceContext.length,
-        filePartCount: fileParts.length,
       });
 
-      llmAttempts += 1;
-
-      const result = await generateText({
-        model: model("gemini-2.5-flash"),
-        temperature: 0.25,
-        maxOutputTokens: 1_700,
-        providerOptions: vertexProviderOptions,
-        output: Output.object({
-          schema: deepDiveSchema,
-        }),
-        experimental_telemetry: buildAiSdkTelemetry("generateTopicDeepDive", args.sessionId, trace.traceId, {
-          appScope: "generateTopicDeepDive",
-          topic: args.topic,
-          readyDocuments: readyDocuments.length,
-          filePartCount: fileParts.length,
-          sourceContextLength: sourceContext.length,
-        }),
-        system: "Du bist ein fokussierter Tutor und erstellst anspruchsvolle, aber faire Vertiefungsfragen auf Deutsch.",
-        messages: [{ role: "user", content: userContent }],
-      });
-
-      const resultLog = extractGenerationResultForLog(result);
-      trace.addUsage(resultLog.usage);
-      finishReason = resultLog.details.finishReason;
-      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-      trace.log("info", "llm_response", {
-        ...resultLog.details,
-        outputSummary: summarizeGeneratedDeepDive(result.output),
-      });
-
-      const documentTokens = resultLog.details.vertexUsage?.documentPromptTokens ?? 0;
-      if (fileParts.length > 0 && documentTokens <= 0) {
-        trace.log("warn", "no_document_tokens_detected", {
-          filePartCount: fileParts.length,
-          vertexUsage: resultLog.details.vertexUsage,
-        });
+      if (readyDocuments.length === 0) {
+        trace.log("warn", "no_ready_documents");
+        throw new Error(
+          "Es ist kein verarbeitetes Material fuer die Vertiefung verfuegbar.",
+        );
       }
 
-      generated = result.output;
-    } catch (error) {
-      if (isNoOutputGeneratedError(error)) {
-        trace.addUsage(extractUsageFromError(error));
-        trace.log("error", "llm_no_output", {
+      let fileParts: Array<{
+        type: "file";
+        data: Buffer;
+        mediaType: string;
+        filename: string;
+      }> = [];
+      let sourceContext = "";
+
+      try {
+        const modelInput = await buildModelInputFromDocuments(
+          ctx,
+          readyDocuments.map((document: SessionDocumentInput) => ({
+            storageId: document.storageId,
+            fileName: document.fileName,
+            fileType: document.fileType,
+            extractedText: document.extractedText,
+          })),
+        );
+
+        fileParts = modelInput.fileParts;
+        sourceContext = modelInput.sourceContext;
+      } catch (error) {
+        trace.log("error", "model_input_preparation_failed", {
           error: extractErrorForLog(error),
         });
-        throw new Error("Die KI hat keine Vertiefungsfragen erzeugt. Bitte versuche es erneut.");
+        throw error;
       }
 
-      trace.addUsage(extractUsageFromError(error));
-      trace.log("error", "llm_failed", {
-        error: extractErrorForLog(error),
+      trace.log("info", "model_input_prepared", {
+        sourceContextLength: sourceContext.length,
+        sourceContextStats: redactTextForLog(sourceContext),
+        filePartCount: fileParts.length,
+        fileParts: fileParts.map((part) => ({
+          filename: part.filename,
+          mediaType: part.mediaType,
+          sizeBytes: part.data.byteLength,
+        })),
       });
 
-      throw error;
-    }
+      filePartCount = fileParts.length;
+      sourceContextLength = sourceContext.length;
 
-    if (generated.questions.length === 0) {
-      trace.log("error", "validation_no_questions", {
+      if (fileParts.length === 0 && !sourceContext) {
+        trace.log("error", "no_usable_input");
+        throw new Error(
+          "Es konnten keine nutzbaren Inhalte fuer die Vertiefung gelesen werden.",
+        );
+      }
+
+      const userContent: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; data: Buffer; mediaType: string; filename: string }
+      > = [
+        {
+          type: "text",
+          text: `Erstelle 5 kurze Vertiefungsfragen zu folgendem Thema: ${args.topic}
+
+Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah.`,
+        },
+      ];
+
+      if (sourceContext) {
+        userContent.push({
+          type: "text",
+          text: `Zusaetzliche Textauszuege aus den Dateien:\n${sourceContext}`,
+        });
+      }
+
+      userContent.push(...fileParts);
+
+      const model = createVertexModel();
+      trace.log("info", "vertex_model_initialized", {
+        modelId: "gemini-2.5-flash",
+      });
+
+      let generated: DeepDiveGenerationResult;
+
+      try {
+        trace.log("info", "llm_request", {
+          temperature: 0.25,
+          maxOutputTokens: 1_700,
+          thinkingBudget: 0,
+          sourceContextLength: sourceContext.length,
+          filePartCount: fileParts.length,
+        });
+
+        llmAttempts += 1;
+
+        const result = await generateText({
+          model: model("gemini-2.5-flash"),
+          temperature: 0.25,
+          maxOutputTokens: 1_700,
+          providerOptions: vertexProviderOptions,
+          output: Output.object({
+            schema: deepDiveSchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "generateTopicDeepDive",
+            args.sessionId,
+            trace.traceId,
+            {
+              appScope: "generateTopicDeepDive",
+              topic: args.topic,
+              readyDocuments: readyDocuments.length,
+              filePartCount: fileParts.length,
+              sourceContextLength: sourceContext.length,
+            },
+          ),
+          system:
+            "Du bist ein fokussierter Tutor und erstellst anspruchsvolle, aber faire Vertiefungsfragen auf Deutsch.",
+          messages: [{ role: "user", content: userContent }],
+        });
+
+        const resultLog = extractGenerationResultForLog(result);
+        trace.addUsage(resultLog.usage);
+        finishReason = resultLog.details.finishReason;
+        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+        trace.log("info", "llm_response", {
+          ...resultLog.details,
+          outputSummary: summarizeGeneratedDeepDive(result.output),
+        });
+
+        const documentTokens =
+          resultLog.details.vertexUsage?.documentPromptTokens ?? 0;
+        if (fileParts.length > 0 && documentTokens <= 0) {
+          trace.log("warn", "no_document_tokens_detected", {
+            filePartCount: fileParts.length,
+            vertexUsage: resultLog.details.vertexUsage,
+          });
+        }
+
+        generated = result.output;
+      } catch (error) {
+        if (isNoOutputGeneratedError(error)) {
+          trace.addUsage(extractUsageFromError(error));
+          trace.log("error", "llm_no_output", {
+            error: extractErrorForLog(error),
+          });
+          throw new Error(
+            "Die KI hat keine Vertiefungsfragen erzeugt. Bitte versuche es erneut.",
+          );
+        }
+
+        trace.addUsage(extractUsageFromError(error));
+        trace.log("error", "llm_failed", {
+          error: extractErrorForLog(error),
+        });
+
+        throw error;
+      }
+
+      if (generated.questions.length === 0) {
+        trace.log("error", "validation_no_questions", {
+          outputSummary: summarizeGeneratedDeepDive(generated),
+        });
+        throw new Error(
+          "Die KI hat keine Vertiefungsfragen erzeugt. Bitte versuche es erneut.",
+        );
+      }
+
+      const deepDiveQuestions = generated.questions
+        .slice(0, 5)
+        .map((question, index) => ({
+          id: `deep-${Date.now()}-${index + 1}`,
+          topic: question.topic,
+          prompt: question.prompt,
+          idealAnswer: question.idealAnswer,
+          explanationHint: question.explanationHint,
+        }));
+
+      await ctx.runMutation(internal.study.storeGeneratedQuiz, {
+        sessionId: args.sessionId,
+        sourceSummary: generated.sourceSummary,
+        sourceTopics: generated.topics,
+        quizQuestions: deepDiveQuestions,
+        currentFocusTopic: args.topic,
+        incrementRound: true,
+      });
+
+      trace.log("info", "completed", {
         outputSummary: summarizeGeneratedDeepDive(generated),
+        questionCount: deepDiveQuestions.length,
+        usageTotals: trace.getUsageTotals(),
       });
-      throw new Error("Die KI hat keine Vertiefungsfragen erzeugt. Bitte versuche es erneut.");
-    }
 
-    const deepDiveQuestions = generated.questions.slice(0, 5).map((question, index) => ({
-      id: `deep-${Date.now()}-${index + 1}`,
-      topic: question.topic,
-      prompt: question.prompt,
-      idealAnswer: question.idealAnswer,
-      explanationHint: question.explanationHint,
-    }));
+      outputQuestionCount = deepDiveQuestions.length;
 
-    await ctx.runMutation(internal.study.storeGeneratedQuiz, {
-      sessionId: args.sessionId,
-      sourceSummary: generated.sourceSummary,
-      sourceTopics: generated.topics,
-      quizQuestions: deepDiveQuestions,
-      currentFocusTopic: args.topic,
-      incrementRound: true,
-    });
-
-    trace.log("info", "completed", {
-      outputSummary: summarizeGeneratedDeepDive(generated),
-      questionCount: deepDiveQuestions.length,
-      usageTotals: trace.getUsageTotals(),
-    });
-
-    outputQuestionCount = deepDiveQuestions.length;
-
-    return {
-      questionCount: deepDiveQuestions.length,
-      topic: args.topic,
-    };
+      return {
+        questionCount: deepDiveQuestions.length,
+        topic: args.topic,
+      };
     } catch (error) {
       analyticsError = error;
       throw error;

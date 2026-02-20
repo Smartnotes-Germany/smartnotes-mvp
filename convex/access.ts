@@ -6,21 +6,28 @@ const DEMO_ACCESS_CODE = "SMARTNOTES-DEMO-2026";
 const ACCESS_GRANT_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours
 const MAGIC_LINK_TTL_MS = 1000 * 60 * 15; // 15 minutes
 
-/** 
+/**
  * Helper to generate a random token/UUID-like string.
  */
 const generateToken = () => {
   try {
     // @ts-ignore
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
       return crypto.randomUUID();
     }
   } catch (e) {}
-  return (Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2));
+  return (
+    Math.random().toString(36).substring(2) +
+    Math.random().toString(36).substring(2)
+  );
 };
 
 /** Normalizes user-entered codes for consistent lookups */
-const normalizeCode = (rawCode: string) => rawCode.trim().replace(/\s+/g, "-").toUpperCase();
+const normalizeCode = (rawCode: string) =>
+  rawCode.trim().replace(/\s+/g, "-").toUpperCase();
 
 /**
  * Redeems a specific access code to create an access grant.
@@ -35,7 +42,9 @@ export const redeemAccessCode = mutation({
 
     let accessCode = await ctx.db
       .query("accessCodes")
-      .withIndex("by_normalizedCode", (q) => q.eq("normalizedCode", normalizedCode))
+      .withIndex("by_normalizedCode", (q) =>
+        q.eq("normalizedCode", normalizedCode),
+      )
       .first();
 
     if (!accessCode) {
@@ -97,7 +106,7 @@ export const generateMagicLink = mutation({
 
     const token = generateToken();
     const now = Date.now();
-    
+
     await ctx.db.insert("magicLinks", {
       token,
       createdAt: now,
@@ -109,7 +118,7 @@ export const generateMagicLink = mutation({
 });
 
 /**
- * Consumes a magic link, creates an access grant, and DELETES both the magic link 
+ * Consumes a magic link, creates an access grant, and DELETES both the magic link
  * and the involved access codes. Absolute privacy by removing all traces from the DB.
  */
 export const consumeMagicLink = mutation({
@@ -118,23 +127,25 @@ export const consumeMagicLink = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    
+
     const magicLink = await ctx.db
       .query("magicLinks")
       .withIndex("by_token", (q) => q.eq("token", args.magicToken))
       .first();
 
     // Check if link exists and is still valid
-    if (!magicLink || (magicLink.consumedAt !== undefined) || magicLink.expiresAt < now) {
+    if (
+      !magicLink ||
+      magicLink.consumedAt !== undefined ||
+      magicLink.expiresAt < now
+    ) {
       throw new Error("Der Link ist ungültig oder abgelaufen.");
     }
 
     // 1. Get all unused access codes
-    const unusedCodes = await ctx.db
-      .query("accessCodes")
-      .collect();
-    
-    const availableCodes = unusedCodes.filter(c => !c.consumedAt);
+    const unusedCodes = await ctx.db.query("accessCodes").collect();
+
+    const availableCodes = unusedCodes.filter((c) => !c.consumedAt);
 
     if (availableCodes.length === 0) {
       throw new Error("Keine freien Zugangscodes mehr verfügbar.");
@@ -143,7 +154,7 @@ export const consumeMagicLink = mutation({
     // 2. Pick up to 3 codes for "burning"
     const shuffled = availableCodes.sort(() => 0.5 - Math.random());
     const selectedBatch = shuffled.slice(0, 3);
-    const codesToReturn = selectedBatch.map(c => c.code);
+    const codesToReturn = selectedBatch.map((c) => c.code);
 
     // 3. Create the actual access grant (the session ticket)
     const grantToken = generateToken();
@@ -158,13 +169,13 @@ export const consumeMagicLink = mutation({
     // 4. DELETE everything immediately
     // Delete the magic link itself
     await ctx.db.delete(magicLink._id);
-    
+
     // Delete the selected/burned access codes
     for (const codeRecord of selectedBatch) {
       await ctx.db.delete(codeRecord._id);
     }
 
-    // Return the session token. The 'obfuscatedCodes' are returned 
+    // Return the session token. The 'obfuscatedCodes' are returned
     // just for front-end feedback, they no longer exist in the DB.
     return {
       grantToken,
@@ -230,7 +241,9 @@ export const createAccessCodes = mutation({
 
       const existing = await ctx.db
         .query("accessCodes")
-        .withIndex("by_normalizedCode", (q) => q.eq("normalizedCode", normalizedCode))
+        .withIndex("by_normalizedCode", (q) =>
+          q.eq("normalizedCode", normalizedCode),
+        )
         .first();
 
       if (existing) {

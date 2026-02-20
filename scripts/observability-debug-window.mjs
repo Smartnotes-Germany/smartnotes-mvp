@@ -27,14 +27,20 @@ const getFlagValue = (flagName) => {
 
 const printUsage = () => {
   console.log("Verwendung:");
-  console.log("  node scripts/observability-debug-window.mjs start [--minutes <zahl>]");
+  console.log(
+    "  node scripts/observability-debug-window.mjs start [--minutes <zahl>]",
+  );
   console.log("  node scripts/observability-debug-window.mjs stop");
 };
 
 const runConvexEnvSet = (name, value) => {
-  const result = spawnSync(executable, ["exec", "convex", "env", "set", name, value], {
-    stdio: "inherit",
-  });
+  const result = spawnSync(
+    executable,
+    ["exec", "convex", "env", "set", name, value],
+    {
+      stdio: "inherit",
+    },
+  );
 
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
@@ -48,7 +54,11 @@ const parseMinutes = () => {
   }
 
   const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < MIN_MINUTES || parsed > MAX_MINUTES) {
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < MIN_MINUTES ||
+    parsed > MAX_MINUTES
+  ) {
     console.error(
       `Ungueltige Dauer: ${raw}. Erlaubt sind ${MIN_MINUTES}-${MAX_MINUTES} Minuten.`,
     );

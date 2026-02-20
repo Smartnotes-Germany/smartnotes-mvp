@@ -1,5 +1,12 @@
 import type { Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 
 const quizQuestionValidator = v.object({
@@ -25,16 +32,29 @@ const analysisValidator = v.object({
   recommendedNextStep: v.string(),
 });
 
-const aiAnalyticsStatusValidator = v.union(v.literal("success"), v.literal("error"));
-const aiAnalyticsPrivacyModeValidator = v.union(v.literal("balanced"), v.literal("full"), v.literal("off"));
-const aiAnalyticsTelemetryProviderValidator = v.union(v.literal("langfuse"), v.literal("none"));
+const aiAnalyticsStatusValidator = v.union(
+  v.literal("success"),
+  v.literal("error"),
+);
+const aiAnalyticsPrivacyModeValidator = v.union(
+  v.literal("balanced"),
+  v.literal("full"),
+  v.literal("off"),
+);
+const aiAnalyticsTelemetryProviderValidator = v.union(
+  v.literal("langfuse"),
+  v.literal("none"),
+);
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
   revokedAt?: number;
 };
 
-const ensureGrant = async (ctx: QueryCtx | MutationCtx, grantToken: string): Promise<GrantDoc> => {
+const ensureGrant = async (
+  ctx: QueryCtx | MutationCtx,
+  grantToken: string,
+): Promise<GrantDoc> => {
   const grant = await ctx.db
     .query("accessGrants")
     .withIndex("by_token", (q) => q.eq("token", grantToken))
@@ -76,7 +96,9 @@ export const startSession = mutation({
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
     const now = Date.now();
-    const title = args.title?.trim() || `Lernsitzung ${new Date(now).toLocaleString("de-DE")}`;
+    const title =
+      args.title?.trim() ||
+      `Lernsitzung ${new Date(now).toLocaleString("de-DE")}`;
 
     const sessionId = await ctx.db.insert("studySessions", {
       grantId: grant._id,
@@ -116,7 +138,11 @@ export const getSessionSnapshot = query({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const session = await ensureSessionOwnership(
+      ctx,
+      args.sessionId,
+      grant._id,
+    );
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -126,7 +152,9 @@ export const getSessionSnapshot = query({
 
     const responses = await ctx.db
       .query("quizResponses")
-      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId).eq("round", session.round))
+      .withIndex("by_session_round", (q) =>
+        q.eq("sessionId", args.sessionId).eq("round", session.round),
+      )
       .collect();
 
     return {
@@ -136,7 +164,9 @@ export const getSessionSnapshot = query({
       stats: {
         totalQuestions: session.quizQuestions.length,
         answeredQuestions: responses.length,
-        readyDocuments: documents.filter((doc) => doc.extractionStatus === "ready").length,
+        readyDocuments: documents.filter(
+          (doc) => doc.extractionStatus === "ready",
+        ).length,
       },
     };
   },
@@ -226,7 +256,11 @@ export const getDocumentExtractionContext = internalQuery({
 export const setDocumentExtractionResult = internalMutation({
   args: {
     documentId: v.id("sessionDocuments"),
-    extractionStatus: v.union(v.literal("processing"), v.literal("ready"), v.literal("failed")),
+    extractionStatus: v.union(
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("failed"),
+    ),
     extractedText: v.optional(v.string()),
     extractionError: v.optional(v.string()),
   },
@@ -262,7 +296,11 @@ export const getQuizGenerationContext = internalQuery({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const session = await ensureSessionOwnership(
+      ctx,
+      args.sessionId,
+      grant._id,
+    );
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -300,7 +338,9 @@ export const storeGeneratedQuiz = internalMutation({
       sourceSummary: args.sourceSummary,
       sourceTopics: args.sourceTopics,
       quizQuestions: args.quizQuestions,
-      ...(args.currentFocusTopic ? { currentFocusTopic: args.currentFocusTopic } : {}),
+      ...(args.currentFocusTopic
+        ? { currentFocusTopic: args.currentFocusTopic }
+        : {}),
       updatedAt: now,
     });
   },
@@ -314,9 +354,15 @@ export const getQuestionForEvaluation = internalQuery({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const session = await ensureSessionOwnership(
+      ctx,
+      args.sessionId,
+      grant._id,
+    );
 
-    const question = session.quizQuestions.find((item) => item.id === args.questionId);
+    const question = session.quizQuestions.find(
+      (item) => item.id === args.questionId,
+    );
     if (!question) {
       throw new Error("Frage wurde in dieser Sitzung nicht gefunden.");
     }
@@ -349,7 +395,10 @@ export const storeQuizResponse = internalMutation({
     const existing = await ctx.db
       .query("quizResponses")
       .withIndex("by_session_round_question", (q) =>
-        q.eq("sessionId", args.sessionId).eq("round", args.round).eq("questionId", args.questionId),
+        q
+          .eq("sessionId", args.sessionId)
+          .eq("round", args.round)
+          .eq("questionId", args.questionId),
       )
       .first();
 
@@ -393,11 +442,17 @@ export const getAnalysisContext = internalQuery({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const session = await ensureSessionOwnership(
+      ctx,
+      args.sessionId,
+      grant._id,
+    );
 
     const responses = await ctx.db
       .query("quizResponses")
-      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId).eq("round", session.round))
+      .withIndex("by_session_round", (q) =>
+        q.eq("sessionId", args.sessionId).eq("round", session.round),
+      )
       .collect();
 
     const documents = await ctx.db
@@ -481,7 +536,9 @@ export const getAiAnalyticsForSession = query({
 
     return ctx.db
       .query("aiAnalyticsEvents")
-      .withIndex("by_session_createdAt", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_session_createdAt", (q) =>
+        q.eq("sessionId", args.sessionId),
+      )
       .order("desc")
       .take(limit);
   },

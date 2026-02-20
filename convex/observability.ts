@@ -74,7 +74,10 @@ const isFlushOnExitEnabled = () => {
 };
 
 const getFlushTimeoutMs = () => {
-  const parsed = Number.parseInt(process.env.OBSERVABILITY_FLUSH_TIMEOUT_MS ?? "", 10);
+  const parsed = Number.parseInt(
+    process.env.OBSERVABILITY_FLUSH_TIMEOUT_MS ?? "",
+    10,
+  );
   if (!Number.isFinite(parsed)) {
     return DEFAULT_FLUSH_TIMEOUT_MS;
   }
@@ -110,7 +113,9 @@ const applyLangfuseEnvironmentFallbacks = () => {
   }
 };
 
-const sanitizeMetadataValue = (value: unknown): string | number | boolean | undefined => {
+const sanitizeMetadataValue = (
+  value: unknown,
+): string | number | boolean | undefined => {
   if (value === null || value === undefined) {
     return undefined;
   }
@@ -139,7 +144,9 @@ const sanitizeMetadataValue = (value: unknown): string | number | boolean | unde
   return "[object]";
 };
 
-const sanitizeTelemetryMetadata = (metadata?: Record<string, unknown>): TelemetryMetadata | undefined => {
+const sanitizeTelemetryMetadata = (
+  metadata?: Record<string, unknown>,
+): TelemetryMetadata | undefined => {
   if (!metadata) {
     return undefined;
   }
@@ -147,7 +154,10 @@ const sanitizeTelemetryMetadata = (metadata?: Record<string, unknown>): Telemetr
   const sanitizedEntries = Object.entries(metadata)
     .slice(0, 24)
     .map(([key, value]) => [key, sanitizeMetadataValue(value)] as const)
-    .filter((entry): entry is readonly [string, string | number | boolean] => entry[1] !== undefined);
+    .filter(
+      (entry): entry is readonly [string, string | number | boolean] =>
+        entry[1] !== undefined,
+    );
 
   return Object.fromEntries(sanitizedEntries);
 };
@@ -159,7 +169,10 @@ export const isSensitiveCaptureEnabled = () => {
     return false;
   }
 
-  const untilTimestamp = Number.parseInt(process.env.OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL ?? "", 10);
+  const untilTimestamp = Number.parseInt(
+    process.env.OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL ?? "",
+    10,
+  );
   if (!Number.isFinite(untilTimestamp)) {
     return true;
   }
@@ -183,7 +196,9 @@ export const ensureTelemetryInitialized = () => {
   applyLangfuseEnvironmentFallbacks();
 
   if (!hasLangfuseCredentials()) {
-    console.warn("[KI-Monitoring] Langfuse ist nicht aktiv, da Konfigurationswerte fehlen.");
+    console.warn(
+      "[KI-Monitoring] Langfuse ist nicht aktiv, da Konfigurationswerte fehlen.",
+    );
     state.enabled = false;
     return false;
   }
@@ -199,7 +214,10 @@ export const ensureTelemetryInitialized = () => {
     void state.sdk.start();
     state.enabled = true;
   } catch (error) {
-    console.warn("[KI-Monitoring] OpenTelemetry-Initialisierung fehlgeschlagen.", error);
+    console.warn(
+      "[KI-Monitoring] OpenTelemetry-Initialisierung fehlgeschlagen.",
+      error,
+    );
     state.enabled = false;
   }
 
@@ -210,13 +228,18 @@ export const getTelemetryProvider = (): "langfuse" | "none" => {
   return ensureTelemetryInitialized() ? "langfuse" : "none";
 };
 
-export const hashIdentifier = (rawValue: string | number | undefined | null) => {
+export const hashIdentifier = (
+  rawValue: string | number | undefined | null,
+) => {
   if (rawValue === undefined || rawValue === null) {
     return "";
   }
 
   const salt = process.env.OBSERVABILITY_HASH_SALT ?? "smartnotes-default-salt";
-  return createHash("sha256").update(`${salt}:${String(rawValue)}`).digest("hex").slice(0, 24);
+  return createHash("sha256")
+    .update(`${salt}:${String(rawValue)}`)
+    .digest("hex")
+    .slice(0, 24);
 };
 
 export const redactTextForLog = (value: string | undefined | null) => {
@@ -235,9 +258,13 @@ export const redactTextForLog = (value: string | undefined | null) => {
   };
 };
 
-export const buildTelemetryConfig = ({ functionId, metadata }: BuildTelemetryConfigArgs): TelemetryConfig => {
+export const buildTelemetryConfig = ({
+  functionId,
+  metadata,
+}: BuildTelemetryConfigArgs): TelemetryConfig => {
   const mode = getMode();
-  const sensitiveCaptureEnabled = mode === "full" || isSensitiveCaptureEnabled();
+  const sensitiveCaptureEnabled =
+    mode === "full" || isSensitiveCaptureEnabled();
 
   if (!ensureTelemetryInitialized()) {
     return {
@@ -259,7 +286,9 @@ export const buildTelemetryConfig = ({ functionId, metadata }: BuildTelemetryCon
   };
 };
 
-export const flushTelemetry = async (options?: FlushTelemetryOptions): Promise<FlushTelemetryResult> => {
+export const flushTelemetry = async (
+  options?: FlushTelemetryOptions,
+): Promise<FlushTelemetryResult> => {
   const timeoutMs = getFlushTimeoutMs();
 
   if (!isFlushOnExitEnabled()) {
@@ -322,16 +351,20 @@ export const flushTelemetry = async (options?: FlushTelemetryOptions): Promise<F
       clearTimeout(timeoutHandle);
     }
 
-    const timedOut = error instanceof Error && error.message === "flush_timeout";
-    console.warn("[KI-Monitoring] Telemetrie-Flush war nicht vollständig erfolgreich.", {
-      traceId: options?.traceId,
-      appScope: options?.appScope,
-      timedOut,
-      timeoutMs,
-      elapsedMs: Date.now() - startedAt,
-      errorName: error instanceof Error ? error.name : undefined,
-      errorMessage: error instanceof Error ? error.message : String(error),
-    });
+    const timedOut =
+      error instanceof Error && error.message === "flush_timeout";
+    console.warn(
+      "[KI-Monitoring] Telemetrie-Flush war nicht vollständig erfolgreich.",
+      {
+        traceId: options?.traceId,
+        appScope: options?.appScope,
+        timedOut,
+        timeoutMs,
+        elapsedMs: Date.now() - startedAt,
+        errorName: error instanceof Error ? error.name : undefined,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      },
+    );
 
     return {
       attempted: true,

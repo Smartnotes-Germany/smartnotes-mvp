@@ -1,5 +1,10 @@
 import type { Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 
 const getConfiguredAdminSecret = () => {
@@ -26,7 +31,9 @@ const resolveTarget = async (
   }
 
   if (args.grantToken && args.sessionId) {
-    throw new Error("Bitte nur grantToken oder sessionId angeben, nicht beides gleichzeitig.");
+    throw new Error(
+      "Bitte nur grantToken oder sessionId angeben, nicht beides gleichzeitig.",
+    );
   }
 
   if (args.grantToken) {
@@ -92,7 +99,9 @@ export const exportData = query({
 
       const analyticsEvents = await ctx.db
         .query("aiAnalyticsEvents")
-        .withIndex("by_session_createdAt", (q) => q.eq("sessionId", session._id))
+        .withIndex("by_session_createdAt", (q) =>
+          q.eq("sessionId", session._id),
+        )
         .collect();
 
       sessions.push({
@@ -168,7 +177,9 @@ export const deleteData = mutation({
 
       const analyticsEvents = await ctx.db
         .query("aiAnalyticsEvents")
-        .withIndex("by_session_createdAt", (q) => q.eq("sessionId", session._id))
+        .withIndex("by_session_createdAt", (q) =>
+          q.eq("sessionId", session._id),
+        )
         .collect();
       for (const event of analyticsEvents) {
         await ctx.db.delete(event._id);

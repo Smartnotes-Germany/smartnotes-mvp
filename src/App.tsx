@@ -123,12 +123,22 @@ const sessionSnapshotRef = makeFunctionReference<
 
 const extractDocumentContentRef = makeFunctionReference<
   "action",
-  { grantToken: string; sessionId: string; documentId: string },
+  {
+    grantToken: string;
+    sessionId: string;
+    documentId: string;
+    clientRequestId?: string;
+  },
   unknown
 >("ai:extractDocumentContent");
 const generateQuizRef = makeFunctionReference<
   "action",
-  { grantToken: string; sessionId: string; questionCount?: number },
+  {
+    grantToken: string;
+    sessionId: string;
+    questionCount?: number;
+    clientRequestId?: string;
+  },
   unknown
 >("ai:generateQuiz");
 const evaluateAnswerRef = makeFunctionReference<
@@ -139,17 +149,23 @@ const evaluateAnswerRef = makeFunctionReference<
     questionId: string;
     userAnswer: string;
     timeSpentSeconds: number;
+    clientRequestId?: string;
   },
   FeedbackState
 >("ai:evaluateAnswer");
 const analyzePerformanceRef = makeFunctionReference<
   "action",
-  { grantToken: string; sessionId: string },
+  { grantToken: string; sessionId: string; clientRequestId?: string },
   unknown
 >("ai:analyzePerformance");
 const generateTopicDeepDiveRef = makeFunctionReference<
   "action",
-  { grantToken: string; sessionId: string; topic: string },
+  {
+    grantToken: string;
+    sessionId: string;
+    topic: string;
+    clientRequestId?: string;
+  },
   unknown
 >("ai:generateTopicDeepDive");
 
@@ -179,6 +195,80 @@ type FeedbackState = {
 
 type FormatErrorOptions = {
   fallback?: string;
+  clientRequestId?: string;
+};
+
+const ERROR_ID_PATTERN = /\[Fehler-ID:\s*([A-Z0-9-]+)\]/i;
+const REQUEST_ID_PATTERN = /\[Request ID:\s*([^\]]+)\]/i;
+const CLIENT_ERROR_ID_PREFIX = "SNCLIENT";
+const CLIENT_REQUEST_ID_PREFIX = "SNREQ";
+
+type ErrorReferences = {
+  errorId: string | null;
+  requestId: string | null;
+  clientRequestId: string | null;
+  clientErrorId: string | null;
+};
+
+const extractErrorId = (message: string) => {
+  const match = message.match(ERROR_ID_PATTERN);
+  return match?.[1] ?? null;
+};
+
+const extractRequestId = (message: string) => {
+  const match = message.match(REQUEST_ID_PATTERN);
+  return match?.[1]?.trim() ?? null;
+};
+
+const stripTrackingMetadata = (message: string) =>
+  message.replace(ERROR_ID_PATTERN, "").replace(REQUEST_ID_PATTERN, "").trim();
+
+const createClientErrorId = () => {
+  const timestampPart = Date.now().toString(36).toUpperCase();
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${CLIENT_ERROR_ID_PREFIX}-${timestampPart}-${randomPart}`;
+};
+
+const createClientRequestId = (scope: string) => {
+  const scopeToken = scope
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10);
+  const timestampPart = Date.now().toString(36).toUpperCase();
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${CLIENT_REQUEST_ID_PREFIX}-${scopeToken || "REQ"}-${timestampPart}-${randomPart}`;
+};
+
+const isTransportError = (normalizedMessage: string) => {
+  return (
+    normalizedMessage.includes("connection lost while action was in flight") ||
+    normalizedMessage.includes("network error") ||
+    normalizedMessage.includes("failed to fetch") ||
+    normalizedMessage.includes("load failed") ||
+    normalizedMessage.includes("netzwerkfehler")
+  );
+};
+
+const withErrorReferences = (message: string, references: ErrorReferences) => {
+  const suffixParts: string[] = [];
+  if (references.errorId) {
+    suffixParts.push(`Fehler-ID: ${references.errorId}`);
+  }
+  if (references.requestId) {
+    suffixParts.push(`Anfrage-ID: ${references.requestId}`);
+  }
+  if (references.clientRequestId) {
+    suffixParts.push(`Vorgangs-ID: ${references.clientRequestId}`);
+  }
+  if (references.clientErrorId) {
+    suffixParts.push(`Client-Fehler-ID: ${references.clientErrorId}`);
+  }
+
+  if (suffixParts.length === 0) {
+    return message;
+  }
+
+  return `${message} (${suffixParts.join(", ")})`;
 };
 
 const extractReadableErrorMessage = (error: unknown) => {
@@ -198,7 +288,6 @@ const extractReadableErrorMessage = (error: unknown) => {
 
   cleanedMessage = cleanedMessage
     .replace(/\[CONVEX[^\]]*\]\s*/gi, "")
-    .replace(/\[Request ID:[^\]]+\]\s*/gi, "")
     .replace(/^Server Error\s*/i, "")
     .replace(/^Error:\s*/i, "")
     .trim();
@@ -222,26 +311,50 @@ const extractReadableErrorMessage = (error: unknown) => {
  */
 const formatError = (error: unknown, options?: FormatErrorOptions) => {
   const message = extractReadableErrorMessage(error);
-  const normalizedMessage = message.toLowerCase();
+  const errorId = extractErrorId(message);
+  const requestId = extractRequestId(message);
+  const clientRequestId = options?.clientRequestId ?? null;
+  const cleanMessage = stripTrackingMetadata(message);
+  const normalizedMessage = cleanMessage.toLowerCase();
+  const clientErrorId =
+    !errorId &&
+    !requestId &&
+    !clientRequestId &&
+    isTransportError(normalizedMessage)
+      ? createClientErrorId()
+      : null;
+  const references: ErrorReferences = {
+    errorId,
+    requestId,
+    clientRequestId,
+    clientErrorId,
+  };
 
-  if (
-    !message ||
-    normalizedMessage === "undefined" ||
-    normalizedMessage === "null"
-  ) {
-    return (
-      options?.fallback ??
-      "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut."
-    );
+  if (clientErrorId) {
+    console.error("[Client-Fehler-Tracking]", {
+      clientErrorId,
+      message: cleanMessage,
+      rawError: error,
+    });
   }
 
   if (
-    normalizedMessage.includes("network error") ||
-    normalizedMessage.includes("failed to fetch") ||
-    normalizedMessage.includes("load failed") ||
-    normalizedMessage.includes("netzwerkfehler")
+    !cleanMessage ||
+    normalizedMessage === "undefined" ||
+    normalizedMessage === "null"
   ) {
-    return "Netzwerkfehler. Bitte prüfe deine Internetverbindung und versuche es erneut.";
+    return withErrorReferences(
+      options?.fallback ??
+        "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut.",
+      references,
+    );
+  }
+
+  if (isTransportError(normalizedMessage)) {
+    return withErrorReferences(
+      "Netzwerkfehler. Bitte prüfe deine Internetverbindung und versuche es erneut.",
+      references,
+    );
   }
 
   if (
@@ -249,50 +362,69 @@ const formatError = (error: unknown, options?: FormatErrorOptions) => {
     normalizedMessage.includes("timed out") ||
     normalizedMessage.includes("zeitüberschreitung")
   ) {
-    return "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut.";
+    return withErrorReferences(
+      "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut.",
+      references,
+    );
   }
 
   if (
     normalizedMessage.includes("aborted") ||
     normalizedMessage.includes("abgebrochen")
   ) {
-    return "Die Anfrage wurde abgebrochen. Bitte starte den Vorgang erneut.";
+    return withErrorReferences(
+      "Die Anfrage wurde abgebrochen. Bitte starte den Vorgang erneut.",
+      references,
+    );
   }
 
   if (
     normalizedMessage.includes("not recognized") ||
     normalizedMessage.includes("nicht erkannt")
   ) {
-    return "Dieser Zugangscode ist ungültig. Bitte prüfe die Eingabe.";
+    return withErrorReferences(
+      "Dieser Zugangscode ist ungültig. Bitte prüfe die Eingabe.",
+      references,
+    );
   }
   if (
     normalizedMessage.includes("already consumed") ||
     normalizedMessage.includes("bereits verwendet")
   ) {
-    return "Dieser Code wurde bereits benutzt.";
+    return withErrorReferences(
+      "Dieser Code wurde bereits benutzt.",
+      references,
+    );
   }
   if (
     normalizedMessage.includes("invalid or expired") ||
     normalizedMessage.includes("ungültig oder abgelaufen")
   ) {
-    return "Dein Link ist leider nicht mehr gültig.";
+    return withErrorReferences(
+      "Dein Link ist leider nicht mehr gültig.",
+      references,
+    );
   }
   if (
     normalizedMessage.includes("no unused access codes") ||
     normalizedMessage.includes("keine freien zugangscodes")
   ) {
-    return "Aktuell sind keine freien Zugänge verfügbar.";
+    return withErrorReferences(
+      "Aktuell sind keine freien Zugänge verfügbar.",
+      references,
+    );
   }
 
   const technicalErrorPattern =
     /\b(TypeError|ReferenceError|SyntaxError|RangeError|stack|cannot read)\b/i;
-  if (!technicalErrorPattern.test(message)) {
-    return message;
+  if (!technicalErrorPattern.test(cleanMessage)) {
+    return withErrorReferences(cleanMessage, references);
   }
 
-  return (
+  return withErrorReferences(
     options?.fallback ??
-    "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut."
+      "Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut.",
+    references,
   );
 };
 
@@ -627,6 +759,7 @@ function App() {
     setUploadError(null);
     const errors: string[] = [];
     for (const file of files) {
+      const clientRequestId = createClientRequestId("extractDocument");
       try {
         const uploadUrl = await generateUploadUrl({ grantToken, sessionId });
         const uploadResult = await uploadFileToConvexStorage(uploadUrl, file);
@@ -638,11 +771,17 @@ function App() {
           fileType: file.type || "application/octet-stream",
           fileSizeBytes: file.size,
         });
-        await extractDocumentContent({ grantToken, sessionId, documentId });
+        await extractDocumentContent({
+          grantToken,
+          sessionId,
+          documentId,
+          clientRequestId,
+        });
       } catch (error: unknown) {
         errors.push(
           `${file.name}: ${formatError(error, {
             fallback: "Datei konnte nicht hochgeladen oder verarbeitet werden.",
+            clientRequestId,
           })}`,
         );
       }
@@ -660,14 +799,21 @@ function App() {
 
   const handleGenerateQuiz = async () => {
     if (!grantToken || !sessionId) return;
+    const clientRequestId = createClientRequestId("generateQuiz");
     setIsGeneratingQuiz(true);
     setUploadError(null);
     try {
-      await generateQuiz({ grantToken, sessionId, questionCount: 30 });
+      await generateQuiz({
+        grantToken,
+        sessionId,
+        questionCount: 30,
+        clientRequestId,
+      });
     } catch (error: unknown) {
       setUploadError(
         formatError(error, {
           fallback: "Quizfragen konnten nicht erstellt werden.",
+          clientRequestId,
         }),
       );
     } finally {
@@ -678,6 +824,7 @@ function App() {
   const handleSubmitAnswer = async (dontKnowSubmission: boolean = false) => {
     if (!grantToken || !sessionId || !currentQuestion) return;
     if (!answerInput.trim() && !dontKnowSubmission) return;
+    const clientRequestId = createClientRequestId("evaluateAnswer");
     setIsSubmittingAnswer(true);
     setQuizError(null);
     try {
@@ -691,6 +838,7 @@ function App() {
         questionId: currentQuestion.id,
         userAnswer: dontKnowSubmission ? "" : answerInput,
         timeSpentSeconds,
+        clientRequestId,
       });
       setFeedback(result);
     } catch (error: unknown) {
@@ -698,6 +846,7 @@ function App() {
         formatError(error, {
           fallback:
             "Deine Antwort konnte nicht bewertet werden. Bitte versuche es erneut.",
+          clientRequestId,
         }),
       );
     } finally {
@@ -707,15 +856,17 @@ function App() {
 
   const handleAnalyzeSession = async () => {
     if (!grantToken || !sessionId) return;
+    const clientRequestId = createClientRequestId("analyzePerformance");
     setIsAnalyzing(true);
     setAnalysisError(null);
     try {
-      await analyzePerformance({ grantToken, sessionId });
+      await analyzePerformance({ grantToken, sessionId, clientRequestId });
     } catch (error: unknown) {
       setAnalysisError(
         formatError(error, {
           fallback:
             "Die Lernanalyse konnte nicht erstellt werden. Bitte versuche es erneut.",
+          clientRequestId,
         }),
       );
     } finally {
@@ -725,14 +876,21 @@ function App() {
 
   const handleDeepDive = async (topic: string) => {
     if (!grantToken || !sessionId) return;
+    const clientRequestId = createClientRequestId("generateDeepDive");
     setTopicLoading(topic);
     setAnalysisError(null);
     try {
-      await generateTopicDeepDive({ grantToken, sessionId, topic });
+      await generateTopicDeepDive({
+        grantToken,
+        sessionId,
+        topic,
+        clientRequestId,
+      });
     } catch (error: unknown) {
       setAnalysisError(
         formatError(error, {
           fallback: "Die Vertiefung konnte nicht geladen werden.",
+          clientRequestId,
         }),
       );
     } finally {

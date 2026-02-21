@@ -1,11 +1,11 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import { createVertex } from "@ai-sdk/google-vertex";
+import { createVertex, vertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
-import { action, type ActionCtx } from "./_generated/server";
+import { action, type ActionCtx } from "./errorTracking";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
@@ -424,6 +424,7 @@ type PersistedAiAnalyticsPayload = {
 };
 
 const analyticsMetadataAllowlist = new Set([
+  "clientRequestId",
   "responseCount",
   "usedFallback",
   "topic",
@@ -835,7 +836,11 @@ const summarizeGeneratedDeepDive = (
   };
 };
 
-const createAiTraceLogger = (scope: string, sessionId: string) => {
+const createAiTraceLogger = (
+  scope: string,
+  sessionId: string,
+  clientRequestId?: string,
+) => {
   const traceId =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -854,6 +859,7 @@ const createAiTraceLogger = (scope: string, sessionId: string) => {
       traceId,
       scope,
       sessionHash,
+      ...(clientRequestId ? { clientRequestId } : {}),
       event,
       elapsedMs: Date.now() - startedAt,
       usageTotals: accumulatedUsage,
@@ -1115,9 +1121,14 @@ export const extractDocumentContent = action({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     documentId: v.id("sessionDocuments"),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("extractDocumentContent", args.sessionId);
+    const trace = createAiTraceLogger(
+      "extractDocumentContent",
+      args.sessionId,
+      args.clientRequestId,
+    );
 
     trace.log("info", "start", {
       documentId: args.documentId,
@@ -1248,10 +1259,15 @@ export const generateQuiz = action({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     questionCount: v.optional(v.number()),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("generateQuiz", args.sessionId);
-    const analyticsModelId = "gemini-2.5-flash";
+    const trace = createAiTraceLogger(
+      "generateQuiz",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
     let llmAttempts = 0;
@@ -1316,7 +1332,7 @@ Anforderungen:
 
       const model = createVertexModel();
       trace.log("info", "vertex_model_initialized", {
-        modelId: "gemini-2.5-flash",
+        modelId: "gemini-3-flash-preview",
       });
 
       let fileParts: Array<{
@@ -1403,7 +1419,7 @@ Anforderungen:
         llmAttempts += 1;
 
         const result = await generateText({
-          model: model("gemini-2.5-flash"),
+          model: model("gemini-3-flash-preview"),
           temperature: 0.3,
           maxOutputTokens: 2_000,
           providerOptions: vertexProviderOptions,
@@ -1476,7 +1492,7 @@ Anforderungen:
             llmAttempts += 1;
 
             const fallbackResult = await generateText({
-              model: model("gemini-2.5-flash"),
+              model: model("gemini-3-flash-preview"),
               temperature: 0.2,
               maxOutputTokens: 2_000,
               providerOptions: vertexProviderOptions,
@@ -1535,7 +1551,7 @@ Anforderungen:
             llmAttempts += 1;
 
             const fallbackResult = await generateText({
-              model: model("gemini-2.5-flash"),
+              model: model("gemini-3-flash-preview"),
               temperature: 0.2,
               maxOutputTokens: 2_200,
               providerOptions: vertexProviderOptions,
@@ -1667,6 +1683,9 @@ Anforderungen:
         sourceContextLength,
         outputQuestionCount,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          clientRequestId: args.clientRequestId,
+        },
       });
       await flushTelemetry({
         traceId: trace.traceId,
@@ -1683,10 +1702,15 @@ export const evaluateAnswer = action({
     questionId: v.string(),
     userAnswer: v.string(),
     timeSpentSeconds: v.number(),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<AnswerEvaluationResult> => {
-    const trace = createAiTraceLogger("evaluateAnswer", args.sessionId);
-    const analyticsModelId = "gemini-2.5-flash";
+    const trace = createAiTraceLogger(
+      "evaluateAnswer",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
@@ -1722,7 +1746,7 @@ export const evaluateAnswer = action({
 
       try {
         trace.log("info", "llm_request", {
-          modelId: "gemini-2.5-flash",
+          modelId: "gemini-3-flash-preview",
           temperature: 0.1,
           maxOutputTokens: 800,
           thinkingBudget: 0,
@@ -1731,7 +1755,7 @@ export const evaluateAnswer = action({
         llmAttempts += 1;
 
         const result = await generateText({
-          model: model("gemini-2.5-flash"),
+          model: model("gemini-3-flash-preview"),
           temperature: 0.1,
           maxOutputTokens: 800,
           providerOptions: vertexProviderOptions,
@@ -1749,12 +1773,13 @@ export const evaluateAnswer = action({
               questionTopic: question.topic,
             },
           ),
+          tools: { google_search: vertex.tools.googleSearch({}) },
           system:
-            "Du bist ein fairer und unterstuetzender Pruefungs-Korrektor. Antworte auf Deutsch und erklaere kurz, was richtig ist oder fehlt.",
+            "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder fehlt.",
           prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
-Nutze für deine Antwort zudem das Internet um zu überprüfen ob deine 
+Nutze für deine Antwort zudem die Google Suche (das Internet) um zu überprüfen ob deine 
 Antwort korrekt ist. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
@@ -1845,6 +1870,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
         finishReason,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
+          clientRequestId: args.clientRequestId,
           questionId: args.questionId,
           answerLength: args.userAnswer.length,
           timeSpentSeconds: args.timeSpentSeconds,
@@ -1862,10 +1888,15 @@ export const analyzePerformance = action({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("analyzePerformance", args.sessionId);
-    const analyticsModelId = "gemini-2.5-flash";
+    const trace = createAiTraceLogger(
+      "analyzePerformance",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
@@ -1908,7 +1939,7 @@ export const analyzePerformance = action({
 
       try {
         trace.log("info", "llm_request", {
-          modelId: "gemini-2.5-flash",
+          modelId: "gemini-3-flash-preview",
           temperature: 0.2,
           maxOutputTokens: 1_500,
           thinkingBudget: 0,
@@ -1917,7 +1948,7 @@ export const analyzePerformance = action({
         llmAttempts += 1;
 
         const result = await generateText({
-          model: model("gemini-2.5-flash"),
+          model: model("gemini-3-flash-preview"),
           temperature: 0.2,
           maxOutputTokens: 1_500,
           providerOptions: vertexProviderOptions,
@@ -2018,6 +2049,7 @@ Sei streng, aber konstruktiv.`,
         finishReason,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
+          clientRequestId: args.clientRequestId,
           responseCount,
           usedFallback,
         },
@@ -2035,10 +2067,15 @@ export const generateTopicDeepDive = action({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     topic: v.string(),
+    clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const trace = createAiTraceLogger("generateTopicDeepDive", args.sessionId);
-    const analyticsModelId = "gemini-2.5-flash";
+    const trace = createAiTraceLogger(
+      "generateTopicDeepDive",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
@@ -2159,7 +2196,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
 
       const model = createVertexModel();
       trace.log("info", "vertex_model_initialized", {
-        modelId: "gemini-2.5-flash",
+        modelId: "gemini-3-flash-preview",
       });
 
       let generated: DeepDiveGenerationResult;
@@ -2176,7 +2213,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         llmAttempts += 1;
 
         const result = await generateText({
-          model: model("gemini-2.5-flash"),
+          model: model("gemini-3-flash-preview"),
           temperature: 0.25,
           maxOutputTokens: 1_700,
           providerOptions: vertexProviderOptions,
@@ -2300,6 +2337,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         outputQuestionCount,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
+          clientRequestId: args.clientRequestId,
           topic: args.topic,
         },
       });

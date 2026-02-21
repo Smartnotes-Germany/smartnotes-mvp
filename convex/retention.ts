@@ -1,6 +1,6 @@
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
-import { internalAction, internalMutation } from "./_generated/server";
+import { internalAction, internalMutation } from "./errorTracking";
 
 const DEFAULT_RAW_RETENTION_DAYS = 14;
 const DEFAULT_ANALYTICS_RETENTION_DAYS = 180;

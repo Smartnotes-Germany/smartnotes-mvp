@@ -45,6 +45,7 @@ const buildTrackedError = (error: unknown, errorId: string) => {
   if (error instanceof Error) {
     const wrappedError = new Error(withErrorId);
     wrappedError.name = error.name;
+    wrappedError.stack = error.stack;
     return wrappedError;
   }
 

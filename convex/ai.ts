@@ -20,6 +20,8 @@ import {
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
+const MAX_VERTEX_INLINE_FILE_BYTES = 7 * 1024 * 1024;
+const MAX_VERTEX_INLINE_FILE_LABEL = "7 MB";
 
 const vertexProviderOptions = {
   google: {
@@ -163,6 +165,22 @@ const filenameExtension = (name: string) => {
 
 const decodeUtf8 = (buffer: Buffer) => new TextDecoder("utf-8").decode(buffer);
 
+const formatMegabytes = (bytes: number) => {
+  const megabytes = bytes / (1024 * 1024);
+  return `${megabytes.toFixed(1)} MB`;
+};
+
+const buildInlineFileTooLargeError = (fileName: string, sizeBytes?: number) => {
+  const sizeDetail =
+    sizeBytes && Number.isFinite(sizeBytes)
+      ? ` (${formatMegabytes(sizeBytes)})`
+      : "";
+
+  return new Error(
+    `Die Datei "${fileName}"${sizeDetail} ist zu groß für die aktuelle KI-Verarbeitung (maximal ${MAX_VERTEX_INLINE_FILE_LABEL} pro Datei). Bitte verkleinere die Datei oder teile sie auf.`,
+  );
+};
+
 const isVertexNativeCandidate = (fileType: string, fileName: string) => {
   const extension = filenameExtension(fileName);
   return (
@@ -242,6 +260,13 @@ const buildModelInputFromDocuments = async <TStorageId>(
     fileType: string;
     extractedText?: string;
   }>,
+  trace?: {
+    log: (
+      level: "info" | "warn" | "error",
+      event: string,
+      details?: Record<string, unknown>,
+    ) => void;
+  },
 ) => {
   const fileParts: Array<{
     type: "file";
@@ -254,6 +279,12 @@ const buildModelInputFromDocuments = async <TStorageId>(
 
   for (const document of documents) {
     if (isVertexNativeCandidate(document.fileType, document.fileName)) {
+      const fileLoadStartedAt = Date.now();
+      trace?.log("info", "model_input_document_load_started", {
+        fileName: document.fileName,
+        fileType: document.fileType,
+      });
+
       const fileUrl = await ctx.storage.getUrl(document.storageId);
       if (!fileUrl) {
         if (document.extractedText) {
@@ -267,6 +298,11 @@ const buildModelInputFromDocuments = async <TStorageId>(
           `Datei konnte nicht gelesen werden: ${document.fileName}`,
         );
       }
+
+      trace?.log("info", "model_input_document_url_loaded", {
+        fileName: document.fileName,
+        elapsedMs: Date.now() - fileLoadStartedAt,
+      });
 
       const response = await fetch(fileUrl);
       if (!response.ok) {
@@ -282,12 +318,61 @@ const buildModelInputFromDocuments = async <TStorageId>(
         );
       }
 
+      const contentLengthRaw = response.headers.get("content-length");
+      const contentLength = contentLengthRaw
+        ? Number.parseInt(contentLengthRaw, 10)
+        : Number.NaN;
+
+      trace?.log("info", "model_input_document_downloaded", {
+        fileName: document.fileName,
+        statusCode: response.status,
+        contentLength: Number.isFinite(contentLength)
+          ? contentLength
+          : undefined,
+        elapsedMs: Date.now() - fileLoadStartedAt,
+      });
+
+      if (
+        Number.isFinite(contentLength) &&
+        contentLength > MAX_VERTEX_INLINE_FILE_BYTES
+      ) {
+        trace?.log("warn", "model_input_document_too_large", {
+          fileName: document.fileName,
+          declaredSizeBytes: contentLength,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+        });
+        throw buildInlineFileTooLargeError(document.fileName, contentLength);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const actualSizeBytes = arrayBuffer.byteLength;
+
+      if (actualSizeBytes > MAX_VERTEX_INLINE_FILE_BYTES) {
+        trace?.log("warn", "model_input_document_too_large", {
+          fileName: document.fileName,
+          actualSizeBytes,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+        });
+        throw buildInlineFileTooLargeError(document.fileName, actualSizeBytes);
+      }
+
+      const mediaType = resolveMediaType(document.fileType, document.fileName);
+      const documentBuffer = Buffer.from(arrayBuffer);
+
       fileParts.push({
         type: "file",
-        data: Buffer.from(await response.arrayBuffer()),
-        mediaType: resolveMediaType(document.fileType, document.fileName),
+        data: documentBuffer,
+        mediaType,
         filename: document.fileName,
       });
+
+      trace?.log("info", "model_input_document_attached", {
+        fileName: document.fileName,
+        mediaType,
+        sizeBytes: actualSizeBytes,
+        elapsedMs: Date.now() - fileLoadStartedAt,
+      });
+
       continue;
     }
 
@@ -1352,6 +1437,7 @@ Anforderungen:
             fileType: document.fileType,
             extractedText: document.extractedText,
           })),
+          trace,
         );
         fileParts = modelInput.fileParts;
         sourceContext = modelInput.sourceContext;
@@ -2141,6 +2227,7 @@ export const generateTopicDeepDive = action({
             fileType: document.fileType,
             extractedText: document.extractedText,
           })),
+          trace,
         );
 
         fileParts = modelInput.fileParts;

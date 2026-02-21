@@ -256,7 +256,7 @@ function ThemeToggle({
             title={opt.label}
             className={`inline-flex items-center justify-center rounded-full p-2 transition ${
               isActive
-                ? "bg-accent text-cream shadow-sm"
+                ? "bg-accent text-white shadow-sm"
                 : "text-ink-muted hover:text-ink"
             }`}
           >
@@ -1059,7 +1059,7 @@ function App() {
                   type="button"
                   onClick={() => void handleRedeemCode()}
                   disabled={isRedeemingCode}
-                  className="bg-accent text-cream inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold transition hover:-translate-y-0.5 disabled:opacity-60"
+                  className="bg-accent inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 disabled:opacity-60"
                 >
                   {isRedeemingCode ? (
                     <Loader2 size={18} className="animate-spin" />
@@ -1358,7 +1358,7 @@ function App() {
                 <button
                   onClick={() => void handleGenerateQuiz()}
                   disabled={isUploading || isGeneratingQuiz}
-                  className="bg-accent text-cream shadow-accent/20 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60"
+                  className="bg-accent shadow-accent/20 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60"
                 >
                   {isUploading || isGeneratingQuiz ? (
                     <Loader2 size={20} className="animate-spin" />
@@ -1390,7 +1390,7 @@ function App() {
                       <button
                         onClick={() => void handleAnalyzeSession()}
                         disabled={isAnalyzing}
-                        className="bg-accent text-cream inline-flex items-center justify-center gap-3 rounded-full px-10 py-5 text-lg font-bold transition hover:scale-105 active:scale-95 disabled:opacity-60"
+                        className="bg-accent inline-flex items-center justify-center gap-3 rounded-full px-10 py-5 text-lg font-bold text-white transition hover:scale-105 active:scale-95 disabled:opacity-60"
                       >
                         {isAnalyzing ? (
                           <Loader2 size={24} className="animate-spin" />
@@ -1472,7 +1472,7 @@ function App() {
                             setFeedback(null);
                             setAnswerInput("");
                           }}
-                          className="bg-accent text-cream shadow-accent/30 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
+                          className="bg-accent shadow-accent/30 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
                         >
                           Nächste Frage
                           <ArrowRight
@@ -1526,7 +1526,7 @@ function App() {
                         <button
                           onClick={() => void handleSubmitAnswer(true)}
                           disabled={isSubmittingAnswer}
-                          className="bg-accent text-cream shadow-accent/25 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] uppercase shadow-lg transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
+                          className="bg-accent shadow-accent/25 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-white uppercase shadow-lg transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
                         >
                           {isSubmittingAnswer && (
                             <Loader2 size={14} className="animate-spin" />
@@ -1537,7 +1537,7 @@ function App() {
                         <button
                           onClick={() => void handleAnalyzeSession()}
                           disabled={isAnalyzing}
-                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:border-red-500 hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:border-red-800 dark:bg-red-950 dark:text-red-400 dark:hover:border-red-500 dark:hover:bg-red-500"
+                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs  dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
                         >
                           {isAnalyzing ? (
                             <Loader2 size={14} className="animate-spin" />
@@ -1594,7 +1594,7 @@ function App() {
                   ) : (
                     <button
                       onClick={() => void handleAnalyzeSession()}
-                      className="bg-accent text-cream inline-flex items-center gap-3 rounded-full px-10 py-5 text-lg font-bold transition hover:scale-105"
+                      className="bg-accent inline-flex items-center gap-3 rounded-full px-10 py-5 text-lg font-bold text-white transition hover:scale-105"
                     >
                       <Brain size={20} />
                       Analyse erstellen
@@ -1667,7 +1667,7 @@ function App() {
                         <button
                           onClick={() => void handleDeepDive(topic.topic)}
                           disabled={topicLoading === topic.topic}
-                          className="bg-accent text-cream shadow-accent/20 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[10px] font-bold tracking-[0.1em] uppercase shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60 md:px-6 md:py-3 md:text-xs"
+                          className="bg-accent shadow-accent/20 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[10px] font-bold tracking-[0.1em] text-white uppercase shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60 md:px-6 md:py-3 md:text-xs"
                         >
                           {topicLoading === topic.topic ? (
                             <Loader2 size={14} className="animate-spin" />
@@ -1705,9 +1705,9 @@ function StageBadge({
     <div
       className={`flex items-center gap-3 rounded-2xl px-5 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all duration-300 ${
         active
-          ? "bg-accent text-cream shadow-accent/30 translate-x-1 shadow-lg"
+          ? "bg-accent shadow-accent/30 translate-x-1 text-white shadow-lg"
           : done
-            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"
+            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-800/30 dark:text-emerald-300"
             : "bg-cream-light text-ink-muted"
       }`}
     >

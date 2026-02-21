@@ -31,15 +31,58 @@
   --color-surface: #f7f3ee;
   --color-surface-elevated: #faf8f5;
   --color-surface-white: #fffefa;
+
+  /* Semantic status colors */
+  --color-success-bg: #ecfdf3;
+  --color-success-border: #bfe7cf;
+  --color-success-text: #166534;
+  --color-danger-bg: #fff1f2;
+  --color-danger-border: #fecdd3;
+  --color-danger-text: #be123c;
+  --color-danger-hover-bg: #ef4444;
+  --color-danger-hover-text: #fff7f8;
 }
 
 @layer base {
   :root {
+    color-scheme: light;
     background-color: var(--color-cream);
     color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-cream: #12161c;
+    --color-cream-light: #1a2129;
+    --color-cream-dark: #0d1117;
+    --color-cream-border: #2a333e;
+    --color-accent: #4f9ab8;
+    --color-ink: #eef3f6;
+    --color-ink-secondary: #c4d0d8;
+    --color-ink-muted: #92a2ad;
+    --color-ink-faint: #5f6f7b;
+    --color-surface: #161c23;
+    --color-surface-elevated: #1c242d;
+    --color-surface-white: #222c36;
+    --color-success-bg: #1d332a;
+    --color-success-border: #355d4a;
+    --color-success-text: #90d3b0;
+    --color-danger-bg: #301d23;
+    --color-danger-border: #5d2b38;
+    --color-danger-text: #ff9eb0;
+    --color-danger-hover-bg: #cf4d67;
+    --color-danger-hover-text: #fff7f9;
+  }
+
+  :root[data-theme="dark"] .text-cream {
+    color: #f2f7fa;
+  }
+
+  :root[data-theme="dark"] .hover\:text-cream:hover {
+    color: #f2f7fa;
   }
 
   body {
@@ -132,4 +175,22 @@
 
 .animate-fade-up {
   animation: fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.stage-badge-done {
+  background-color: var(--color-success-bg);
+  border: 1px solid var(--color-success-border);
+  color: var(--color-success-text);
+}
+
+.btn-danger-soft {
+  border: 1px solid var(--color-danger-border);
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.btn-danger-soft:hover:not(:disabled) {
+  border-color: var(--color-danger-hover-bg);
+  background-color: var(--color-danger-hover-bg);
+  color: var(--color-danger-hover-text);
 }

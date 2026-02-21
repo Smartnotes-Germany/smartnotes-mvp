@@ -17,8 +17,11 @@ import {
   Loader2,
   LogOut,
   Menu,
+  Monitor,
+  Moon,
   RefreshCcw,
   Sparkles,
+  Sun,
   Upload,
   X,
   XCircle,
@@ -173,11 +176,24 @@ const generateTopicDeepDiveRef = makeFunctionReference<
 const STORAGE_KEYS = {
   grantToken: "smartnotes.grant-token",
   sessionId: "smartnotes.session-id",
+  themePreference: "smartnotes.theme-preference",
 } as const;
+
+type ThemePreference = "system" | "light" | "dark";
 
 /** Allowed file types for upload */
 const ACCEPTED_FILE_TYPES =
   ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json,.jpg,.jpeg,.png,.webp";
+
+const THEME_OPTIONS: {
+  value: ThemePreference;
+  label: string;
+  Icon: typeof Sun;
+}[] = [
+  { value: "light", label: "Hell", Icon: Sun },
+  { value: "dark", label: "Dunkel", Icon: Moon },
+  { value: "system", label: "System", Icon: Monitor },
+];
 
 /**
  * Represents the AI feedback for a answered question.
@@ -480,6 +496,48 @@ const uploadFileToConvexStorage = (
 function App() {
   // --- Layout State ---
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    () => {
+      const savedTheme = localStorage.getItem(STORAGE_KEYS.themePreference);
+      return savedTheme === "light" ||
+        savedTheme === "dark" ||
+        savedTheme === "system"
+        ? savedTheme
+        : "system";
+    },
+  );
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.themePreference, themePreference);
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = (prefersDark: boolean) => {
+      const resolvedTheme =
+        themePreference === "system"
+          ? prefersDark
+            ? "dark"
+            : "light"
+          : themePreference;
+
+      document.documentElement.dataset.theme = resolvedTheme;
+      document.documentElement.style.colorScheme = resolvedTheme;
+    };
+
+    applyTheme(mediaQuery.matches);
+
+    if (themePreference !== "system") {
+      return;
+    }
+
+    const handleThemeChange = (event: MediaQueryListEvent) => {
+      applyTheme(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleThemeChange);
+    return () => {
+      mediaQuery.removeEventListener("change", handleThemeChange);
+    };
+  }, [themePreference]);
 
   /** Prevent body scroll when mobile menu is open */
   useEffect(() => {
@@ -969,6 +1027,16 @@ function App() {
                   )}
                   Weiter
                 </button>
+
+                <div className="border-cream-border bg-cream-light mt-5 rounded-2xl border p-3">
+                  <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-[0.14em] uppercase">
+                    Darstellung
+                  </p>
+                  <ThemeModeSelector
+                    value={themePreference}
+                    onChange={setThemePreference}
+                  />
+                </div>
               </>
             )}
           </div>
@@ -1042,6 +1110,16 @@ function App() {
               />
             </nav>
 
+            <div className="border-cream-border bg-surface-white rounded-2xl border p-4">
+              <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-[0.14em] uppercase">
+                Darstellung
+              </p>
+              <ThemeModeSelector
+                value={themePreference}
+                onChange={setThemePreference}
+              />
+            </div>
+
             <div className="mt-auto space-y-3">
               <button
                 onClick={() => void handleStartFreshSession()}
@@ -1113,6 +1191,16 @@ function App() {
           <p className="text-ink-muted mt-2 text-[10px] font-bold tracking-wider uppercase">
             Runde {session.round}
           </p>
+        </div>
+
+        <div className="border-cream-border bg-cream-light mt-4 rounded-2xl border p-4">
+          <p className="text-accent mb-2 text-[10px] font-bold tracking-[0.15em] uppercase">
+            Darstellung
+          </p>
+          <ThemeModeSelector
+            value={themePreference}
+            onChange={setThemePreference}
+          />
         </div>
 
         <div className="mt-auto space-y-2 pt-6">
@@ -1426,7 +1514,7 @@ function App() {
                         <button
                           onClick={() => void handleAnalyzeSession()}
                           disabled={isAnalyzing}
-                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:border-red-500 hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
+                          className="btn-danger-soft inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] uppercase shadow-lg transition disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
                         >
                           {isAnalyzing ? (
                             <Loader2 size={14} className="animate-spin" />
@@ -1580,6 +1668,42 @@ function App() {
   );
 }
 
+function ThemeModeSelector({
+  value,
+  onChange,
+}: {
+  value: ThemePreference;
+  onChange: (theme: ThemePreference) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(6.4rem,1fr))] gap-2">
+      {THEME_OPTIONS.map((option) => {
+        const isActive = value === option.value;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border px-3 text-[11px] leading-none font-bold tracking-[0.03em] whitespace-nowrap transition ${
+              isActive
+                ? "bg-accent text-cream shadow-accent/20 border-transparent shadow-md"
+                : "bg-surface-white text-ink-secondary border-cream-border hover:text-ink"
+            }`}
+            aria-pressed={isActive}
+            aria-label={`Darstellung: ${option.label}`}
+          >
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+              <option.Icon size={14} strokeWidth={2.2} />
+            </span>
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Progress badge used in sidebars and menus */
 function StageBadge({
   label,
@@ -1596,7 +1720,7 @@ function StageBadge({
         active
           ? "bg-accent text-cream shadow-accent/30 translate-x-1 shadow-lg"
           : done
-            ? "bg-emerald-50 text-emerald-700 opacity-60"
+            ? "stage-badge-done"
             : "bg-cream-light text-ink-muted"
       }`}
     >

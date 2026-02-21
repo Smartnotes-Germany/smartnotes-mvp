@@ -21,7 +21,7 @@ import {
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 const MAX_VERTEX_INLINE_FILE_BYTES = 7 * 1024 * 1024;
-const MAX_VERTEX_INLINE_FILE_LABEL = "7 MB";
+const MAX_VERTEX_INLINE_FILE_LABEL = "7 MiB";
 
 const vertexProviderOptions = {
   google: {
@@ -165,15 +165,15 @@ const filenameExtension = (name: string) => {
 
 const decodeUtf8 = (buffer: Buffer) => new TextDecoder("utf-8").decode(buffer);
 
-const formatMegabytes = (bytes: number) => {
-  const megabytes = bytes / (1024 * 1024);
-  return `${megabytes.toFixed(1)} MB`;
+const formatMebibytes = (bytes: number) => {
+  const mebibytes = bytes / (1024 * 1024);
+  return `${mebibytes.toFixed(1)} MiB`;
 };
 
 const buildInlineFileTooLargeError = (fileName: string, sizeBytes?: number) => {
   const sizeDetail =
     sizeBytes && Number.isFinite(sizeBytes)
-      ? ` (${formatMegabytes(sizeBytes)})`
+      ? ` (${formatMebibytes(sizeBytes)})`
       : "";
 
   return new Error(

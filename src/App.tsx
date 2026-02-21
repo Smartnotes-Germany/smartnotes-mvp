@@ -24,6 +24,7 @@ import {
   XCircle,
 } from "lucide-react";
 import logoImage from "./assets/images/logo.png";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 /**
  * Convex function references (Mutations, Queries, Actions).
@@ -902,6 +903,9 @@ function App() {
   if (!grantToken) {
     return (
       <div className="bg-cream text-ink flex min-h-screen flex-col items-center justify-center px-6 py-10 md:px-10">
+        <div className="absolute top-4 right-4 md:top-8 md:right-8">
+          <ThemeToggle />
+        </div>
         <div className="w-full max-w-xl">
           <div className="mb-10 flex items-center justify-center gap-3">
             <img
@@ -951,7 +955,7 @@ function App() {
                 />
 
                 {authError && (
-                  <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-400">
                     {authError}
                   </p>
                 )}
@@ -1011,13 +1015,16 @@ function App() {
             Smartnotes
           </p>
         </div>
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="text-ink-muted hover:text-ink p-2 transition"
-          aria-label="Menü öffnen"
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="text-ink-muted hover:text-ink p-2 transition"
+            aria-label="Menü öffnen"
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </header>
 
       {/* MOBILE MENU OVERLAY */}
@@ -1116,6 +1123,9 @@ function App() {
         </div>
 
         <div className="mt-auto space-y-2 pt-6">
+          <div className="mb-4 flex justify-center">
+            <ThemeToggle />
+          </div>
           <button
             onClick={() => void handleStartFreshSession()}
             disabled={isCreatingSession}
@@ -1177,7 +1187,7 @@ function App() {
               </label>
 
               {uploadError && (
-                <p className="mb-4 max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm whitespace-pre-line text-red-700">
+                <p className="mb-4 max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm whitespace-pre-line text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-400">
                   {uploadError}
                 </p>
               )}
@@ -1308,10 +1318,10 @@ function App() {
                       <div
                         className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg md:h-16 md:w-16 ${
                           feedback.isCorrect
-                            ? "bg-emerald-100 text-emerald-600"
+                            ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
                             : feedback.score > 0
-                              ? "bg-amber-100 text-amber-600"
-                              : "bg-red-100 text-red-600"
+                              ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
+                              : "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
                         }`}
                       >
                         {feedback.isCorrect ? (
@@ -1325,10 +1335,10 @@ function App() {
                       <p
                         className={`text-[10px] font-black tracking-[0.3em] uppercase md:text-sm ${
                           feedback.isCorrect
-                            ? "text-emerald-600"
+                            ? "text-emerald-600 dark:text-emerald-400"
                             : feedback.score > 0
-                              ? "text-amber-600"
-                              : "text-red-600"
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-red-600 dark:text-red-400"
                         }`}
                       >
                         {feedback.isCorrect
@@ -1401,7 +1411,7 @@ function App() {
                       />
 
                       {quizError && (
-                        <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-400">
                           {quizError}
                         </p>
                       )}
@@ -1426,7 +1436,7 @@ function App() {
                         <button
                           onClick={() => void handleAnalyzeSession()}
                           disabled={isAnalyzing}
-                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:border-red-500 hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
+                          className="hover:text-cream dark:hover:text-ink inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:border-red-500 hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-900"
                         >
                           {isAnalyzing ? (
                             <Loader2 size={14} className="animate-spin" />
@@ -1466,7 +1476,7 @@ function App() {
               </header>
 
               {analysisError && (
-                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-400">
                   {analysisError}
                 </p>
               )}
@@ -1596,7 +1606,7 @@ function StageBadge({
         active
           ? "bg-accent text-cream shadow-accent/30 translate-x-1 shadow-lg"
           : done
-            ? "bg-emerald-50 text-emerald-700 opacity-60"
+            ? "bg-emerald-50 text-emerald-700 opacity-60 dark:bg-emerald-950/30 dark:text-emerald-400"
             : "bg-cream-light text-ink-muted"
       }`}
     >

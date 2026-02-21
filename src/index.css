@@ -42,6 +42,26 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  :root.dark {
+    /* Dark slate/charcoal theme for Dark Mode */
+    --color-cream: #1a1816;
+    --color-cream-light: #24221f;
+    --color-cream-dark: #141210;
+    --color-cream-border: #3b3734;
+
+    /* A slightly lighter, more vibrant accent for dark mode readability */
+    --color-accent: #38bdf8;
+
+    --color-ink: #f0ebe4;
+    --color-ink-secondary: #d1c8bd;
+    --color-ink-muted: #a69e96;
+    --color-ink-faint: #5e5a55;
+
+    --color-surface: #201e1b;
+    --color-surface-elevated: #292623;
+    --color-surface-white: #1a1816;
+  }
+
   body {
     margin: 0;
     min-height: 100vh;

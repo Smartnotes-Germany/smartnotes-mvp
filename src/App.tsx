@@ -1707,7 +1707,7 @@ function StageBadge({
         active
           ? "bg-accent text-cream shadow-accent/30 translate-x-1 shadow-lg"
           : done
-            ? "bg-emerald-50 text-emerald-700 opacity-60 dark:bg-emerald-950 dark:text-emerald-400"
+            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"
             : "bg-cream-light text-ink-muted"
       }`}
     >

@@ -13,6 +13,18 @@
     />
   </head>
   <body>
+    <script>
+      // Prevent flash of wrong theme by applying dark class before first paint
+      (function () {
+        var theme = localStorage.getItem("smartnotes.theme") || "system";
+        var prefersDark =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (theme === "dark" || (theme === "system" && prefersDark)) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

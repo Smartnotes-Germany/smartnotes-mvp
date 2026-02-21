@@ -5,7 +5,7 @@
  * document upload, AI-powered quiz generation, and learning progress analysis.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import {
@@ -17,8 +17,11 @@ import {
   Loader2,
   LogOut,
   Menu,
+  Monitor,
+  Moon,
   RefreshCcw,
   Sparkles,
+  Sun,
   Upload,
   X,
   XCircle,
@@ -173,11 +176,97 @@ const generateTopicDeepDiveRef = makeFunctionReference<
 const STORAGE_KEYS = {
   grantToken: "smartnotes.grant-token",
   sessionId: "smartnotes.session-id",
+  theme: "smartnotes.theme",
 } as const;
+
+/** Theme preference options */
+type ThemePreference = "light" | "dark" | "system";
+
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+  { value: "light", label: "Hell" },
+  { value: "system", label: "System" },
+  { value: "dark", label: "Dunkel" },
+];
 
 /** Allowed file types for upload */
 const ACCEPTED_FILE_TYPES =
   ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json,.jpg,.jpeg,.png,.webp";
+
+/**
+ * Custom hook to manage theme preference (light / dark / system).
+ * Applies the `.dark` class on `<html>` and persists the choice in localStorage.
+ */
+function useTheme() {
+  const [preference, setPreference] = useState<ThemePreference>(() => {
+    const stored = localStorage.getItem(STORAGE_KEYS.theme);
+    if (stored === "light" || stored === "dark" || stored === "system")
+      return stored;
+    return "system";
+  });
+
+  const applyTheme = useCallback((pref: ThemePreference) => {
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)",
+    ).matches;
+    const shouldBeDark = pref === "dark" || (pref === "system" && prefersDark);
+    document.documentElement.classList.toggle("dark", shouldBeDark);
+  }, []);
+
+  useEffect(() => {
+    applyTheme(preference);
+    localStorage.setItem(STORAGE_KEYS.theme, preference);
+  }, [preference, applyTheme]);
+
+  // Listen for OS-level theme changes when "system" is selected
+  useEffect(() => {
+    if (preference !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => applyTheme("system");
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [preference, applyTheme]);
+
+  return { preference, setPreference } as const;
+}
+
+/** Compact segmented theme toggle: Hell | System | Dunkel */
+function ThemeToggle({
+  preference,
+  setPreference,
+}: {
+  preference: ThemePreference;
+  setPreference: (p: ThemePreference) => void;
+}) {
+  const icons: Record<ThemePreference, typeof Sun> = {
+    light: Sun,
+    system: Monitor,
+    dark: Moon,
+  };
+
+  return (
+    <div className="border-cream-border bg-cream-light inline-flex items-center gap-0.5 rounded-full border p-1">
+      {THEME_OPTIONS.map((opt) => {
+        const Icon = icons[opt.value];
+        const isActive = preference === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setPreference(opt.value)}
+            title={opt.label}
+            className={`inline-flex items-center justify-center rounded-full p-2 transition ${
+              isActive
+                ? "bg-accent text-cream shadow-sm"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <Icon size={14} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * Represents the AI feedback for a answered question.
@@ -478,6 +567,10 @@ const uploadFileToConvexStorage = (
  * The main application component.
  */
 function App() {
+  // --- Theme ---
+  const { preference: themePreference, setPreference: setThemePreference } =
+    useTheme();
+
   // --- Layout State ---
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -902,6 +995,12 @@ function App() {
   if (!grantToken) {
     return (
       <div className="bg-cream text-ink flex min-h-screen flex-col items-center justify-center px-6 py-10 md:px-10">
+        <div className="fixed top-4 right-4 z-50">
+          <ThemeToggle
+            preference={themePreference}
+            setPreference={setThemePreference}
+          />
+        </div>
         <div className="w-full max-w-xl">
           <div className="mb-10 flex items-center justify-center gap-3">
             <img
@@ -951,7 +1050,7 @@ function App() {
                 />
 
                 {authError && (
-                  <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                     {authError}
                   </p>
                 )}
@@ -1043,6 +1142,12 @@ function App() {
             </nav>
 
             <div className="mt-auto space-y-3">
+              <div className="flex justify-center pb-2">
+                <ThemeToggle
+                  preference={themePreference}
+                  setPreference={setThemePreference}
+                />
+              </div>
               <button
                 onClick={() => void handleStartFreshSession()}
                 disabled={isCreatingSession}
@@ -1116,6 +1221,12 @@ function App() {
         </div>
 
         <div className="mt-auto space-y-2 pt-6">
+          <div className="flex justify-center pb-2">
+            <ThemeToggle
+              preference={themePreference}
+              setPreference={setThemePreference}
+            />
+          </div>
           <button
             onClick={() => void handleStartFreshSession()}
             disabled={isCreatingSession}
@@ -1177,7 +1288,7 @@ function App() {
               </label>
 
               {uploadError && (
-                <p className="mb-4 max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm whitespace-pre-line text-red-700">
+                <p className="mb-4 max-w-3xl rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm whitespace-pre-line text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                   {uploadError}
                 </p>
               )}
@@ -1308,10 +1419,10 @@ function App() {
                       <div
                         className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg md:h-16 md:w-16 ${
                           feedback.isCorrect
-                            ? "bg-emerald-100 text-emerald-600"
+                            ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
                             : feedback.score > 0
-                              ? "bg-amber-100 text-amber-600"
-                              : "bg-red-100 text-red-600"
+                              ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
+                              : "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
                         }`}
                       >
                         {feedback.isCorrect ? (
@@ -1325,10 +1436,10 @@ function App() {
                       <p
                         className={`text-[10px] font-black tracking-[0.3em] uppercase md:text-sm ${
                           feedback.isCorrect
-                            ? "text-emerald-600"
+                            ? "text-emerald-600 dark:text-emerald-400"
                             : feedback.score > 0
-                              ? "text-amber-600"
-                              : "text-red-600"
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-red-600 dark:text-red-400"
                         }`}
                       >
                         {feedback.isCorrect
@@ -1401,7 +1512,7 @@ function App() {
                       />
 
                       {quizError && (
-                        <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                           {quizError}
                         </p>
                       )}
@@ -1426,7 +1537,7 @@ function App() {
                         <button
                           onClick={() => void handleAnalyzeSession()}
                           disabled={isAnalyzing}
-                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:border-red-500 hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
+                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full border-2 border-red-100 bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:border-red-500 hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:border-red-800 dark:bg-red-950 dark:text-red-400 dark:hover:border-red-500 dark:hover:bg-red-500"
                         >
                           {isAnalyzing ? (
                             <Loader2 size={14} className="animate-spin" />
@@ -1466,7 +1577,7 @@ function App() {
               </header>
 
               {analysisError && (
-                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                   {analysisError}
                 </p>
               )}
@@ -1596,7 +1707,7 @@ function StageBadge({
         active
           ? "bg-accent text-cream shadow-accent/30 translate-x-1 shadow-lg"
           : done
-            ? "bg-emerald-50 text-emerald-700 opacity-60"
+            ? "bg-emerald-50 text-emerald-700 opacity-60 dark:bg-emerald-950 dark:text-emerald-400"
             : "bg-cream-light text-ink-muted"
       }`}
     >

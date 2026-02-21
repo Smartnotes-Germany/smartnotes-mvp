@@ -22,6 +22,7 @@ const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 const MAX_VERTEX_INLINE_FILE_BYTES = 7 * 1024 * 1024;
 const MAX_VERTEX_INLINE_FILE_LABEL = "7 MiB";
+const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
 
 const vertexProviderOptions = {
   google: {
@@ -334,12 +335,15 @@ const buildModelInputFromDocuments = async <TStorageId>(
 
       if (
         Number.isFinite(contentLength) &&
-        contentLength > MAX_VERTEX_INLINE_FILE_BYTES
+        contentLength >
+          MAX_VERTEX_INLINE_FILE_BYTES +
+            PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES
       ) {
-        trace?.log("warn", "model_input_document_too_large", {
+        trace?.log("warn", "model_input_document_declared_too_large", {
           fileName: document.fileName,
           declaredSizeBytes: contentLength,
           maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          toleranceBytes: PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES,
         });
         throw buildInlineFileTooLargeError(document.fileName, contentLength);
       }

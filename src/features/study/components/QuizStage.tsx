@@ -3,7 +3,7 @@ import {
   Brain,
   CheckCircle2,
   Lightbulb,
-  Loader2,
+  Loader2, LogOut,
   RefreshCcw,
   XCircle,
 } from "lucide-react";
@@ -223,7 +223,7 @@ export function QuizStage({
                   {isAnalyzing ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : (
-                    <Brain size={14} />
+                    <LogOut size={14} />
                   )}
                   {isAnalyzing ? "Analysiere..." : "Analyse jetzt starten"}
                 </button>

@@ -5,7 +5,7 @@
  * document upload, AI-powered quiz generation, and learning progress analysis.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useRef, useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import {
@@ -39,7 +39,7 @@ const redeemAccessCodeRef = makeFunctionReference<
 >("access:redeemAccessCode");
 const consumeMagicLinkRef = makeFunctionReference<
   "mutation",
-  { magicToken: string },
+  { code: string },
   { grantToken: string; obfuscatedCodes: string[] }
 >("access:consumeMagicLink");
 const startSessionRef = makeFunctionReference<
@@ -600,6 +600,7 @@ function App() {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isConsumingMagicLink, setIsConsumingMagicLink] = useState(false);
+  const isProcessingMagicLink = useRef(false);
 
   // --- Upload State ---
   const [isUploading, setIsUploading] = useState(false);
@@ -660,18 +661,25 @@ function App() {
    */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const magicToken = params.get("magicToken");
+    const code = params.get("code");
 
-    if (magicToken && !grantToken) {
+    if (code && !grantToken && !isProcessingMagicLink.current) {
+      isProcessingMagicLink.current = true;
       setIsConsumingMagicLink(true);
-      void consumeMagicLink({ magicToken })
+
+      // Remove the code from the URL immediately to prevent re-processing (React Strict Mode / HMR)
+      const newUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+
+      void consumeMagicLink({ code })
         .then(async (result) => {
           setGrantToken(result.grantToken);
           localStorage.setItem(STORAGE_KEYS.grantToken, result.grantToken);
-          const newUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, newUrl);
         })
         .catch((error: unknown) => {
+          // If we are already logged in via some other mechanism, ignore the error
+          if (grantToken) return;
+
           setAuthError(
             formatError(error, {
               fallback:

@@ -106,10 +106,7 @@ export const consumeMagicLink = mutation({
       .first();
 
     // Check if link exists and is still valid
-    if (
-      !accessToken ||
-      accessToken.consumedAt !== undefined
-    ) {
+    if (!accessToken || accessToken.consumedAt !== undefined) {
       throw new Error("Der Link ist ungültig oder abgelaufen.");
     }
 

@@ -1208,18 +1208,6 @@ function App() {
           />
         </nav>
 
-        <div className="border-cream-border bg-cream-light mt-8 rounded-2xl border p-4">
-          <p className="text-accent mb-1 text-[10px] font-bold tracking-[0.15em] uppercase">
-            Aktuelle Sitzung
-          </p>
-          <p className="text-ink truncate text-sm font-semibold">
-            {session.title}
-          </p>
-          <p className="text-ink-muted mt-2 text-[10px] font-bold tracking-wider uppercase">
-            Runde {session.round}
-          </p>
-        </div>
-
         <div className="mt-auto space-y-2 pt-6">
           <div className="flex justify-center pb-2">
             <ThemeToggle
@@ -1419,7 +1407,7 @@ function App() {
                       <div
                         className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg md:h-16 md:w-16 ${
                           feedback.isCorrect
-                            ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+                            ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400"
                             : feedback.score > 0
                               ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
                               : "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
@@ -1705,10 +1693,10 @@ function StageBadge({
     <div
       className={`flex items-center gap-3 rounded-2xl px-5 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all duration-300 ${
         active
-          ? "bg-accent shadow-accent/30 translate-x-1 text-white shadow-lg"
+          ? "bg-accent shadow-accent/20 translate-x-1 text-white shadow-lg"
           : done
-            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-800/30 dark:text-emerald-300"
-            : "bg-cream-light text-ink-muted"
+            ? "text-emerald-600 dark:text-emerald-400"
+            : "text-ink-muted"
       }`}
     >
       {done ? (

@@ -6,6 +6,7 @@ import {
   AuthScreen,
   LoadingScreen,
   NavigationShell,
+  PrivacyScreen, // <-- Added PrivacyScreen import
   QuizStage,
   UploadStage,
 } from "./features/study/components";
@@ -32,10 +33,13 @@ function App() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
+    hasAcceptedPrivacy, // <-- Added
+    isAcceptingPrivacy, // <-- Added
     setAccessCodeInput,
     redeemCode,
     startFreshSession,
     signOut,
+    acceptPrivacy, // <-- Added
   } = useAuthSession();
 
   const snapshot = useQuery(
@@ -106,6 +110,19 @@ function App() {
 
   if (!grantStatus || !grantStatus.valid || !sessionId || !session || !stats) {
     return <LoadingScreen />;
+  }
+
+  // Render Privacy Screen if not accepted yet
+  if (!hasAcceptedPrivacy) {
+    return (
+      <PrivacyScreen
+        logoImage={logoImage}
+        preference={themePreference}
+        setPreference={setThemePreference}
+        onAcceptPrivacy={acceptPrivacy}
+        isAcceptingPrivacy={isAcceptingPrivacy}
+      />
+    );
   }
 
   return (

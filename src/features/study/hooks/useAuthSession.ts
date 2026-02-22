@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
+  acceptPrivacyPolicyRef, // Added import
   consumeMagicLinkRef,
   latestSessionIdRef,
   redeemAccessCodeRef,
@@ -9,14 +10,41 @@ import {
 } from "../convexRefs";
 import { STORAGE_KEYS } from "../constants";
 import { formatError } from "../errorUtils";
+import type { GrantStatus } from "../types";
 
-export function useAuthSession() {
+export type AuthSessionReturn = {
+  grantToken: string | null;
+  sessionId: string | null;
+  grantStatus: GrantStatus | undefined;
+  latestSessionId: string | null | undefined;
+  accessCodeInput: string;
+  authError: string | null;
+  isRedeemingCode: boolean;
+  isCreatingSession: boolean;
+  isSigningOut: boolean;
+  isConsumingMagicLink: boolean;
+  hasAcceptedPrivacy: boolean;
+  isAcceptingPrivacy: boolean;
+  setAccessCodeInput: (value: string) => void;
+  setAuthError: (error: string | null) => void;
+  redeemCode: () => Promise<void>;
+  startFreshSession: () => Promise<string | null>;
+  signOut: () => void;
+  acceptPrivacy: () => Promise<void>;
+};
+
+export function useAuthSession(): AuthSessionReturn {
   const [grantToken, setGrantToken] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEYS.grantToken),
   );
   const [sessionId, setSessionId] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEYS.sessionId),
   );
+  const [hasAcceptedPrivacy, setHasAcceptedPrivacy] = useState<boolean>(() => {
+    return localStorage.getItem("smartnotes.privacy-accepted") === "true";
+  });
+  const [isAcceptingPrivacy, setIsAcceptingPrivacy] = useState(false);
+
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRedeemingCode, setIsRedeemingCode] = useState(false);
@@ -29,6 +57,7 @@ export function useAuthSession() {
 
   const redeemAccessCode = useMutation(redeemAccessCodeRef);
   const consumeMagicLink = useMutation(consumeMagicLinkRef);
+  const acceptPrivacyPolicy = useMutation(acceptPrivacyPolicyRef); // Added mutation hook
   const startSession = useMutation(startSessionRef);
 
   const grantStatus = useQuery(
@@ -40,6 +69,26 @@ export function useAuthSession() {
     latestSessionIdRef,
     grantToken && grantStatus?.valid ? { grantToken } : "skip",
   );
+
+  const acceptPrivacy = useCallback(async () => {
+    if (!grantToken) return;
+    setIsAcceptingPrivacy(true);
+    try {
+      await acceptPrivacyPolicy({
+        grantToken,
+        version: "2026-02-22", // Use a version string for the policy
+      });
+      localStorage.setItem("smartnotes.privacy-accepted", "true");
+      setHasAcceptedPrivacy(true);
+    } catch (error) {
+      console.error("Fehler beim Speichern der Datenschutzzustimmung:", error);
+      // In case of error, still proceed for UX, but log it
+      localStorage.setItem("smartnotes.privacy-accepted", "true");
+      setHasAcceptedPrivacy(true);
+    } finally {
+      setIsAcceptingPrivacy(false);
+    }
+  }, [acceptPrivacyPolicy, grantToken]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -206,12 +255,14 @@ export function useAuthSession() {
       setGrantToken(null);
       setSessionId(null);
       setAuthError(null);
+      setHasAcceptedPrivacy(false); // Reset privacy acceptance on sign out
       localStorage.removeItem(STORAGE_KEYS.grantToken);
       localStorage.removeItem(STORAGE_KEYS.sessionId);
+      localStorage.removeItem("smartnotes.privacy-accepted"); // Also remove from local storage
       setIsSigningOut(false);
       signOutTimeoutRef.current = null;
     }, 500);
-  }, []);
+  }, [setHasAcceptedPrivacy]);
 
   return {
     grantToken,
@@ -224,10 +275,14 @@ export function useAuthSession() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
+    hasAcceptedPrivacy,
+    isAcceptingPrivacy,
     setAccessCodeInput,
     setAuthError,
     redeemCode,
     startFreshSession,
     signOut,
+    acceptPrivacy,
   };
 }
+

@@ -44,14 +44,6 @@ export default defineSchema({
     note: v.optional(v.string()),
   }).index("by_normalizedCode", ["normalizedCode"]),
 
-  /** Einmalige Magic Links zur automatischen Anmeldung */
-  magicLinks: defineTable({
-    token: v.string(),
-    createdAt: v.number(),
-    expiresAt: v.number(),
-    consumedAt: v.optional(v.number()),
-  }).index("by_token", ["token"]),
-
   /** Aktive Zugriffsberechtigungen (Tokens), die einem Browser zugeordnet sind */
   accessGrants: defineTable({
     token: v.string(),

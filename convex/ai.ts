@@ -324,7 +324,7 @@ const buildModelInputFromDocuments = async <TStorageId>(
         ? Number.parseInt(contentLengthRaw, 10)
         : Number.NaN;
 
-      trace?.log("info", "model_input_document_downloaded", {
+      trace?.log("info", "model_input_document_response_received", {
         fileName: document.fileName,
         statusCode: response.status,
         contentLength: Number.isFinite(contentLength)

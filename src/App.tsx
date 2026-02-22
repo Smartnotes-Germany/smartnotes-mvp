@@ -1513,27 +1513,38 @@ function App() {
                         </p>
                       )}
 
-                      <div className="mt-8 flex flex-col items-center gap-4 md:mt-12 md:gap-6">
+                      <div className="mt-8 flex flex-col items-center gap-3 md:mt-12 md:gap-4">
                         <p className="text-ink-muted/50 text-[9px] font-bold tracking-[0.2em] uppercase md:text-[10px]">
                           {isSubmittingAnswer
                             ? "KI bewertet..."
                             : "Enter zum Bestätigen"}
                         </p>
+
+                        <button
+                          onClick={() => void handleSubmitAnswer(false)}
+                          disabled={isSubmittingAnswer || !answerInput.trim()}
+                          className="bg-accent shadow-accent/25 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-white uppercase shadow-lg transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
+                        >
+                          {isSubmittingAnswer ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <ArrowRight size={14} />
+                          )}
+                          Antwort absenden
+                        </button>
+
                         <button
                           onClick={() => void handleSubmitAnswer(true)}
                           disabled={isSubmittingAnswer}
-                          className="bg-accent shadow-accent/25 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-white uppercase shadow-lg transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
+                          className="bg-ink/5 text-ink-secondary hover:bg-ink/10 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] uppercase transition disabled:opacity-60 md:px-8 md:py-4 md:text-xs"
                         >
-                          {isSubmittingAnswer && (
-                            <Loader2 size={14} className="animate-spin" />
-                          )}
                           Ich weiß es gerade nicht
                         </button>
 
                         <button
                           onClick={() => void handleAnalyzeSession()}
                           disabled={isAnalyzing}
-                          className="hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs  dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
+                          className="mt-8 hover:text-cream inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
                         >
                           {isAnalyzing ? (
                             <Loader2 size={14} className="animate-spin" />

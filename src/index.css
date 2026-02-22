@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "DM Sans", system-ui, sans-serif;
   --font-serif: "Playfair Display", Georgia, serif;
@@ -40,6 +42,27 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Dark mode palette — warm editorial dark */
+  .dark {
+    --color-cream: #19181d;
+    --color-cream-light: #1f1e24;
+    --color-cream-dark: #131217;
+    --color-cream-border: #2e2d34;
+
+    --color-accent: #0b617e;
+
+    --color-ink: #ece9e4;
+    --color-ink-secondary: #a5a09a;
+    --color-ink-muted: #605c57;
+    --color-ink-faint: #3a3835;
+
+    --color-surface: #1e1d23;
+    --color-surface-elevated: #252429;
+    --color-surface-white: #222127;
+
+    color-scheme: dark;
   }
 
   body {

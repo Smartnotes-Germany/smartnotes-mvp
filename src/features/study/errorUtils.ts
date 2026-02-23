@@ -146,6 +146,30 @@ export const formatError = (error: unknown, options?: FormatErrorOptions) => {
     );
   }
 
+  if (
+    normalizedMessage.includes("zu groß") ||
+    normalizedMessage.includes("file too large") ||
+    normalizedMessage.includes("payload too large") ||
+    normalizedMessage.includes("entity too large") ||
+    normalizedMessage.includes("maximal 7 mib")
+  ) {
+    return withErrorReferences(
+      "Die Datei ist zu groß für die aktuelle Verarbeitung. Bitte verkleinere sie oder teile sie in mehrere Dateien auf.",
+      references,
+    );
+  }
+
+  if (
+    normalizedMessage.includes("wird nicht unterstützt") ||
+    normalizedMessage.includes("not supported") ||
+    normalizedMessage.includes("unsupported")
+  ) {
+    return withErrorReferences(
+      "Dieser Dateityp wird nicht unterstützt. Bitte nutze eines der erlaubten Formate.",
+      references,
+    );
+  }
+
   if (isTransportError(normalizedMessage)) {
     return withErrorReferences(
       "Netzwerkfehler. Bitte prüfe deine Internetverbindung und versuche es erneut.",

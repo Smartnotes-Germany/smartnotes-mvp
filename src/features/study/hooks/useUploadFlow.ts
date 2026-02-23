@@ -10,13 +10,24 @@ import {
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import { uploadFileToConvexStorage } from "../upload";
+import {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+  validateUploadFile,
+} from "../../../../shared/uploadPolicy";
+import type { StudyDocument } from "../types";
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
+  documents: StudyDocument[];
 };
 
-export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
+export function useUploadFlow({
+  grantToken,
+  sessionId,
+  documents,
+}: UseUploadFlowArgs) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
@@ -24,8 +35,27 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
     null,
   );
 
-  const generateUploadUrl = useMutation(generateUploadUrlRef);
-  const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
+  const generateUploadUrl = useMutation(generateUploadUrlRef) as (args: {
+    grantToken: string;
+    sessionId: string;
+  }) => Promise<{
+    uploadUrl: string;
+    uploadToken: string;
+    storageId: string | null;
+    storageProvider: "convex" | "r2";
+    uploadTokenExpiresAt: number;
+  }>;
+  const registerUploadedDocument = useMutation(
+    registerUploadedDocumentRef,
+  ) as (args: {
+    grantToken: string;
+    sessionId: string;
+    uploadToken: string;
+    storageId: string;
+    fileName: string;
+    fileType: string;
+    fileSizeBytes: number;
+  }) => Promise<string>;
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
@@ -43,12 +73,31 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
       for (const file of files) {
         const clientRequestId = createClientRequestId("extractDocument");
 
+        const uploadValidation = validateUploadFile({
+          name: file.name,
+          size: file.size,
+        });
+        if (!uploadValidation.valid) {
+          errors.push(`${file.name}: ${uploadValidation.message}`);
+          continue;
+        }
+
         try {
-          const uploadUrl = await generateUploadUrl({ grantToken, sessionId });
-          const uploadResult = await uploadFileToConvexStorage(uploadUrl, file);
+          const uploadData = await generateUploadUrl({ grantToken, sessionId });
+          if (uploadData.storageProvider !== "convex") {
+            throw new Error(
+              "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
+            );
+          }
+
+          const uploadResult = await uploadFileToConvexStorage(
+            uploadData.uploadUrl,
+            file,
+          );
           const documentId = await registerUploadedDocument({
             grantToken,
             sessionId,
+            uploadToken: uploadData.uploadToken,
             storageId: uploadResult.storageId,
             fileName: file.name,
             fileType: file.type || "application/octet-stream",
@@ -104,6 +153,25 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
       return;
     }
 
+    const oversizedReadyDocuments = documents.filter(
+      (document) =>
+        document.extractionStatus === "ready" &&
+        document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
+    );
+
+    if (oversizedReadyDocuments.length > 0) {
+      const names = oversizedReadyDocuments
+        .slice(0, 3)
+        .map((document) => document.fileName)
+        .join(", ");
+      const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
+
+      setUploadError(
+        `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`,
+      );
+      return;
+    }
+
     const clientRequestId = createClientRequestId("generateQuiz");
     setIsGeneratingQuiz(true);
     setUploadError(null);
@@ -125,7 +193,7 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [generateQuiz, grantToken, sessionId]);
+  }, [documents, generateQuiz, grantToken, sessionId]);
 
   const removeDocumentById = useCallback(
     async (documentId: string) => {

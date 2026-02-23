@@ -142,6 +142,7 @@ export default defineSchema({
     filePartCount: v.optional(v.number()),
     sourceContextLength: v.optional(v.number()),
     outputQuestionCount: v.optional(v.number()),
+    errorCategory: v.optional(v.string()),
     errorName: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
     errorStackPreview: v.optional(v.string()),

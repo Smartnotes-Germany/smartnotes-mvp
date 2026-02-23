@@ -1,6 +1,7 @@
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "./errorTracking";
+import { components } from "./_generated/api";
 
 const DEFAULT_RAW_RETENTION_DAYS = 14;
 const DEFAULT_ANALYTICS_RETENTION_DAYS = 180;
@@ -126,6 +127,7 @@ export const runDailyRetention = internalAction({
       redactedDocuments: 0,
       redactedResponses: 0,
       deletedAnalyticsEvents: 0,
+      deletedManagedFiles: 0,
       batches: 0,
     };
 
@@ -142,6 +144,21 @@ export const runDailyRetention = internalAction({
       totals.batches += 1;
 
       if (result.done) {
+        break;
+      }
+    }
+
+    for (let batch = 0; batch < MAX_BATCHES_PER_RUN; batch += 1) {
+      const cleanupResult = await ctx.runMutation(
+        components.convexFilesControl.cleanUp.cleanupExpired,
+        {
+          limit: DEFAULT_BATCH_SIZE,
+        },
+      );
+
+      totals.deletedManagedFiles += cleanupResult.deletedCount;
+
+      if (!cleanupResult.hasMore) {
         break;
       }
     }

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@ai-sdk/google-vertex": "^4.0.58",
+    "@gilhrpenner/convex-files-control": "^0.5.1",
     "@langfuse/otel": "^4.6.1",
     "@langfuse/tracing": "^4.6.1",
     "@opentelemetry/sdk-node": "^0.212.0",

@@ -7,6 +7,7 @@ const runDailyRetentionRef = makeFunctionReference<
     redactedDocuments: number;
     redactedResponses: number;
     deletedAnalyticsEvents: number;
+    deletedManagedFiles: number;
     batches: number;
   }
 >("retention:runDailyRetention");

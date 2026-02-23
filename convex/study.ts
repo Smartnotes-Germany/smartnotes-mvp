@@ -1,4 +1,5 @@
 import type { Id } from "./_generated/dataModel";
+import { components } from "./_generated/api";
 import {
   internalMutation,
   internalQuery,
@@ -8,6 +9,7 @@ import {
   type QueryCtx,
 } from "./errorTracking";
 import { v } from "convex/values";
+import { validateUploadFile } from "../shared/uploadPolicy";
 
 const quizQuestionValidator = v.object({
   id: v.string(),
@@ -45,10 +47,31 @@ const aiAnalyticsTelemetryProviderValidator = v.union(
   v.literal("langfuse"),
   v.literal("none"),
 );
+const aiAnalyticsErrorCategoryValidator = v.union(
+  v.literal("file_too_large"),
+  v.literal("storage_fetch_failed"),
+  v.literal("model_no_output"),
+  v.literal("vertex_request_failed"),
+  v.literal("unknown"),
+);
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
   revokedAt?: number;
+};
+
+const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
+
+const parseMetadataJson = (raw: string | undefined) => {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 };
 
 const ensureGrant = async (
@@ -180,7 +203,13 @@ export const generateUploadUrl = mutation({
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
-    return ctx.storage.generateUploadUrl();
+
+    return ctx.runMutation(
+      components.convexFilesControl.upload.generateUploadUrl,
+      {
+        provider: "convex",
+      },
+    );
   },
 });
 
@@ -188,6 +217,7 @@ export const registerUploadedDocument = mutation({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    uploadToken: v.string(),
     storageId: v.id("_storage"),
     fileName: v.string(),
     fileType: v.string(),
@@ -197,10 +227,33 @@ export const registerUploadedDocument = mutation({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
+    const uploadValidation = validateUploadFile({
+      name: args.fileName,
+      size: args.fileSizeBytes,
+    });
+    if (!uploadValidation.valid) {
+      throw new Error(uploadValidation.message);
+    }
+
+    const finalizedUpload = await ctx.runMutation(
+      components.convexFilesControl.upload.finalizeUpload,
+      {
+        uploadToken: args.uploadToken,
+        storageId: args.storageId,
+        accessKeys: [buildGrantAccessKey(grant._id)],
+      },
+    );
+
+    if (finalizedUpload.storageProvider !== "convex") {
+      throw new Error(
+        "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
+      );
+    }
+
     const now = Date.now();
     const documentId = await ctx.db.insert("sessionDocuments", {
       sessionId: args.sessionId,
-      storageId: args.storageId,
+      storageId: finalizedUpload.storageId as Id<"_storage">,
       fileName: args.fileName,
       fileType: args.fileType,
       fileSizeBytes: args.fileSizeBytes,
@@ -228,7 +281,65 @@ export const removeDocument = mutation({
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
+    try {
+      const deleted = await ctx.runMutation(
+        components.convexFilesControl.cleanUp.deleteFile,
+        {
+          storageId: document.storageId,
+        },
+      );
+
+      if (!deleted.deleted) {
+        await ctx.storage.delete(document.storageId);
+      }
+    } catch {
+      await ctx.storage.delete(document.storageId);
+    }
+
     await ctx.db.delete(args.documentId);
+  },
+});
+
+export const createDocumentDownloadUrl = mutation({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    documentId: v.id("sessionDocuments"),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    const document = await ctx.db.get(args.documentId);
+    if (!document || document.sessionId !== args.sessionId) {
+      throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
+    }
+
+    const accessKey = buildGrantAccessKey(grant._id);
+    const downloadGrant = await ctx.runMutation(
+      components.convexFilesControl.download.createDownloadGrant,
+      {
+        storageId: document.storageId,
+        maxUses: 1,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      },
+    );
+
+    const consumeResult = await ctx.runMutation(
+      components.convexFilesControl.download.consumeDownloadGrantForUrl,
+      {
+        downloadToken: downloadGrant.downloadToken,
+        accessKey,
+      },
+    );
+
+    if (consumeResult.status !== "ok" || !consumeResult.downloadUrl) {
+      throw new Error("Download-Link konnte nicht erstellt werden.");
+    }
+
+    return {
+      downloadUrl: consumeResult.downloadUrl,
+    };
   },
 });
 
@@ -244,7 +355,7 @@ export const getDocumentExtractionContext = internalQuery({
 
     const document = await ctx.db.get(args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
-      throw new Error("Dokument gehoert nicht zu dieser Sitzung.");
+      throw new Error("Dokument gehört nicht zu dieser Sitzung.");
     }
 
     return {
@@ -509,6 +620,7 @@ export const storeAiAnalyticsEvent = internalMutation({
     filePartCount: v.optional(v.number()),
     sourceContextLength: v.optional(v.number()),
     outputQuestionCount: v.optional(v.number()),
+    errorCategory: v.optional(aiAnalyticsErrorCategoryValidator),
     errorName: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
     errorStackPreview: v.optional(v.string()),
@@ -541,5 +653,47 @@ export const getAiAnalyticsForSession = query({
       )
       .order("desc")
       .take(limit);
+  },
+});
+
+export const getLatestAiFailureByClientRequestId = query({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    clientRequestId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    const candidates = await ctx.db
+      .query("aiAnalyticsEvents")
+      .withIndex("by_session_createdAt", (q) =>
+        q.eq("sessionId", args.sessionId),
+      )
+      .order("desc")
+      .take(250);
+
+    for (const event of candidates) {
+      if (event.status !== "error") {
+        continue;
+      }
+
+      const metadata = parseMetadataJson(event.metadataJson);
+      if (metadata?.clientRequestId !== args.clientRequestId) {
+        continue;
+      }
+
+      return {
+        traceId: event.traceId,
+        scope: event.scope,
+        errorCategory: event.errorCategory,
+        errorName: event.errorName,
+        errorMessage: event.errorMessage,
+        createdAt: event.createdAt,
+      };
+    }
+
+    return null;
   },
 });

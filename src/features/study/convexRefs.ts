@@ -22,7 +22,13 @@ export const startSessionRef = makeFunctionReference<
 export const generateUploadUrlRef = makeFunctionReference<
   "mutation",
   { grantToken: string; sessionId: string },
-  string
+  {
+    uploadUrl: string;
+    uploadToken: string;
+    storageId: string | null;
+    storageProvider: "convex" | "r2";
+    uploadTokenExpiresAt: number;
+  }
 >("study:generateUploadUrl");
 
 export const registerUploadedDocumentRef = makeFunctionReference<
@@ -30,6 +36,7 @@ export const registerUploadedDocumentRef = makeFunctionReference<
   {
     grantToken: string;
     sessionId: string;
+    uploadToken: string;
     storageId: string;
     fileName: string;
     fileType: string;

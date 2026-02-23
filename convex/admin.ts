@@ -1,4 +1,5 @@
 import type { Id } from "./_generated/dataModel";
+import { components } from "./_generated/api";
 import {
   mutation,
   query,
@@ -156,7 +157,17 @@ export const deleteData = mutation({
 
       for (const document of documents) {
         try {
-          await ctx.storage.delete(document.storageId);
+          const deleted = await ctx.runMutation(
+            components.convexFilesControl.cleanUp.deleteFile,
+            {
+              storageId: document.storageId,
+            },
+          );
+
+          if (!deleted.deleted) {
+            await ctx.storage.delete(document.storageId);
+          }
+
           deletedStorageFiles += 1;
         } catch {
           // Continue deleting DB records even if storage deletion fails.

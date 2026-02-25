@@ -10,9 +10,55 @@ Balanced mode keeps deep product and runtime insights while minimizing sensitive
 - Default capture mode:
   - `recordInputs: false`
   - `recordOutputs: false`
-- Trace metadata includes only operational fields (`appScope`, hashed session id, counts, statuses).
+- Trace metadata includes only operational fields (`appScope`, hashed session id, counts, statuses, `documentIds`, `readyDocumentIds`). In telemetry/Convex metadata these document fields are sanitized as comma-separated strings with truncation limits.
 - Sensitive previews are removed from backend logs.
 - Every AI action attempts a bounded flush before exit, reducing dropped traces in serverless runtimes.
+- PostHog is used as a privacy-safe product + reliability analytics layer (without replacing Langfuse tracing).
+
+## PostHog Bridge (Privacy-safe)
+
+- Backend emits `ai_operation_completed` and `$ai_generation` (with redacted placeholders) to PostHog.
+- Capture is gated by Convex env vars and no-ops when disabled.
+- Required Convex vars:
+  - `POSTHOG_ENABLED=true|false`
+  - `POSTHOG_PROJECT_KEY=<project key>`
+  - `POSTHOG_HOST=https://eu.i.posthog.com`
+
+### Correlation guidance (PR #28)
+
+For cross-system debugging use these fields together:
+
+- `traceId`
+- `documentIds`
+- `readyDocumentIds`
+
+Format and limits by sink:
+
+- Langfuse telemetry metadata (`experimental_telemetry.metadata`):
+  - `documentIds` / `readyDocumentIds` are stored as comma-separated strings.
+  - Arrays are truncated to the first 12 entries.
+- Convex analytics (`aiAnalyticsEvents.metadataJson`):
+  - `documentIds` / `readyDocumentIds` are stored as comma-separated strings.
+  - Arrays are truncated to the first 20 entries.
+- PostHog AI bridge (`ai_operation_completed` / `$ai_generation`):
+  - `documentIds` / `readyDocumentIds` are stored as arrays.
+  - Arrays are truncated to the first 50 entries.
+
+Because of sanitization limits, these fields are intended for correlation samples, not guaranteed full document inventories.
+
+Correlation workflow:
+
+1. Start from a PostHog event with `traceId`.
+2. Find the same `traceId` in `aiAnalyticsEvents` and Langfuse traces.
+3. Use `documentIds` and `readyDocumentIds` to verify which documents were available and ready for the operation.
+
+### Data minimization policy
+
+- Never send raw prompts/responses.
+- Never send extracted document text.
+- Never send user answer text.
+- Never send access codes, grant tokens, or secrets.
+- Only operational metadata is allowed (scope/status/latency/tokens/fallback/counts/IDs for correlation).
 
 ## Required Convex Environment Variables
 
@@ -51,8 +97,9 @@ Troubleshooting Convex count != Langfuse count:
 1. Verify `telemetryProvider` is `langfuse` in `aiAnalyticsEvents`.
 2. Check `OBSERVABILITY_FLUSH_ON_EXIT=true` and timeout >= `300`.
 3. Compare by `traceId` (source of truth for cross-system matching).
-4. If gaps persist, increase timeout to `500` and re-test.
-5. If still missing, treat Convex analytics as durable source and inspect network/provider health.
+4. Validate `documentIds` / `readyDocumentIds` in metadata for per-upload correlation.
+5. If gaps persist, increase timeout to `500` and re-test.
+6. If still missing, treat Convex analytics as durable source and inspect network/provider health.
 
 ## Retention Automation
 

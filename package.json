@@ -22,6 +22,7 @@
     "@langfuse/otel": "^4.6.1",
     "@langfuse/tracing": "^4.6.1",
     "@opentelemetry/sdk-node": "^0.212.0",
+    "@posthog/react": "^1.8.0",
     "@tailwindcss/vite": "^4.1.18",
     "ai": "^6.0.86",
     "clsx": "^2.1.1",
@@ -29,6 +30,7 @@
     "framer-motion": "^12.33.0",
     "lucide-react": "^0.563.0",
     "officeparser": "^6.0.4",
+    "posthog-js": "^1.353.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@posthog/rollup-plugin": "^1.2.13",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",

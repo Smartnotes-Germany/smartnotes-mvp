@@ -10,13 +10,34 @@ import {
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import { uploadFileToConvexStorage } from "../upload";
+import {
+  trackDocumentExtractionFailed,
+  trackDocumentRemoved,
+  trackDocumentUploadFailed,
+  trackDocumentUploadStarted,
+  trackDocumentUploadSucceeded,
+  trackQuizGenerationFailed,
+  trackQuizGenerationRequested,
+  trackQuizGenerationSucceeded,
+} from "../analytics";
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
+  documentCount: number;
+  readyDocumentCount: number;
 };
 
-export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
+type ExtractionResult = {
+  extractionStatus?: "ready" | "failed";
+};
+
+export function useUploadFlow({
+  grantToken,
+  sessionId,
+  documentCount,
+  readyDocumentCount,
+}: UseUploadFlowArgs) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
@@ -39,6 +60,7 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
       setIsUploading(true);
       setUploadError(null);
       const errors: string[] = [];
+      trackDocumentUploadStarted(files.length);
 
       for (const file of files) {
         const clientRequestId = createClientRequestId("extractDocument");
@@ -55,13 +77,25 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
             fileSizeBytes: file.size,
           });
 
-          await extractDocumentContent({
+          const extractionResult = (await extractDocumentContent({
             grantToken,
             sessionId,
             documentId,
             clientRequestId,
-          });
+          })) as ExtractionResult;
+
+          if (extractionResult.extractionStatus === "failed") {
+            trackDocumentExtractionFailed();
+            trackDocumentUploadFailed();
+            errors.push(
+              `${file.name}: Die Datei konnte nicht vollständig verarbeitet werden.`,
+            );
+            continue;
+          }
+
+          trackDocumentUploadSucceeded();
         } catch (error: unknown) {
+          trackDocumentUploadFailed();
           errors.push(
             `${file.name}: ${formatError(error, {
               fallback:
@@ -104,9 +138,14 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
       return;
     }
 
+    const startedAt = Date.now();
     const clientRequestId = createClientRequestId("generateQuiz");
     setIsGeneratingQuiz(true);
     setUploadError(null);
+    trackQuizGenerationRequested({
+      documents: documentCount,
+      readyDocuments: readyDocumentCount,
+    });
 
     try {
       await generateQuiz({
@@ -115,7 +154,15 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
         questionCount: 30,
         clientRequestId,
       });
+      trackQuizGenerationSucceeded(Date.now() - startedAt, {
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+      });
     } catch (error: unknown) {
+      trackQuizGenerationFailed(Date.now() - startedAt, {
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+      });
       setUploadError(
         formatError(error, {
           fallback: "Quizfragen konnten nicht erstellt werden.",
@@ -125,7 +172,7 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [generateQuiz, grantToken, sessionId]);
+  }, [documentCount, generateQuiz, grantToken, readyDocumentCount, sessionId]);
 
   const removeDocumentById = useCallback(
     async (documentId: string) => {
@@ -136,7 +183,9 @@ export function useUploadFlow({ grantToken, sessionId }: UseUploadFlowArgs) {
       setIsRemovingDocument(documentId);
       try {
         await removeDocument({ grantToken, sessionId, documentId });
+        trackDocumentRemoved("succeeded");
       } catch (error: unknown) {
+        trackDocumentRemoved("failed");
         setUploadError(
           formatError(error, {
             fallback: "Die Datei konnte nicht entfernt werden.",

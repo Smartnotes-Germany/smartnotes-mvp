@@ -3,11 +3,14 @@ import {
   Brain,
   CheckCircle2,
   Lightbulb,
-  Loader2, LogOut,
+  Loader2,
+  LogOut,
   RefreshCcw,
   XCircle,
 } from "lucide-react";
+import { useFeatureFlagVariantKey } from "@posthog/react";
 import type { FeedbackState, QuizQuestion, StudyStats } from "../types";
+import { ANALYTICS_FEATURE_FLAGS } from "../analytics";
 
 type QuizStageProps = {
   currentQuestion: QuizQuestion | null;
@@ -40,6 +43,11 @@ export function QuizStage({
   isGeneratingQuiz,
   onContinueAfterFeedback,
 }: QuizStageProps) {
+  const analysisCtaVariant = useFeatureFlagVariantKey(
+    ANALYTICS_FEATURE_FLAGS.analysisCtaVariant,
+  );
+  const useCompactAnalysisCopy = analysisCtaVariant === "kompakt";
+
   return (
     <section className="flex h-full flex-col items-center justify-center">
       <div className="w-full max-w-3xl text-center">
@@ -64,7 +72,11 @@ export function QuizStage({
                 ) : (
                   <Brain size={24} />
                 )}
-                {isAnalyzing ? "Analysiere..." : "Lernanalyse starten"}
+                {isAnalyzing
+                  ? "Analysiere..."
+                  : useCompactAnalysisCopy
+                    ? "Analyse starten"
+                    : "Lernanalyse starten"}
               </button>
               <button
                 type="button"
@@ -174,7 +186,8 @@ export function QuizStage({
                 rows={1}
                 disabled={isSubmittingAnswer}
                 placeholder="Deine Antwort hier tippen..."
-                className="border-cream-border focus:border-accent placeholder:text-ink-muted/20 w-full overflow-hidden border-b-2 bg-transparent pb-4 text-center text-xl font-medium transition outline-none disabled:opacity-50 md:text-3xl"
+                data-ph-sensitive="true"
+                className="ph-no-capture border-cream-border focus:border-accent placeholder:text-ink-muted/20 w-full overflow-hidden border-b-2 bg-transparent pb-4 text-center text-xl font-medium transition outline-none disabled:opacity-50 md:text-3xl"
                 style={{ resize: "none" }}
               />
 
@@ -225,7 +238,11 @@ export function QuizStage({
                   ) : (
                     <LogOut size={14} />
                   )}
-                  {isAnalyzing ? "Analysiere..." : "Analyse jetzt starten"}
+                  {isAnalyzing
+                    ? "Analysiere..."
+                    : useCompactAnalysisCopy
+                      ? "Analyse starten"
+                      : "Analyse jetzt starten"}
                 </button>
               </div>
             </div>

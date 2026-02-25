@@ -2,15 +2,27 @@ import { useCallback, useState } from "react";
 import { useAction } from "convex/react";
 import { analyzePerformanceRef, generateTopicDeepDiveRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
+import {
+  trackAnalysisFailed,
+  trackAnalysisRequested,
+  trackAnalysisSucceeded,
+  trackDeepDiveFailed,
+  trackDeepDiveRequested,
+  trackDeepDiveSucceeded,
+} from "../analytics";
 
 type UseAnalysisFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
+  answeredQuestions?: number;
+  totalQuestions?: number;
 };
 
 export function useAnalysisFlow({
   grantToken,
   sessionId,
+  answeredQuestions,
+  totalQuestions,
 }: UseAnalysisFlowArgs) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -24,13 +36,23 @@ export function useAnalysisFlow({
       return;
     }
 
+    const startedAt = Date.now();
     const clientRequestId = createClientRequestId("analyzePerformance");
     setIsAnalyzing(true);
     setAnalysisError(null);
+    trackAnalysisRequested({ answeredQuestions, totalQuestions });
 
     try {
       await analyzePerformance({ grantToken, sessionId, clientRequestId });
+      trackAnalysisSucceeded(Date.now() - startedAt, {
+        answeredQuestions,
+        totalQuestions,
+      });
     } catch (error: unknown) {
+      trackAnalysisFailed(Date.now() - startedAt, {
+        answeredQuestions,
+        totalQuestions,
+      });
       setAnalysisError(
         formatError(error, {
           fallback:
@@ -41,7 +63,13 @@ export function useAnalysisFlow({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [analyzePerformance, grantToken, sessionId]);
+  }, [
+    analyzePerformance,
+    answeredQuestions,
+    grantToken,
+    sessionId,
+    totalQuestions,
+  ]);
 
   const deepDiveTopic = useCallback(
     async (topic: string) => {
@@ -49,18 +77,23 @@ export function useAnalysisFlow({
         return;
       }
 
+      const startedAt = Date.now();
       const clientRequestId = createClientRequestId("generateDeepDive");
       setTopicLoading(topic);
       setAnalysisError(null);
+      trackDeepDiveRequested(topic.length);
 
       try {
-        await generateTopicDeepDive({
+        const result = (await generateTopicDeepDive({
           grantToken,
           sessionId,
           topic,
           clientRequestId,
-        });
+        })) as { questionCount?: number };
+
+        trackDeepDiveSucceeded(Date.now() - startedAt, result.questionCount);
       } catch (error: unknown) {
+        trackDeepDiveFailed(Date.now() - startedAt);
         setAnalysisError(
           formatError(error, {
             fallback: "Die Vertiefung konnte nicht geladen werden.",

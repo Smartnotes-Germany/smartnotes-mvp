@@ -62,6 +62,30 @@ type GrantDoc = {
 
 const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
 
+const deleteStorageFileWithFallback = async (
+  ctx: MutationCtx,
+  storageId: Id<"_storage">,
+) => {
+  try {
+    const deleted = await ctx.runMutation(
+      components.convexFilesControl.cleanUp.deleteFile,
+      {
+        storageId,
+      },
+    );
+
+    if (!deleted.deleted) {
+      await ctx.storage.delete(storageId);
+    }
+  } catch {
+    try {
+      await ctx.storage.delete(storageId);
+    } catch {
+      // Best-effort cleanup.
+    }
+  }
+};
+
 const parseMetadataJson = (
   raw: string | undefined,
 ): Record<string, unknown> | null => {
@@ -250,14 +274,6 @@ export const registerUploadedDocument = mutation({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
-    const uploadValidation = validateUploadFile({
-      name: args.fileName,
-      size: args.fileSizeBytes,
-    });
-    if (!uploadValidation.valid) {
-      throw new Error(uploadValidation.message);
-    }
-
     const finalizedUpload = await ctx.runMutation(
       components.convexFilesControl.upload.finalizeUpload,
       {
@@ -278,13 +294,50 @@ export const registerUploadedDocument = mutation({
       );
     }
 
+    const trustedMetadata = finalizedUpload.metadata;
+    if (!trustedMetadata) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(
+        "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
+      );
+    }
+
+    if (trustedMetadata.storageId !== args.storageId) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(
+        "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
+      );
+    }
+
+    const trustedFileSizeBytes = trustedMetadata.size;
+    const trustedFileType =
+      trustedMetadata.contentType ||
+      args.fileType ||
+      "application/octet-stream";
+
+    if (args.fileSizeBytes !== trustedFileSizeBytes) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(
+        "Uploadgröße konnte nicht verifiziert werden. Bitte lade die Datei erneut hoch.",
+      );
+    }
+
+    const uploadValidation = validateUploadFile({
+      name: args.fileName,
+      size: trustedFileSizeBytes,
+    });
+    if (!uploadValidation.valid) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(uploadValidation.message);
+    }
+
     const now = Date.now();
     const documentId = await ctx.db.insert("sessionDocuments", {
       sessionId: args.sessionId,
       storageId: args.storageId,
       fileName: args.fileName,
-      fileType: args.fileType,
-      fileSizeBytes: args.fileSizeBytes,
+      fileType: trustedFileType,
+      fileSizeBytes: trustedFileSizeBytes,
       extractionStatus: "pending",
       createdAt: now,
       updatedAt: now,
@@ -309,20 +362,7 @@ export const removeDocument = mutation({
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
-    try {
-      const deleted = await ctx.runMutation(
-        components.convexFilesControl.cleanUp.deleteFile,
-        {
-          storageId: document.storageId,
-        },
-      );
-
-      if (!deleted.deleted) {
-        await ctx.storage.delete(document.storageId);
-      }
-    } catch {
-      await ctx.storage.delete(document.storageId);
-    }
+    await deleteStorageFileWithFallback(ctx, document.storageId);
 
     await ctx.db.delete(args.documentId);
   },

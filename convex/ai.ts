@@ -820,13 +820,22 @@ const classifyAiErrorCategory = (
   }
 
   const message = error.message.toLowerCase();
+  const hasMaximalSizeHint =
+    message.includes("maximal") &&
+    (/(maximal\s+[\d.,]+\s*(kib|kb|mib|mb|gib|gb))/.test(message) ||
+      /(maximal(?:e|er|en)?\s+(dateigröße|datei[- ]?größe|file size|größe|size))/.test(
+        message,
+      ) ||
+      /((dateigröße|datei[- ]?größe|file size|größe|size)\s+maximal)/.test(
+        message,
+      ));
 
   if (
     message.includes("zu groß") ||
     message.includes("too large") ||
     message.includes("payload too large") ||
     message.includes("entity too large") ||
-    message.includes("maximal")
+    hasMaximalSizeHint
   ) {
     return "file_too_large";
   }

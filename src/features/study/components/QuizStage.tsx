@@ -3,7 +3,8 @@ import {
   Brain,
   CheckCircle2,
   Lightbulb,
-  Loader2, LogOut,
+  Loader2,
+  LogOut,
   RefreshCcw,
   XCircle,
 } from "lucide-react";

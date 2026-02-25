@@ -2,15 +2,23 @@ import { useCallback, useState } from "react";
 import { useAction } from "convex/react";
 import { analyzePerformanceRef, generateTopicDeepDiveRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
+import {
+  isVertexNativeCandidate,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+} from "../../../../shared/uploadPolicy";
+import type { StudyDocument } from "../types";
 
 type UseAnalysisFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
+  documents: StudyDocument[];
 };
 
 export function useAnalysisFlow({
   grantToken,
   sessionId,
+  documents,
 }: UseAnalysisFlowArgs) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -49,6 +57,26 @@ export function useAnalysisFlow({
         return;
       }
 
+      const oversizedReadyDocuments = documents.filter(
+        (document) =>
+          document.extractionStatus === "ready" &&
+          isVertexNativeCandidate(document.fileType, document.fileName) &&
+          document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
+      );
+
+      if (oversizedReadyDocuments.length > 0) {
+        const names = oversizedReadyDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
+
+        setAnalysisError(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`,
+        );
+        return;
+      }
+
       const clientRequestId = createClientRequestId("generateDeepDive");
       setTopicLoading(topic);
       setAnalysisError(null);
@@ -71,7 +99,7 @@ export function useAnalysisFlow({
         setTopicLoading(null);
       }
     },
-    [generateTopicDeepDive, grantToken, sessionId],
+    [documents, generateTopicDeepDive, grantToken, sessionId],
   );
 
   return {

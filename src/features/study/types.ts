@@ -43,6 +43,8 @@ export type StudySession = {
 export type StudyDocument = {
   _id: string;
   fileName: string;
+  fileType: string;
+  fileSizeBytes: number;
   extractionStatus: ExtractionStatus;
   extractionError?: string;
 };

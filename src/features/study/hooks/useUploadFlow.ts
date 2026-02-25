@@ -11,6 +11,7 @@ import {
 import { createClientRequestId, formatError } from "../errorUtils";
 import { uploadFileToConvexStorage } from "../upload";
 import {
+  isVertexNativeCandidate,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
   validateUploadFile,
@@ -35,27 +36,8 @@ export function useUploadFlow({
     null,
   );
 
-  const generateUploadUrl = useMutation(generateUploadUrlRef) as (args: {
-    grantToken: string;
-    sessionId: string;
-  }) => Promise<{
-    uploadUrl: string;
-    uploadToken: string;
-    storageId: string | null;
-    storageProvider: "convex" | "r2";
-    uploadTokenExpiresAt: number;
-  }>;
-  const registerUploadedDocument = useMutation(
-    registerUploadedDocumentRef,
-  ) as (args: {
-    grantToken: string;
-    sessionId: string;
-    uploadToken: string;
-    storageId: string;
-    fileName: string;
-    fileType: string;
-    fileSizeBytes: number;
-  }) => Promise<string>;
+  const generateUploadUrl = useMutation(generateUploadUrlRef);
+  const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
@@ -156,6 +138,7 @@ export function useUploadFlow({
     const oversizedReadyDocuments = documents.filter(
       (document) =>
         document.extractionStatus === "ready" &&
+        isVertexNativeCandidate(document.fileType, document.fileName) &&
         document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
     );
 

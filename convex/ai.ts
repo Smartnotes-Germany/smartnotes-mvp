@@ -11,6 +11,8 @@ import { v } from "convex/values";
 import {
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
   formatFileSizeMiB,
 } from "../shared/uploadPolicy";
 import {
@@ -46,27 +48,12 @@ const plainTextExtensions = new Set([
   "yaml",
   "yml",
 ]);
-const vertexNativeFileExtensions = new Set([
-  "pdf",
-  "ppt",
-  "pptx",
-  "doc",
-  "docx",
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-]);
-const vertexNativeMediaTypes = new Set([
-  "application/pdf",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+const vertexNativeFileExtensions = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+);
+const vertexNativeMediaTypes = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
+);
 
 const extensionToMediaType: Record<string, string> = {
   pdf: "application/pdf",

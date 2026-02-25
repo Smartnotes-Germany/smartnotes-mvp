@@ -3,6 +3,7 @@ import { useAction } from "convex/react";
 import { analyzePerformanceRef, generateTopicDeepDiveRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import {
+  isVertexNativeCandidate,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
 } from "../../../../shared/uploadPolicy";
@@ -59,6 +60,7 @@ export function useAnalysisFlow({
       const oversizedReadyDocuments = documents.filter(
         (document) =>
           document.extractionStatus === "ready" &&
+          isVertexNativeCandidate(document.fileType, document.fileName) &&
           document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
       );
 

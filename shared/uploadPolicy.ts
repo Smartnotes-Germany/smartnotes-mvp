@@ -18,6 +18,29 @@ export const ACCEPTED_UPLOAD_EXTENSIONS = [
   "webp",
 ] as const;
 
+export const VERTEX_NATIVE_UPLOAD_EXTENSIONS = [
+  "pdf",
+  "ppt",
+  "pptx",
+  "doc",
+  "docx",
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+] as const;
+
+export const VERTEX_NATIVE_UPLOAD_MEDIA_TYPES = [
+  "application/pdf",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+
 export const ACCEPTED_FILE_TYPES = ACCEPTED_UPLOAD_EXTENSIONS.map(
   (extension) => `.${extension}`,
 ).join(",");
@@ -76,4 +99,19 @@ export const validateUploadFile = (file: UploadFileLike) => {
     valid: true,
     message: null,
   } as const;
+};
+
+const vertexNativeUploadExtensionSet = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+);
+const vertexNativeUploadMediaTypeSet = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
+);
+
+export const isVertexNativeCandidate = (fileType: string, fileName: string) => {
+  const extension = getFileExtension(fileName);
+  return (
+    vertexNativeUploadMediaTypeSet.has(fileType) ||
+    vertexNativeUploadExtensionSet.has(extension)
+  );
 };

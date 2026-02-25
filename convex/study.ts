@@ -62,16 +62,39 @@ type GrantDoc = {
 
 const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
 
-const parseMetadataJson = (raw: string | undefined) => {
+const parseMetadataJson = (
+  raw: string | undefined,
+): Record<string, unknown> | null => {
   if (!raw) {
     return null;
   }
 
   try {
-    return JSON.parse(raw) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+
+    return parsed as Record<string, unknown>;
   } catch {
     return null;
   }
+};
+
+const extractClientRequestId = (
+  metadata: Record<string, unknown> | null,
+): string | null => {
+  if (!metadata) {
+    return null;
+  }
+
+  return typeof metadata.clientRequestId === "string"
+    ? metadata.clientRequestId
+    : null;
 };
 
 const ensureGrant = async (
@@ -249,11 +272,16 @@ export const registerUploadedDocument = mutation({
         "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
       );
     }
+    if (finalizedUpload.storageId !== args.storageId) {
+      throw new Error(
+        "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
+      );
+    }
 
     const now = Date.now();
     const documentId = await ctx.db.insert("sessionDocuments", {
       sessionId: args.sessionId,
-      storageId: finalizedUpload.storageId as Id<"_storage">,
+      storageId: args.storageId,
       fileName: args.fileName,
       fileType: args.fileType,
       fileSizeBytes: args.fileSizeBytes,
@@ -301,6 +329,8 @@ export const removeDocument = mutation({
 });
 
 export const createDocumentDownloadUrl = mutation({
+  // Not wired in the current UI yet; kept as the download endpoint for planned
+  // document preview/export actions without exposing raw storage IDs.
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
@@ -680,7 +710,8 @@ export const getLatestAiFailureByClientRequestId = query({
       }
 
       const metadata = parseMetadataJson(event.metadataJson);
-      if (metadata?.clientRequestId !== args.clientRequestId) {
+      const metadataClientRequestId = extractClientRequestId(metadata);
+      if (metadataClientRequestId !== args.clientRequestId) {
         continue;
       }
 

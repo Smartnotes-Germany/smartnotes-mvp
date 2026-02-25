@@ -1863,21 +1863,18 @@ export const evaluateAnswer = action({
               questionTopic: question.topic,
             },
           ),
-          tools: { google_search: vertex.tools.googleSearch({}) },
           system:
             "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder fehlt.",
           prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
-Nutze für deine Antwort zudem die Google Suche (das Internet) um zu überprüfen ob deine 
-Antwort korrekt ist. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
 
 Antwort der lernenden Person:
 ${args.userAnswer}
 
-Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
+Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`,
         });
 
         const resultLog = extractGenerationResultForLog(result);

@@ -124,6 +124,7 @@ const deepDiveSchema = z.object({
 });
 
 type SessionDocumentInput = {
+  _id: Id<"sessionDocuments">;
   storageId: string;
   fileName: string;
   fileType: string;
@@ -524,6 +525,8 @@ const analyticsMetadataAllowlist = new Set([
   "answerLength",
   "timeSpentSeconds",
   "documentsWithoutText",
+  "documentIds",
+  "readyDocumentIds",
   "readyDocuments",
   "totalDocuments",
   "filePartCount",
@@ -1363,6 +1366,8 @@ export const generateQuiz = action({
     let finishReason: string | undefined;
     let totalDocuments = 0;
     let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
@@ -1394,17 +1399,20 @@ Anforderungen:
 
       const documents = quizContext.documents;
       totalDocuments = documents.length;
+      documentIds = documents.map((document) => String(document._id));
 
       const readyDocuments = documents.filter(
         (document: SessionDocumentInput) =>
           document.extractionStatus === "ready",
       );
       readyDocumentsCount = readyDocuments.length;
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
 
       trace.log("info", "documents_loaded", {
         totalDocuments: documents.length,
         readyDocuments: readyDocuments.length,
         documents: documents.map((document) => ({
+          documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
           extractionStatus: document.extractionStatus,
@@ -1524,6 +1532,8 @@ Anforderungen:
               appScope: "generateQuiz",
               stage: "primary",
               readyDocuments: readyDocuments.length,
+              ...(documentIds.length > 0 ? { documentIds } : {}),
+              ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
             },
@@ -1597,6 +1607,8 @@ Anforderungen:
                   appScope: "generateQuiz",
                   stage: "fallback_structured",
                   readyDocuments: readyDocuments.length,
+                  ...(documentIds.length > 0 ? { documentIds } : {}),
+                  ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
                   filePartCount: fileParts.length,
                   sourceContextLength: sourceContext.length,
                 },
@@ -1654,6 +1666,8 @@ Anforderungen:
                   appScope: "generateQuiz",
                   stage: "fallback_json",
                   readyDocuments: readyDocuments.length,
+                  ...(documentIds.length > 0 ? { documentIds } : {}),
+                  ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
                   filePartCount: fileParts.length,
                   sourceContextLength: sourceContext.length,
                 },
@@ -1775,6 +1789,8 @@ Anforderungen:
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
+          ...(documentIds.length > 0 ? { documentIds } : {}),
+          ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
         },
       });
       await flushTelemetry({
@@ -2171,6 +2187,8 @@ export const generateTopicDeepDive = action({
     let finishReason: string | undefined;
     let totalDocuments = 0;
     let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
@@ -2189,17 +2207,20 @@ export const generateTopicDeepDive = action({
 
       const documents = deepDiveContext.documents;
       totalDocuments = documents.length;
+      documentIds = documents.map((document) => String(document._id));
 
       const readyDocuments = documents.filter(
         (document: SessionDocumentInput) =>
           document.extractionStatus === "ready",
       );
       readyDocumentsCount = readyDocuments.length;
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
 
       trace.log("info", "documents_loaded", {
         totalDocuments: documents.length,
         readyDocuments: readyDocuments.length,
         documents: documents.map((document) => ({
+          documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
           extractionStatus: document.extractionStatus,
@@ -2319,6 +2340,8 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
               appScope: "generateTopicDeepDive",
               topic: args.topic,
               readyDocuments: readyDocuments.length,
+              ...(documentIds.length > 0 ? { documentIds } : {}),
+              ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
             },
@@ -2430,6 +2453,8 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         metadata: {
           clientRequestId: args.clientRequestId,
           topic: args.topic,
+          ...(documentIds.length > 0 ? { documentIds } : {}),
+          ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
         },
       });
       await flushTelemetry({

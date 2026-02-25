@@ -10,7 +10,7 @@ Balanced mode keeps deep product and runtime insights while minimizing sensitive
 - Default capture mode:
   - `recordInputs: false`
   - `recordOutputs: false`
-- Trace metadata includes only operational fields (`appScope`, hashed session id, counts, statuses).
+- Trace metadata includes only operational fields (`appScope`, hashed session id, counts, statuses, document ids).
 - Sensitive previews are removed from backend logs.
 - Every AI action attempts a bounded flush before exit, reducing dropped traces in serverless runtimes.
 
@@ -46,13 +46,21 @@ Operational expectation:
 - Langfuse export is still network-dependent and asynchronous.
 - A brief ingestion delay is normal; compare parity after 60-120 seconds.
 
+## Trace Metadata for Document Correlation
+
+- For document-based generation flows (`generateQuiz`, `generateTopicDeepDive`), both telemetry and Convex analytics include:
+  - `documentIds`: all session document ids considered for the run.
+  - `readyDocumentIds`: subset of document ids that were in `ready` state and eligible for model input.
+- Use `traceId` as primary key for cross-system matching, and `documentIds`/`readyDocumentIds` to identify exactly which uploads were part of each observation.
+
 Troubleshooting Convex count != Langfuse count:
 
 1. Verify `telemetryProvider` is `langfuse` in `aiAnalyticsEvents`.
 2. Check `OBSERVABILITY_FLUSH_ON_EXIT=true` and timeout >= `300`.
 3. Compare by `traceId` (source of truth for cross-system matching).
-4. If gaps persist, increase timeout to `500` and re-test.
-5. If still missing, treat Convex analytics as durable source and inspect network/provider health.
+4. Validate `documentIds` / `readyDocumentIds` in metadata for per-upload correlation.
+5. If gaps persist, increase timeout to `500` and re-test.
+6. If still missing, treat Convex analytics as durable source and inspect network/provider health.
 
 ## Retention Automation
 

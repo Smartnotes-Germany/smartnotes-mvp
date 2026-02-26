@@ -4,6 +4,8 @@
 
 Balanced mode keeps deep product and runtime insights while minimizing sensitive data capture.
 
+For the complete environment matrix and scope rules, see `docs/environment.md`.
+
 ## Behavior
 
 - OpenTelemetry + Langfuse tracing is enabled for all AI SDK `generateText` calls.
@@ -64,7 +66,7 @@ Correlation workflow:
 
 - `LANGFUSE_PUBLIC_KEY`
 - `LANGFUSE_SECRET_KEY`
-- `LANGFUSE_BASE_URL` (EU cloud: `https://cloud.langfuse.com`)
+- `LANGFUSE_BASEURL` (EU cloud: `https://cloud.langfuse.com`, alias: `LANGFUSE_BASE_URL`)
 - `OBSERVABILITY_MODE=balanced`
 - `OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE=false`
 - `OBSERVABILITY_HASH_SALT=<random secret>`

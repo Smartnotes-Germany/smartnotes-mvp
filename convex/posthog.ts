@@ -1,5 +1,7 @@
 "use node";
 
+import { readBooleanEnv, readOptionalEnv } from "./env";
+
 const DEFAULT_POSTHOG_HOST = "https://eu.i.posthog.com";
 const CAPTURE_TIMEOUT_MS = 1_500;
 
@@ -28,25 +30,17 @@ type CaptureAiOperationPayload = {
   readyDocumentIds?: string[];
 };
 
-const asBoolean = (rawValue: string | undefined) => {
-  if (!rawValue) {
-    return false;
-  }
-
-  return ["1", "true", "yes", "on"].includes(rawValue.trim().toLowerCase());
-};
-
 const getPostHogConfig = () => {
-  if (!asBoolean(process.env.POSTHOG_ENABLED)) {
+  if (!readBooleanEnv("POSTHOG_ENABLED")) {
     return null;
   }
 
-  const projectKey = process.env.POSTHOG_PROJECT_KEY?.trim();
+  const projectKey = readOptionalEnv("POSTHOG_PROJECT_KEY");
   if (!projectKey) {
     return null;
   }
 
-  const rawHost = process.env.POSTHOG_HOST?.trim() || DEFAULT_POSTHOG_HOST;
+  const rawHost = readOptionalEnv("POSTHOG_HOST") ?? DEFAULT_POSTHOG_HOST;
   const host = rawHost.endsWith("/") ? rawHost.slice(0, -1) : rawHost;
 
   return {

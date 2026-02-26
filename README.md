@@ -23,6 +23,13 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 - A configured Convex project/deployment
 - Google Vertex AI credentials (API key in Express Mode, or project/location auth)
 
+Environment variable reference: `docs/environment.md`.
+
+Validation model:
+
+- Frontend + `vite.config.ts`: T3 Env (`@t3-oss/env-core`)
+- Convex backend: runtime helpers in `convex/env.ts` (Convex-specific runtime)
+
 ## Setup
 
 1. Install dependencies:
@@ -41,9 +48,11 @@ pnpm exec convex dev
 
 ```bash
 VITE_CONVEX_URL=<your-convex-url>
-VITE_PUBLIC_POSTHOG_KEY=<your-posthog-project-key>
-VITE_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
+VITE_POSTHOG_KEY=<your-posthog-project-key>
+VITE_POSTHOG_HOST=https://eu.i.posthog.com
 ```
+
+Tip: start from `.env.example` and keep canonical names (`VITE_POSTHOG_*`).
 
 4. Configure backend env vars in Convex:
 
@@ -57,7 +66,7 @@ pnpm exec convex env set ACCESS_CODE_ADMIN_SECRET <admin-secret>
 # Balanced observability mode (Langfuse + retention)
 pnpm exec convex env set LANGFUSE_PUBLIC_KEY <your-langfuse-public-key>
 pnpm exec convex env set LANGFUSE_SECRET_KEY <your-langfuse-secret-key>
-pnpm exec convex env set LANGFUSE_BASE_URL https://cloud.langfuse.com
+pnpm exec convex env set LANGFUSE_BASEURL https://cloud.langfuse.com
 pnpm exec convex env set OBSERVABILITY_MODE balanced
 pnpm exec convex env set OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE false
 pnpm exec convex env set OBSERVABILITY_HASH_SALT <random-32+-chars>
@@ -76,11 +85,18 @@ pnpm exec convex env set POSTHOG_HOST https://eu.i.posthog.com
 
 ```bash
 # shell env vars before pnpm build
-POSTHOG_API_KEY=<your-posthog-personal-api-key>
-POSTHOG_PROJECT_ID=<your-posthog-project-id>
-# optional, defaults to EU host in this project
-POSTHOG_HOST=https://eu.i.posthog.com
+POSTHOG_SOURCEMAPS_API_KEY=<your-posthog-personal-api-key>
+POSTHOG_SOURCEMAPS_PROJECT_ID=<your-posthog-project-id>
+POSTHOG_SOURCEMAPS_HOST=https://eu.i.posthog.com
+# optional release metadata
+POSTHOG_SOURCEMAPS_RELEASE_NAME=smartnotes
+POSTHOG_SOURCEMAPS_RELEASE_VERSION=0.0.0
 ```
+
+The source-map upload variables are validated as a pair:
+
+- both missing -> upload disabled
+- only one set -> build fails
 
 6. Start the app:
 

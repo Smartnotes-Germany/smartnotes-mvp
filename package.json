@@ -24,6 +24,7 @@
     "@langfuse/tracing": "^4.6.1",
     "@opentelemetry/sdk-node": "^0.212.0",
     "@posthog/react": "^1.8.0",
+    "@t3-oss/env-core": "^0.13.10",
     "@tailwindcss/vite": "^4.1.18",
     "ai": "^6.0.86",
     "clsx": "^2.1.1",

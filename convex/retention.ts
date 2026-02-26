@@ -1,6 +1,7 @@
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "./errorTracking";
+import { readIntegerEnv } from "./env";
 import { components } from "./_generated/api";
 
 const DEFAULT_RAW_RETENTION_DAYS = 14;
@@ -19,25 +20,16 @@ const runRetentionBatchRef = makeFunctionReference<
   }
 >("retention:runRetentionBatch");
 
-const sanitizePositiveInt = (
-  value: string | undefined,
-  fallbackValue: number,
-) => {
-  const parsed = Number.parseInt(value ?? "", 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallbackValue;
-  }
-  return parsed;
-};
-
 const resolveRetentionConfig = () => {
-  const rawRetentionDays = sanitizePositiveInt(
-    process.env.RETENTION_DAYS_RAW_CONTENT,
+  const rawRetentionDays = readIntegerEnv(
+    "RETENTION_DAYS_RAW_CONTENT",
     DEFAULT_RAW_RETENTION_DAYS,
+    { min: 1 },
   );
-  const analyticsRetentionDays = sanitizePositiveInt(
-    process.env.RETENTION_DAYS_ANALYTICS,
+  const analyticsRetentionDays = readIntegerEnv(
+    "RETENTION_DAYS_ANALYTICS",
     DEFAULT_ANALYTICS_RETENTION_DAYS,
+    { min: 1 },
   );
 
   return {

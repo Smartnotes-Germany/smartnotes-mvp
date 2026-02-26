@@ -25,6 +25,7 @@ import {
   redactTextForLog,
 } from "./observability";
 import { captureAiOperationCompleted } from "./posthog";
+import { readOptionalEnv, readRequiredEnv } from "./env";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -203,21 +204,19 @@ const resolveMediaType = (fileType: string, fileName: string) => {
 };
 
 const createVertexModel = () => {
-  const apiKey = process.env.GOOGLE_VERTEX_API_KEY;
+  const apiKey = readOptionalEnv("GOOGLE_VERTEX_API_KEY");
   if (apiKey) {
     return createVertex({ apiKey });
   }
 
-  const project = process.env.GOOGLE_VERTEX_PROJECT;
-  if (!project) {
-    throw new Error(
-      "Konfiguriere GOOGLE_VERTEX_API_KEY (Express Mode) oder GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_LOCATION.",
-    );
-  }
+  const project = readRequiredEnv(
+    "GOOGLE_VERTEX_PROJECT",
+    "Konfiguriere GOOGLE_VERTEX_API_KEY (Express Mode) oder GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_LOCATION.",
+  );
 
   return createVertex({
     project,
-    location: process.env.GOOGLE_VERTEX_LOCATION ?? "us-central1",
+    location: readOptionalEnv("GOOGLE_VERTEX_LOCATION") ?? "us-central1",
   });
 };
 

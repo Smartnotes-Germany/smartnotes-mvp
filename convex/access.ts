@@ -1,5 +1,6 @@
 import { mutation, query } from "./errorTracking";
 import { v } from "convex/values";
+import { readRequiredEnv } from "./env";
 
 /** Constants for access management */
 const DEMO_ACCESS_CODE = "SMARTNOTES-DEMO-2026";
@@ -168,10 +169,10 @@ export const createAccessCodes = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const expectedSecret = process.env.ACCESS_CODE_ADMIN_SECRET;
-    if (!expectedSecret) {
-      throw new Error("ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.");
-    }
+    const expectedSecret = readRequiredEnv(
+      "ACCESS_CODE_ADMIN_SECRET",
+      "ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.",
+    );
     if (args.adminSecret !== expectedSecret) {
       throw new Error("Ungültiges Admin-Secret.");
     }

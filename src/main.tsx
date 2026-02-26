@@ -10,20 +10,11 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { PostHogErrorBoundary, PostHogProvider } from "@posthog/react";
 import "./index.css";
 import App from "./App.tsx";
+import { resolvedFrontendEnv } from "./env";
 import { initializePostHog, posthogClient } from "./features/study/analytics";
 
-/**
- * The URL for the Convex backend.
- * Must be configured in the .env file as VITE_CONVEX_URL.
- */
-const convexUrl = import.meta.env.VITE_CONVEX_URL;
-
-if (!convexUrl) {
-  throw new Error("Missing VITE_CONVEX_URL. Add it to your frontend env file.");
-}
-
 /** Initialization of the Convex React client */
-const convex = new ConvexReactClient(convexUrl);
+const convex = new ConvexReactClient(resolvedFrontendEnv.convexUrl);
 
 initializePostHog();
 

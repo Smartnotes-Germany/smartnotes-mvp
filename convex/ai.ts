@@ -1838,7 +1838,7 @@ export const evaluateAnswer = action({
         trace.log("info", "llm_request", {
           modelId: "gemini-3-flash-preview",
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 300,
           thinkingBudget: 0,
         });
 
@@ -1847,7 +1847,7 @@ export const evaluateAnswer = action({
         const result = await generateText({
           model: model("gemini-3-flash-preview"),
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 300,
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: answerEvaluationSchema,

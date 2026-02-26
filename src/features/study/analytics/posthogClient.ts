@@ -6,6 +6,7 @@ const SENSITIVE_SELECTOR = ".ph-no-capture, [data-ph-sensitive='true']";
 
 let initialized = false;
 
+// Can be removed when T3 ENV is initialised in this project
 const resolvePostHogHost = () => {
   const fromEnv = import.meta.env.VITE_PUBLIC_POSTHOG_HOST;
   if (typeof fromEnv !== "string" || fromEnv.trim().length === 0) {

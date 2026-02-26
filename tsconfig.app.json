@@ -25,5 +25,5 @@
     "noUncheckedSideEffectImports": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src", "shared"]
+  "include": ["src", "shared", "vite.config.ts"]
 }

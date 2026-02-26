@@ -6,7 +6,6 @@ import posthogRollupPlugin from "@posthog/rollup-plugin";
 const posthogApiKey = process.env.POSTHOG_API_KEY;
 const posthogProjectId = process.env.POSTHOG_PROJECT_ID;
 const posthogHost = process.env.POSTHOG_HOST ?? "https://eu.i.posthog.com";
-const shouldUploadSourceMaps = Boolean(posthogApiKey && posthogProjectId);
 const posthogReleaseName =
   process.env.POSTHOG_RELEASE_NAME ??
   process.env.npm_package_name ??
@@ -16,21 +15,27 @@ const posthogReleaseVersion =
   process.env.npm_package_version ??
   "0.0.0";
 
-const sourceMapPlugins =
-  shouldUploadSourceMaps && posthogApiKey && posthogProjectId
-    ? [
-        posthogRollupPlugin({
-          personalApiKey: posthogApiKey,
-          projectId: posthogProjectId,
-          host: posthogHost,
-          sourcemaps: {
-            enabled: true,
-            releaseName: posthogReleaseName,
-            releaseVersion: posthogReleaseVersion,
-          },
-        }),
-      ]
-    : [];
+const sourceMapPlugins = (() => {
+  // Will not be longer necessary when we got T3 ENV initialised.
+  if (!posthogApiKey || !posthogProjectId) {
+    return [];
+  }
+
+  return [
+    posthogRollupPlugin({
+      personalApiKey: posthogApiKey,
+      projectId: posthogProjectId,
+      host: posthogHost,
+      sourcemaps: {
+        enabled: true,
+        releaseName: posthogReleaseName,
+        releaseVersion: posthogReleaseVersion,
+      },
+    }),
+  ];
+})();
+
+const shouldUploadSourceMaps = sourceMapPlugins.length > 0;
 
 // https://vite.dev/config/
 export default defineConfig({

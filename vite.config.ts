@@ -16,7 +16,6 @@ const resolveBuildEnv = (mode: string) => {
       POSTHOG_SOURCEMAPS_API_KEY: z.string().min(1).optional(),
       POSTHOG_SOURCEMAPS_PROJECT_ID: z.string().min(1).optional(),
       POSTHOG_SOURCEMAPS_HOST: z
-        .string()
         .url()
         .default("https://eu.i.posthog.com"),
       POSTHOG_SOURCEMAPS_RELEASE_NAME: z.string().min(1).optional(),
@@ -25,7 +24,7 @@ const resolveBuildEnv = (mode: string) => {
       // Abwärtskompatibilität
       POSTHOG_API_KEY: z.string().min(1).optional(),
       POSTHOG_PROJECT_ID: z.string().min(1).optional(),
-      POSTHOG_HOST: z.string().url().optional(),
+      POSTHOG_HOST: z.url().optional(),
       POSTHOG_RELEASE_NAME: z.string().min(1).optional(),
       POSTHOG_RELEASE_VERSION: z.string().min(1).optional(),
 

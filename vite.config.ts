@@ -18,7 +18,9 @@ const posthogReleaseVersion =
 const sourceMapPlugins = (() => {
   // Will not be longer necessary when we got T3 ENV initialised.
   if (!posthogApiKey || !posthogProjectId) {
-    return [];
+    throw new Error(
+      "POSTHOG_API_KEY und POSTHOG_PROJECT_ID müssen beide gesetzt sein.",
+    );
   }
 
   return [

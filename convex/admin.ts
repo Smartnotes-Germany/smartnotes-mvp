@@ -218,3 +218,39 @@ export const deleteData = mutation({
     };
   },
 });
+
+export const verifySecret = query({
+  args: {
+    adminSecret: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      assertAdminSecret(args.adminSecret);
+      return { valid: true };
+    } catch {
+      return { valid: false };
+    }
+  },
+});
+
+export const generateMagicLink = mutation({
+  args: {
+    adminSecret: v.string(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    assertAdminSecret(args.adminSecret);
+
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const now = Date.now();
+
+    await ctx.db.insert("accessCodes", {
+      code,
+      normalizedCode: code,
+      createdAt: now,
+      note: args.note ?? "Generated via Admin Dashboard",
+    });
+
+    return { code };
+  },
+});

@@ -430,6 +430,7 @@ export const getDocumentExtractionContext = internalQuery({
 
     return {
       document,
+      accessKey: buildGrantAccessKey(grant._id),
     };
   },
 });
@@ -491,6 +492,7 @@ export const getQuizGenerationContext = internalQuery({
     return {
       session,
       documents,
+      accessKey: buildGrantAccessKey(grant._id),
     };
   },
 });

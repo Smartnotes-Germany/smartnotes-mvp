@@ -208,6 +208,13 @@ const createDocumentReadUrl = async (
   },
   storageId: string,
   accessKey?: string,
+  trace?: {
+    log: (
+      level: "info" | "warn" | "error",
+      event: string,
+      details?: Record<string, unknown>,
+    ) => void;
+  },
 ) => {
   if (accessKey) {
     try {
@@ -241,11 +248,27 @@ const createDocumentReadUrl = async (
         source: "storage" as const,
         status: consumeResult.status,
       };
-    } catch {
+    } catch (error) {
+      const grantErrorDetail =
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+            }
+          : {
+              type: typeof error,
+            };
+
+      trace?.log("warn", "document_download_grant_url_failed", {
+        storageId,
+        grantErrorDetail,
+      });
+
       return {
         fileUrl: await ctx.storage.getUrl(storageId),
         source: "storage" as const,
         status: "grant_error",
+        grantErrorDetail,
       };
     }
   }
@@ -364,11 +387,8 @@ const buildModelInputFromDocuments = async (
         );
       }
 
-      const { fileUrl, source, status } = await createDocumentReadUrl(
-        ctx,
-        document.storageId,
-        accessKey,
-      );
+      const { fileUrl, source, status, grantErrorDetail } =
+        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
       if (!fileUrl) {
         if (document.extractedText) {
           textOnlyDocuments.push({
@@ -386,6 +406,7 @@ const buildModelInputFromDocuments = async (
         fileName: document.fileName,
         source,
         status,
+        grantErrorDetail,
         elapsedMs: Date.now() - fileLoadStartedAt,
       });
 
@@ -1419,22 +1440,20 @@ export const extractDocumentContent = action({
     }
 
     try {
-      const { fileUrl, source, status } = await createDocumentReadUrl(
-        ctx,
-        document.storageId,
-        accessKey,
-      );
+      const { fileUrl, source, status, grantErrorDetail } =
+        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
       if (!fileUrl) {
         throw new Error(
           "Auf das hochgeladene Dokument kann nicht zugegriffen werden.",
         );
       }
 
-      trace.log("info", "storage_url_loaded", {
+      trace.log("info", "document_url_loaded", {
         fileName: document.fileName,
         hasUrl: true,
         source,
         status,
+        grantErrorDetail,
       });
 
       const response = await fetch(fileUrl);

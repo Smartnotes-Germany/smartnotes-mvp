@@ -1,7 +1,7 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import { createVertex, vertex } from "@ai-sdk/google-vertex";
+import { createVertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";

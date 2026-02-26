@@ -220,7 +220,14 @@ export function useUploadFlow({
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [documents, generateQuiz, grantToken, sessionId, documentCount, readyDocumentCount]);
+  }, [
+    documents,
+    generateQuiz,
+    grantToken,
+    sessionId,
+    documentCount,
+    readyDocumentCount,
+  ]);
 
   const removeDocumentById = useCallback(
     async (documentId: string) => {

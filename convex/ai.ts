@@ -1,12 +1,12 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import { createVertex, vertex } from "@ai-sdk/google-vertex";
+import { createVertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
 import { action, type ActionCtx } from "./errorTracking";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
   MAX_UPLOAD_FILE_BYTES,
@@ -30,6 +30,7 @@ const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
 const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
+const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
 const vertexProviderOptions = {
   google: {
@@ -200,6 +201,62 @@ const resolveMediaType = (fileType: string, fileName: string) => {
   return extensionToMediaType[extension] ?? "application/octet-stream";
 };
 
+const createDocumentReadUrl = async (
+  ctx: {
+    runMutation: ActionCtx["runMutation"];
+    storage: { getUrl: (storageId: string) => Promise<string | null> };
+  },
+  storageId: string,
+  accessKey?: string,
+) => {
+  if (accessKey) {
+    try {
+      const downloadGrant = await ctx.runMutation(
+        components.convexFilesControl.download.createDownloadGrant,
+        {
+          storageId,
+          maxUses: 1,
+          expiresAt: Date.now() + DOWNLOAD_GRANT_TTL_MS,
+        },
+      );
+
+      const consumeResult = await ctx.runMutation(
+        components.convexFilesControl.download.consumeDownloadGrantForUrl,
+        {
+          downloadToken: downloadGrant.downloadToken,
+          accessKey,
+        },
+      );
+
+      if (consumeResult.status === "ok" && consumeResult.downloadUrl) {
+        return {
+          fileUrl: consumeResult.downloadUrl,
+          source: "download_grant" as const,
+          status: consumeResult.status,
+        };
+      }
+
+      return {
+        fileUrl: await ctx.storage.getUrl(storageId),
+        source: "storage" as const,
+        status: consumeResult.status,
+      };
+    } catch {
+      return {
+        fileUrl: await ctx.storage.getUrl(storageId),
+        source: "storage" as const,
+        status: "grant_error",
+      };
+    }
+  }
+
+  return {
+    fileUrl: await ctx.storage.getUrl(storageId),
+    source: "storage" as const,
+    status: "direct",
+  };
+};
+
 const createVertexModel = () => {
   const apiKey = process.env.GOOGLE_VERTEX_API_KEY;
   if (apiKey) {
@@ -253,17 +310,19 @@ const buildSourceContext = (
   return compactText(sections.join("\n\n---\n\n"), MAX_PROMPT_CONTEXT_CHARS);
 };
 
-const buildModelInputFromDocuments = async <TStorageId>(
+const buildModelInputFromDocuments = async (
   ctx: {
-    storage: { getUrl: (storageId: TStorageId) => Promise<string | null> };
+    runMutation: ActionCtx["runMutation"];
+    storage: { getUrl: (storageId: string) => Promise<string | null> };
   },
   documents: Array<{
-    storageId: TStorageId;
+    storageId: string;
     fileName: string;
     fileType: string;
     fileSizeBytes?: number;
     extractedText?: string;
   }>,
+  accessKey?: string,
   trace?: {
     log: (
       level: "info" | "warn" | "error",
@@ -305,7 +364,11 @@ const buildModelInputFromDocuments = async <TStorageId>(
         );
       }
 
-      const fileUrl = await ctx.storage.getUrl(document.storageId);
+      const { fileUrl, source, status } = await createDocumentReadUrl(
+        ctx,
+        document.storageId,
+        accessKey,
+      );
       if (!fileUrl) {
         if (document.extractedText) {
           textOnlyDocuments.push({
@@ -321,6 +384,8 @@ const buildModelInputFromDocuments = async <TStorageId>(
 
       trace?.log("info", "model_input_document_url_loaded", {
         fileName: document.fileName,
+        source,
+        status,
         elapsedMs: Date.now() - fileLoadStartedAt,
       });
 
@@ -1313,14 +1378,16 @@ export const extractDocumentContent = action({
       extractionStatus: "processing",
     });
 
-    const { document } = await ctx.runQuery(
-      internal.study.getDocumentExtractionContext,
-      {
-        grantToken: args.grantToken,
-        sessionId: args.sessionId,
-        documentId: args.documentId,
-      },
-    );
+    const extractionContext: {
+      document: SessionDocumentInput;
+      accessKey?: string;
+    } = await ctx.runQuery(internal.study.getDocumentExtractionContext, {
+      grantToken: args.grantToken,
+      sessionId: args.sessionId,
+      documentId: args.documentId,
+    });
+    const document = extractionContext.document;
+    const accessKey = extractionContext.accessKey;
 
     trace.log("info", "context_loaded", {
       fileName: document.fileName,
@@ -1352,7 +1419,11 @@ export const extractDocumentContent = action({
     }
 
     try {
-      const fileUrl = await ctx.storage.getUrl(document.storageId);
+      const { fileUrl, source, status } = await createDocumentReadUrl(
+        ctx,
+        document.storageId,
+        accessKey,
+      );
       if (!fileUrl) {
         throw new Error(
           "Auf das hochgeladene Dokument kann nicht zugegriffen werden.",
@@ -1362,6 +1433,8 @@ export const extractDocumentContent = action({
       trace.log("info", "storage_url_loaded", {
         fileName: document.fileName,
         hasUrl: true,
+        source,
+        status,
       });
 
       const response = await fetch(fileUrl);
@@ -1471,13 +1544,16 @@ Anforderungen:
         instructionLength: quizInstruction.length,
       });
 
-      const quizContext: { documents: SessionDocumentInput[] } =
-        await ctx.runQuery(internal.study.getQuizGenerationContext, {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        });
+      const quizContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
 
       const documents = quizContext.documents;
+      const accessKey = quizContext.accessKey;
       totalDocuments = documents.length;
 
       const readyDocuments = documents.filter(
@@ -1550,6 +1626,7 @@ Anforderungen:
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
+          accessKey,
           trace,
         );
         fileParts = modelInput.fileParts;
@@ -2296,13 +2373,16 @@ export const generateTopicDeepDive = action({
         topic: args.topic,
       });
 
-      const deepDiveContext: { documents: SessionDocumentInput[] } =
-        await ctx.runQuery(internal.study.getQuizGenerationContext, {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        });
+      const deepDiveContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
 
       const documents = deepDiveContext.documents;
+      const accessKey = deepDiveContext.accessKey;
       totalDocuments = documents.length;
 
       const readyDocuments = documents.filter(
@@ -2370,6 +2450,7 @@ export const generateTopicDeepDive = action({
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
+          accessKey,
           trace,
         );
 

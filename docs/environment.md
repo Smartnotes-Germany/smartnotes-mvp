@@ -31,11 +31,6 @@ Used in browser code (`src/env.ts`).
 | `VITE_POSTHOG_KEY`  | no       | -                          | Enables frontend PostHog when set       |
 | `VITE_POSTHOG_HOST` | no       | `https://eu.i.posthog.com` | PostHog ingest host                     |
 
-Legacy aliases (migration only):
-
-- `VITE_PUBLIC_POSTHOG_KEY`
-- `VITE_PUBLIC_POSTHOG_HOST`
-
 ## Build-time env for `vite.config.ts` (validated via T3 Env)
 
 Used only during `vite build`.

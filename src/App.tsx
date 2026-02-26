@@ -90,12 +90,14 @@ function App() {
   const uploadFlow = useUploadFlow({
     grantToken,
     sessionId,
+    documents,
     documentCount: documents.length,
     readyDocumentCount,
   });
   const analysisFlow = useAnalysisFlow({
     grantToken,
     sessionId,
+    documents,
     answeredQuestions: stats?.answeredQuestions,
     totalQuestions: stats?.totalQuestions,
   });

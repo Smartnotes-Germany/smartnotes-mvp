@@ -9,6 +9,13 @@ import { action, type ActionCtx } from "./errorTracking";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
+  formatFileSizeMiB,
+} from "../shared/uploadPolicy";
+import {
   buildTelemetryConfig,
   flushTelemetry,
   getObservabilityMode,
@@ -21,8 +28,8 @@ import { captureAiOperationCompleted } from "./posthog";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
-const MAX_VERTEX_INLINE_FILE_BYTES = 7 * 1024 * 1024;
-const MAX_VERTEX_INLINE_FILE_LABEL = "7 MiB";
+const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
+const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
 
 const vertexProviderOptions = {
@@ -42,27 +49,12 @@ const plainTextExtensions = new Set([
   "yaml",
   "yml",
 ]);
-const vertexNativeFileExtensions = new Set([
-  "pdf",
-  "ppt",
-  "pptx",
-  "doc",
-  "docx",
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-]);
-const vertexNativeMediaTypes = new Set([
-  "application/pdf",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+const vertexNativeFileExtensions = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+);
+const vertexNativeMediaTypes = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
+);
 
 const extensionToMediaType: Record<string, string> = {
   pdf: "application/pdf",
@@ -129,6 +121,7 @@ type SessionDocumentInput = {
   storageId: string;
   fileName: string;
   fileType: string;
+  fileSizeBytes: number;
   extractedText?: string;
   extractionStatus: "pending" | "processing" | "ready" | "failed";
 };
@@ -155,7 +148,7 @@ const compactText = (value: string, maxChars: number) => {
   if (normalized.length <= maxChars) {
     return normalized;
   }
-  return `${normalized.slice(0, maxChars)}\n\n[Inhalt wurde fuer die Verarbeitung gekuerzt.]`;
+  return `${normalized.slice(0, maxChars)}\n\n[Inhalt wurde für die Verarbeitung gekürzt.]`;
 };
 
 const filenameExtension = (name: string) => {
@@ -168,19 +161,28 @@ const filenameExtension = (name: string) => {
 
 const decodeUtf8 = (buffer: Buffer) => new TextDecoder("utf-8").decode(buffer);
 
-const formatMebibytes = (bytes: number) => {
-  const mebibytes = bytes / (1024 * 1024);
-  return `${mebibytes.toFixed(1)} MiB`;
-};
-
 const buildInlineFileTooLargeError = (fileName: string, sizeBytes?: number) => {
   const sizeDetail =
     sizeBytes && Number.isFinite(sizeBytes)
-      ? ` (${formatMebibytes(sizeBytes)})`
+      ? ` (${formatFileSizeMiB(sizeBytes)})`
       : "";
 
   return new Error(
     `Die Datei "${fileName}"${sizeDetail} ist zu groß für die aktuelle KI-Verarbeitung (maximal ${MAX_VERTEX_INLINE_FILE_LABEL} pro Datei). Bitte verkleinere die Datei oder teile sie auf.`,
+  );
+};
+
+const getOversizedInlineDocuments = (
+  documents: Array<{
+    fileName: string;
+    fileType: string;
+    fileSizeBytes: number;
+  }>,
+) => {
+  return documents.filter(
+    (document) =>
+      isVertexNativeCandidate(document.fileType, document.fileName) &&
+      document.fileSizeBytes > MAX_VERTEX_INLINE_FILE_BYTES,
   );
 };
 
@@ -261,6 +263,7 @@ const buildModelInputFromDocuments = async <TStorageId>(
     storageId: TStorageId;
     fileName: string;
     fileType: string;
+    fileSizeBytes?: number;
     extractedText?: string;
   }>,
   trace?: {
@@ -286,7 +289,23 @@ const buildModelInputFromDocuments = async <TStorageId>(
       trace?.log("info", "model_input_document_load_started", {
         fileName: document.fileName,
         fileType: document.fileType,
+        fileSizeBytes: document.fileSizeBytes,
       });
+
+      if (
+        Number.isFinite(document.fileSizeBytes) &&
+        (document.fileSizeBytes ?? 0) > MAX_VERTEX_INLINE_FILE_BYTES
+      ) {
+        trace?.log("warn", "model_input_document_size_precheck_failed", {
+          fileName: document.fileName,
+          fileSizeBytes: document.fileSizeBytes,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+        });
+        throw buildInlineFileTooLargeError(
+          document.fileName,
+          document.fileSizeBytes,
+        );
+      }
 
       const fileUrl = await ctx.storage.getUrl(document.storageId);
       if (!fileUrl) {
@@ -317,7 +336,7 @@ const buildModelInputFromDocuments = async <TStorageId>(
           continue;
         }
         throw new Error(
-          `Datei-Download fehlgeschlagen (${response.status}) fuer ${document.fileName}`,
+          `Datei-Download fehlgeschlagen (${response.status}) für ${document.fileName}`,
         );
       }
 
@@ -489,6 +508,12 @@ type VertexUsageSnapshot = {
 type PersistedAiAnalyticsStatus = "success" | "error";
 type PersistedPrivacyMode = "balanced" | "full" | "off";
 type PersistedTelemetryProvider = "langfuse" | "none";
+type PersistedAiErrorCategory =
+  | "file_too_large"
+  | "storage_fetch_failed"
+  | "model_no_output"
+  | "vertex_request_failed"
+  | "unknown";
 
 type PersistedAiAnalyticsPayload = {
   traceId: string;
@@ -510,6 +535,7 @@ type PersistedAiAnalyticsPayload = {
   filePartCount?: number;
   sourceContextLength?: number;
   outputQuestionCount?: number;
+  errorCategory?: PersistedAiErrorCategory;
   error?: ReturnType<typeof extractErrorForLog>;
   metadata?: Record<string, unknown>;
 };
@@ -818,6 +844,64 @@ const extractErrorForLog = (error: unknown) => {
   };
 };
 
+const classifyAiErrorCategory = (
+  error: unknown,
+): PersistedAiErrorCategory | undefined => {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+
+  const message = error.message.toLowerCase();
+  const hasMaximalSizeHint =
+    message.includes("maximal") &&
+    (/(maximal\s+[\d.,]+\s*(kib|kb|mib|mb|gib|gb))/.test(message) ||
+      /(maximal(?:e|er|en)?\s+(dateigröße|datei[- ]?größe|file size|größe|size))/.test(
+        message,
+      ) ||
+      /((dateigröße|datei[- ]?größe|file size|größe|size)\s+maximal)/.test(
+        message,
+      ));
+
+  if (
+    message.includes("zu groß") ||
+    message.includes("too large") ||
+    message.includes("payload too large") ||
+    message.includes("entity too large") ||
+    hasMaximalSizeHint
+  ) {
+    return "file_too_large";
+  }
+
+  if (
+    message.includes("datei konnte nicht gelesen werden") ||
+    message.includes("datei-download fehlgeschlagen") ||
+    message.includes("kann nicht zugegriffen") ||
+    message.includes("storage")
+  ) {
+    return "storage_fetch_failed";
+  }
+
+  if (
+    message.includes("keine fragen erzeugt") ||
+    message.includes("keine vertiefungsfragen erzeugt") ||
+    message.includes("no output")
+  ) {
+    return "model_no_output";
+  }
+
+  if (
+    message.includes("vertex") ||
+    message.includes("generatecontent") ||
+    message.includes("quota") ||
+    message.includes("ratelimit") ||
+    message.includes("rate limit")
+  ) {
+    return "vertex_request_failed";
+  }
+
+  return "unknown";
+};
+
 const extractUsageFromError = (error: unknown) => {
   if (typeof error !== "object" || error === null) {
     return undefined;
@@ -1054,6 +1138,7 @@ const persistAiAnalyticsEvent = async (
       filePartCount: payload.filePartCount,
       sourceContextLength: payload.sourceContextLength,
       outputQuestionCount: payload.outputQuestionCount,
+      errorCategory: payload.errorCategory,
       errorName:
         errorRecord &&
         "name" in errorRecord &&
@@ -1468,6 +1553,7 @@ Anforderungen:
           documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
           extractionStatus: document.extractionStatus,
           extractedTextLength: document.extractedText?.length ?? 0,
         })),
@@ -1477,6 +1563,28 @@ Anforderungen:
         trace.log("warn", "no_ready_documents");
         throw new Error(
           "Lade mindestens ein Dokument hoch und verarbeite es, bevor du Quizfragen generierst.",
+        );
+      }
+
+      const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
+      if (oversizedDocuments.length > 0) {
+        trace.log("warn", "oversized_documents_blocked", {
+          oversizedCount: oversizedDocuments.length,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          files: oversizedDocuments.map((document) => ({
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+          })),
+        });
+
+        const filesPreview = oversizedDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedDocuments.length > 3 ? " ..." : "";
+
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${filesPreview}${suffix}`,
         );
       }
 
@@ -1500,6 +1608,7 @@ Anforderungen:
             storageId: document.storageId,
             fileName: document.fileName,
             fileType: document.fileType,
+            fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
           trace,
@@ -1836,6 +1945,9 @@ Anforderungen:
         filePartCount,
         sourceContextLength,
         outputQuestionCount,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
@@ -1903,7 +2015,7 @@ export const evaluateAnswer = action({
         trace.log("info", "llm_request", {
           modelId: "gemini-3-flash-preview",
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 300,
           thinkingBudget: 0,
         });
 
@@ -1912,7 +2024,7 @@ export const evaluateAnswer = action({
         const result = await generateText({
           model: model("gemini-3-flash-preview"),
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 300,
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: answerEvaluationSchema,
@@ -1928,21 +2040,18 @@ export const evaluateAnswer = action({
               questionTopic: question.topic,
             },
           ),
-          tools: { google_search: vertex.tools.googleSearch({}) },
           system:
             "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder fehlt.",
           prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
-Nutze für deine Antwort zudem die Google Suche (das Internet) um zu überprüfen ob deine 
-Antwort korrekt ist. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
 
 Antwort der lernenden Person:
 ${args.userAnswer}
 
-Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
+Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`,
         });
 
         const resultLog = extractGenerationResultForLog(result);
@@ -2023,6 +2132,9 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
         usage: trace.getUsageTotals(),
         vertexUsage: vertexUsageTotals,
         finishReason,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
@@ -2217,6 +2329,9 @@ Sei streng, aber konstruktiv.`,
         usage: trace.getUsageTotals(),
         vertexUsage: vertexUsageTotals,
         finishReason,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
@@ -2293,6 +2408,7 @@ export const generateTopicDeepDive = action({
           documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
           extractionStatus: document.extractionStatus,
           extractedTextLength: document.extractedText?.length ?? 0,
         })),
@@ -2301,7 +2417,29 @@ export const generateTopicDeepDive = action({
       if (readyDocuments.length === 0) {
         trace.log("warn", "no_ready_documents");
         throw new Error(
-          "Es ist kein verarbeitetes Material fuer die Vertiefung verfuegbar.",
+          "Es ist kein verarbeitetes Material für die Vertiefung verfügbar.",
+        );
+      }
+
+      const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
+      if (oversizedDocuments.length > 0) {
+        trace.log("warn", "oversized_documents_blocked", {
+          oversizedCount: oversizedDocuments.length,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          files: oversizedDocuments.map((document) => ({
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+          })),
+        });
+
+        const filesPreview = oversizedDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedDocuments.length > 3 ? " ..." : "";
+
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${filesPreview}${suffix}`,
         );
       }
 
@@ -2320,6 +2458,7 @@ export const generateTopicDeepDive = action({
             storageId: document.storageId,
             fileName: document.fileName,
             fileType: document.fileType,
+            fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
           trace,
@@ -2351,7 +2490,7 @@ export const generateTopicDeepDive = action({
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
         throw new Error(
-          "Es konnten keine nutzbaren Inhalte fuer die Vertiefung gelesen werden.",
+          "Es konnten keine nutzbaren Inhalte für die Vertiefung gelesen werden.",
         );
       }
 
@@ -2363,14 +2502,14 @@ export const generateTopicDeepDive = action({
           type: "text",
           text: `Erstelle 5 kurze Vertiefungsfragen zu folgendem Thema: ${args.topic}
 
-Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah.`,
+Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsnah.`,
         },
       ];
 
       if (sourceContext) {
         userContent.push({
           type: "text",
-          text: `Zusaetzliche Textauszuege aus den Dateien:\n${sourceContext}`,
+          text: `Zusätzliche Textauszüge aus den Dateien:\n${sourceContext}`,
         });
       }
 
@@ -2518,6 +2657,9 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         filePartCount,
         sourceContextLength,
         outputQuestionCount,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,

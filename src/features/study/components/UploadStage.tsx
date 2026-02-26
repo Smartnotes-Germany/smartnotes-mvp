@@ -1,6 +1,10 @@
 import type { ChangeEvent } from "react";
 import { Loader2, Sparkles, Upload, XCircle } from "lucide-react";
-import { ACCEPTED_FILE_TYPES } from "../constants";
+import {
+  ACCEPTED_FILE_TYPES,
+  ACCEPTED_FILE_TYPES_LABEL,
+  MAX_UPLOAD_FILE_LABEL,
+} from "../constants";
 import type { ExtractionStatus, StudyDocument } from "../types";
 
 type UploadStageProps = {
@@ -43,7 +47,8 @@ export function UploadStage({
               : "Dateien zum Hochladen auswählen"}
           </p>
           <p className="text-ink-muted text-base">
-            PDF, PPT/PPTX, DOC/DOCX, TXT, MD, CSV, JSON, JPG/JPEG, PNG, WEBP
+            {ACCEPTED_FILE_TYPES_LABEL} - maximal {MAX_UPLOAD_FILE_LABEL} pro
+            Datei
           </p>
         </div>
         <input

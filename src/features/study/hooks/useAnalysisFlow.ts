@@ -3,6 +3,12 @@ import { useAction } from "convex/react";
 import { analyzePerformanceRef, generateTopicDeepDiveRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import {
+  isVertexNativeCandidate,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+} from "../../../../shared/uploadPolicy";
+import type { StudyDocument } from "../types";
+import {
   trackAnalysisFailed,
   trackAnalysisRequested,
   trackAnalysisSucceeded,
@@ -14,6 +20,7 @@ import {
 type UseAnalysisFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
+  documents: StudyDocument[];
   answeredQuestions?: number;
   totalQuestions?: number;
 };
@@ -21,6 +28,7 @@ type UseAnalysisFlowArgs = {
 export function useAnalysisFlow({
   grantToken,
   sessionId,
+  documents,
   answeredQuestions,
   totalQuestions,
 }: UseAnalysisFlowArgs) {
@@ -77,6 +85,26 @@ export function useAnalysisFlow({
         return;
       }
 
+      const oversizedReadyDocuments = documents.filter(
+        (document) =>
+          document.extractionStatus === "ready" &&
+          isVertexNativeCandidate(document.fileType, document.fileName) &&
+          document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
+      );
+
+      if (oversizedReadyDocuments.length > 0) {
+        const names = oversizedReadyDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
+
+        setAnalysisError(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`,
+        );
+        return;
+      }
+
       const startedAt = Date.now();
       const clientRequestId = createClientRequestId("generateDeepDive");
       setTopicLoading(topic);
@@ -104,7 +132,7 @@ export function useAnalysisFlow({
         setTopicLoading(null);
       }
     },
-    [generateTopicDeepDive, grantToken, sessionId],
+    [documents, generateTopicDeepDive, grantToken, sessionId],
   );
 
   return {

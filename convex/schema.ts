@@ -24,6 +24,14 @@ const topicInsightValidator = v.object({
   recommendation: v.string(), // Handlungsempfehlung
 });
 
+const aiErrorCategoryValidator = v.union(
+  v.literal("file_too_large"),
+  v.literal("storage_fetch_failed"),
+  v.literal("model_no_output"),
+  v.literal("vertex_request_failed"),
+  v.literal("unknown"),
+);
+
 /** Validator für das Gesamtergebnis einer Lernstandsanalyse. */
 const analysisValidator = v.object({
   overallReadiness: v.number(),
@@ -142,6 +150,7 @@ export default defineSchema({
     filePartCount: v.optional(v.number()),
     sourceContextLength: v.optional(v.number()),
     outputQuestionCount: v.optional(v.number()),
+    errorCategory: v.optional(aiErrorCategoryValidator),
     errorName: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
     errorStackPreview: v.optional(v.string()),

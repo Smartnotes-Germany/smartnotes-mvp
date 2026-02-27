@@ -16,6 +16,10 @@ import {
   formatFileSizeMiB,
 } from "../shared/uploadPolicy";
 import {
+  normalizeTopicKey,
+  topicsMatchForFocusMode,
+} from "../shared/topicMatching";
+import {
   buildTelemetryConfig,
   flushTelemetry,
   getObservabilityMode,
@@ -487,8 +491,6 @@ const buildModelInputFromDocuments = async (
   };
 };
 
-const normalizeTopicKey = (topic: string) => topic.trim().toLocaleLowerCase();
-
 const toComfortScore = (value: number) =>
   Math.round(Math.max(0, Math.min(100, value)));
 
@@ -617,6 +619,148 @@ const buildFallbackAnalysis = (
   return {
     ...summary,
     topics: sortTopicsByComfort(topics),
+  };
+};
+
+const MAX_FULL_MODE_RECENT_RESPONSES = 90;
+const MAX_FULL_MODE_TOPIC_SUMMARIES = 20;
+const MAX_FULL_MODE_PROMPT_CONTEXT_CHARS = 24_000;
+const MAX_FULL_MODE_FIELD_PREVIEW_CHARS = 220;
+
+type FullModeResponseContextInput = {
+  round: number;
+  topic: string;
+  score: number;
+  isCorrect: boolean;
+  prompt: string;
+  userAnswer: string;
+  explanation: string;
+  timeSpentSeconds: number;
+};
+
+const toSingleLinePreview = (value: string, maxChars: number) => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxChars)}…`;
+};
+
+const buildFullModePromptResponseContext = (
+  responses: FullModeResponseContextInput[],
+) => {
+  const roundsCovered = new Set<number>();
+  const topicAggregates = new Map<
+    string,
+    {
+      topic: string;
+      attempts: number;
+      totalScore: number;
+      correctAnswers: number;
+      totalTimeSeconds: number;
+      latestRound: number;
+      latestScore: number;
+    }
+  >();
+
+  for (const response of responses) {
+    roundsCovered.add(response.round);
+
+    const topicKey = normalizeTopicKey(response.topic);
+    const current = topicAggregates.get(topicKey) ?? {
+      topic: response.topic,
+      attempts: 0,
+      totalScore: 0,
+      correctAnswers: 0,
+      totalTimeSeconds: 0,
+      latestRound: response.round,
+      latestScore: response.score,
+    };
+
+    current.attempts += 1;
+    current.totalScore += response.score;
+    current.correctAnswers += response.isCorrect ? 1 : 0;
+    current.totalTimeSeconds += response.timeSpentSeconds;
+
+    if (response.round >= current.latestRound) {
+      current.topic = response.topic;
+      current.latestRound = response.round;
+      current.latestScore = response.score;
+    }
+
+    topicAggregates.set(topicKey, current);
+  }
+
+  const topicSummaries = [...topicAggregates.values()]
+    .map((topic) => {
+      const attempts = Math.max(1, topic.attempts);
+      return {
+        topic: topic.topic,
+        attempts: topic.attempts,
+        averageScore: Math.round(topic.totalScore / attempts),
+        correctnessRate: Math.round((topic.correctAnswers / attempts) * 100),
+        averageTimeSeconds: Math.round(topic.totalTimeSeconds / attempts),
+        latestRound: topic.latestRound,
+        latestScore: Math.round(topic.latestScore),
+      };
+    })
+    .sort((a, b) => {
+      if (a.averageScore !== b.averageScore) {
+        return a.averageScore - b.averageScore;
+      }
+      return b.attempts - a.attempts;
+    })
+    .slice(0, MAX_FULL_MODE_TOPIC_SUMMARIES);
+
+  const recentResponses = responses.slice(-MAX_FULL_MODE_RECENT_RESPONSES);
+  const responsePayload = recentResponses.map((response) => ({
+    round: response.round,
+    topic: response.topic,
+    score: response.score,
+    isCorrect: response.isCorrect,
+    timeSpentSeconds: response.timeSpentSeconds,
+    prompt: toSingleLinePreview(
+      response.prompt,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+    userAnswer: toSingleLinePreview(
+      response.userAnswer,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+    explanation: toSingleLinePreview(
+      response.explanation,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+  }));
+
+  const serializedContext = compactText(
+    JSON.stringify(
+      {
+        overview: {
+          totalResponses: responses.length,
+          includedRecentResponses: responsePayload.length,
+          omittedResponses: Math.max(
+            0,
+            responses.length - responsePayload.length,
+          ),
+          roundsCovered: roundsCovered.size,
+          totalTopics: topicAggregates.size,
+        },
+        topicSummaries,
+        recentResponses: responsePayload,
+      },
+      null,
+      2,
+    ),
+    MAX_FULL_MODE_PROMPT_CONTEXT_CHARS,
+  );
+
+  return {
+    serializedContext,
+    includedRecentResponses: responsePayload.length,
+    omittedResponses: Math.max(0, responses.length - responsePayload.length),
+    topicSummaryCount: topicSummaries.length,
   };
 };
 
@@ -2282,6 +2426,8 @@ export const analyzePerformance = action({
         {
           grantToken: args.grantToken,
           sessionId: args.sessionId,
+          mode: analysisMode,
+          focusTopic: resolvedFocusTopic || undefined,
         },
       );
 
@@ -2298,6 +2444,8 @@ export const analyzePerformance = action({
       const coveredTopics = [
         ...new Set(responses.map((response) => response.topic)),
       ];
+      const fullModePromptContext =
+        buildFullModePromptResponseContext(responses);
 
       if (responses.length === 0) {
         trace.log("warn", "no_responses_available");
@@ -2325,9 +2473,8 @@ export const analyzePerformance = action({
       }
 
       if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
-        const focusTopicKey = normalizeTopicKey(resolvedFocusTopic);
-        const topicResponses = responses.filter(
-          (response) => normalizeTopicKey(response.topic) === focusTopicKey,
+        const topicResponses = responses.filter((response) =>
+          topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
         );
 
         if (topicResponses.length === 0) {
@@ -2400,8 +2547,8 @@ export const analyzePerformance = action({
 
 Vorherige Themenbewertung (falls vorhanden):
 ${JSON.stringify(
-  session.analysis.topics.find(
-    (topic) => normalizeTopicKey(topic.topic) === focusTopicKey,
+  session.analysis.topics.find((topic) =>
+    topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
   ) ?? null,
   null,
   2,
@@ -2462,6 +2609,10 @@ Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
           trace.log("info", "llm_request", {
             modelId: "gemini-3-flash-preview",
             mode: "full",
+            responseCount: responses.length,
+            promptResponseCount: fullModePromptContext.includedRecentResponses,
+            omittedResponseCount: fullModePromptContext.omittedResponses,
+            topicSummaryCount: fullModePromptContext.topicSummaryCount,
             temperature: 0.2,
             maxOutputTokens: 1_500,
             thinkingBudget: 0,
@@ -2498,8 +2649,8 @@ Bewerte alle behandelten Themen ausgewogen und vermeide eine reine Fokussierung 
 
 Fokus-Thema der Sitzung: ${session.currentFocusTopic ?? "kein spezielles Fokus-Thema"}
 Alle behandelten Themen: ${coveredTopics.join(", ") || "keine"}
-Antworten:
-${JSON.stringify(responses, null, 2)}
+Antwortkontext (kompakt, neueste Antworten + Themenstatistik):
+${fullModePromptContext.serializedContext}
 
 Sei streng, aber konstruktiv.`,
           });

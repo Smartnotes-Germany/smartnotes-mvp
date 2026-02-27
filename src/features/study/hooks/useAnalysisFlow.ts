@@ -7,6 +7,7 @@ import {
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
 } from "../../../../shared/uploadPolicy";
+import { topicsMatchForFocusMode } from "../../../../shared/topicMatching";
 import type { QuizQuestion, StudyDocument } from "../types";
 
 type UseAnalysisFlowArgs = {
@@ -42,13 +43,7 @@ export function useAnalysisFlow({
     const hasFocusTopic = normalizedFocusTopic.length > 0;
     const matchingQuestionCount = hasFocusTopic
       ? quizQuestions.filter((question) => {
-          const questionTopic = question.topic.trim().toLocaleLowerCase();
-          const focusTopic = normalizedFocusTopic.toLocaleLowerCase();
-          return (
-            questionTopic === focusTopic ||
-            questionTopic.includes(focusTopic) ||
-            focusTopic.includes(questionTopic)
-          );
+          return topicsMatchForFocusMode(question.topic, normalizedFocusTopic);
         }).length
       : 0;
     const focusedQuizRatio =

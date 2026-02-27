@@ -10,6 +10,21 @@ import {
 } from "./errorTracking";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
+import { topicsMatchForFocusMode } from "../shared/topicMatching";
+
+const MAX_ANALYSIS_FULL_RESPONSES = 240;
+const MAX_ANALYSIS_FOCUS_RESPONSES = 180;
+const MAX_ANALYSIS_FOCUS_SCAN_RESPONSES = 720;
+
+const clampAnalysisResponseLimit = (value: number, mode: "full" | "focus") => {
+  const fallback =
+    mode === "focus"
+      ? MAX_ANALYSIS_FOCUS_RESPONSES
+      : MAX_ANALYSIS_FULL_RESPONSES;
+  const numeric = Number.isFinite(value) ? Math.round(value) : fallback;
+
+  return Math.max(20, Math.min(MAX_ANALYSIS_FOCUS_SCAN_RESPONSES, numeric));
+};
 
 const quizQuestionValidator = v.object({
   id: v.string(),
@@ -622,6 +637,9 @@ export const getAnalysisContext = internalQuery({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    mode: v.optional(v.union(v.literal("full"), v.literal("focus"))),
+    focusTopic: v.optional(v.string()),
+    maxResponses: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
@@ -631,11 +649,39 @@ export const getAnalysisContext = internalQuery({
       grant._id,
     );
 
-    const responses = await ctx.db
+    const mode = args.mode ?? "full";
+    const resolvedFocusTopic =
+      args.focusTopic?.trim() || session.currentFocusTopic?.trim() || "";
+    const responseLimit = clampAnalysisResponseLimit(
+      args.maxResponses ??
+        (mode === "focus"
+          ? MAX_ANALYSIS_FOCUS_RESPONSES
+          : MAX_ANALYSIS_FULL_RESPONSES),
+      mode,
+    );
+
+    const recentResponses = await ctx.db
       .query("quizResponses")
       .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId))
-      .order("asc")
-      .collect();
+      .order("desc")
+      .take(
+        mode === "focus"
+          ? Math.min(
+              MAX_ANALYSIS_FOCUS_SCAN_RESPONSES,
+              Math.max(responseLimit * 3, responseLimit + 40),
+            )
+          : responseLimit,
+      );
+
+    const responses =
+      mode === "focus" && resolvedFocusTopic
+        ? recentResponses
+            .filter((response) =>
+              topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
+            )
+            .slice(0, responseLimit)
+            .reverse()
+        : recentResponses.slice(0, responseLimit).reverse();
 
     const documents = await ctx.db
       .query("sessionDocuments")

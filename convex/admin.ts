@@ -246,9 +246,9 @@ export const generateMagicLink = mutation({
 
     await ctx.db.insert("accessCodes", {
       code,
-      normalizedCode: code,
+      normalizedCode: "SMARTNOTES-" + code,
+      note: args.note,
       createdAt: now,
-      note: args.note ?? "Generated via Admin Dashboard",
     });
 
     return { code };

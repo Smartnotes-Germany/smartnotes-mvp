@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { Key, Check, LogOut, Plus } from "lucide-react";
+import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/logo.png";
 
 export default function AdminDashboard() {
   const [adminSecret, setAdminSecret] = useState(() => localStorage.getItem("adminSecret") || "");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
 
   const verifySecret = useQuery(api.admin.verifySecret, { adminSecret });
   const generateMagicLink = useMutation(api.admin.generateMagicLink);
@@ -30,20 +31,39 @@ export default function AdminDashboard() {
     setAdminSecret("");
     setIsAuthorized(false);
     localStorage.removeItem("adminSecret");
+    setGeneratedLink(null); // Also clear generated link on logout
   };
 
   const handleGenerateLink = async () => {
     try {
+      setCopiedCode(null); // Clear previous "Kopiert!" state
+      setGeneratedLink(null); // Clear previous generated link
       const { code } = await generateMagicLink({ adminSecret, note });
-      const magicLink = `${window.location.origin}/?code=${code}`;
-      await navigator.clipboard.writeText(magicLink);
-      setCopiedCode(code);
-      setNote("");
-      setTimeout(() => setCopiedCode(null), 3000);
+      const magicLink = `https://app.smartnotes.tech/?code=${code}`;
+      setGeneratedLink(magicLink);
+      setNote(""); // Clear the note input after link generation
     } catch (err) {
       console.error(err);
       alert("Fehler beim Generieren des Links.");
     }
+  };
+
+  const handleCopyLink = async () => {
+    if (generatedLink) {
+      try {
+        await navigator.clipboard.writeText(generatedLink);
+        setCopiedCode(generatedLink);
+        setTimeout(() => setCopiedCode(null), 2000); // Reset "Kopiert!" after 2 seconds
+      } catch (err) {
+        console.error("Failed to copy:", err);
+        alert("Fehler beim Kopieren des Links.");
+      }
+    }
+  };
+
+  const handleNewLink = () => {
+    setGeneratedLink(null);
+    setNote("");
   };
 
   if (!isAuthorized) {
@@ -97,7 +117,7 @@ export default function AdminDashboard() {
       <div className="mx-auto max-w-4xl">
         <header className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-4">
-            <img src={logoImage} alt="SmartNotes" className="h-10 w-auto" />
+            <img src={logoImage} alt="SmartNotes" className="h-10 rounded-lg w-auto" />
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">Admin Dashboard</h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">Manage access and tokens</p>
@@ -119,30 +139,64 @@ export default function AdminDashboard() {
               Magic Link erstellen
             </h2>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Notiz (optional)
-                </label>
-                <input
-                  type="text"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Z.B. 'Für Testnutzer X'"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                />
+            {generatedLink ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Generierter Magic Link
+                  </label>
+                  <div className="flex rounded-xl shadow-sm">
+                    <input
+                      type="text"
+                      value={generatedLink}
+                      readOnly
+                      className="flex-1 min-w-0 block w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-l-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                    />
+                    <button
+                      onClick={handleCopyLink}
+                      className="inline-flex items-center px-6 py-3 border border-l-0 border-gray-300 dark:border-gray-700 rounded-r-xl bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    >
+                      {copiedCode ? <Check className="w-5 h-5 mr-2" /> : <Copy className="w-5 h-5 mr-2" />}
+                      {copiedCode ? "Kopiert!" : "Kopieren"}
+                    </button>
+                  </div>
+                </div>
+                <button
+                  onClick={handleNewLink}
+                  className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  Neuen Link generieren
+                </button>
+                {copiedCode && (
+                  <p className="text-sm text-green-600 dark:text-green-400 mt-2 animate-pulse">
+                    Magic Link wurde in die Zwischenablage kopiert!
+                  </p>
+                )}
               </div>
-              <button
-                onClick={handleGenerateLink}
-                className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
-              >
-                {copiedCode ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                {copiedCode ? "Kopiert!" : "Link generieren & kopieren"}
-              </button>
-              {copiedCode && (
-                <p className="text-sm text-green-600 dark:text-green-400 mt-2 animate-pulse">
-                  Magic Link wurde in die Zwischenablage kopiert! (Code: {copiedCode})
-                </p>
-              )}
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Notiz (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder={"Z.B. Name des Nutzers"}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
+                </div>
+                <button
+                  onClick={handleGenerateLink}
+                  className="w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  Link generieren
+                </button>
+              </>
+            )}
             </div>
           </section>
 

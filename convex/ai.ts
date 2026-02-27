@@ -2421,7 +2421,7 @@ export const analyzePerformance = action({
         requestedFocusTopic: args.focusTopic ?? null,
       });
 
-      const { session, responses } = await ctx.runQuery(
+      let { session, responses } = await ctx.runQuery(
         internal.study.getAnalysisContext,
         {
           grantToken: args.grantToken,
@@ -2441,11 +2441,43 @@ export const analyzePerformance = action({
       if (!resolvedFocusTopic) {
         resolvedFocusTopic = toTrimmedString(session.currentFocusTopic);
       }
-      const coveredTopics = [
-        ...new Set(responses.map((response) => response.topic)),
-      ];
-      const fullModePromptContext =
-        buildFullModePromptResponseContext(responses);
+
+      let focusTopicInsight =
+        analysisMode === "focus" && session.analysis && resolvedFocusTopic
+          ? (session.analysis.topics.find((topic) =>
+              topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
+            ) ?? null)
+          : null;
+
+      if (analysisMode === "focus") {
+        if (!session.analysis || !resolvedFocusTopic || !focusTopicInsight) {
+          trace.log("warn", "focus_mode_downgraded_to_full", {
+            hasExistingAnalysis: Boolean(session.analysis),
+            focusTopic: resolvedFocusTopic || null,
+            hasFocusTopicInsight: Boolean(focusTopicInsight),
+          });
+          analysisMode = "full";
+
+          const fullContext = await ctx.runQuery(
+            internal.study.getAnalysisContext,
+            {
+              grantToken: args.grantToken,
+              sessionId: args.sessionId,
+              mode: "full",
+            },
+          );
+
+          session = fullContext.session;
+          responses = fullContext.responses;
+          responseCount = responses.length;
+          focusTopicInsight = null;
+
+          trace.log("info", "context_reloaded_for_full_mode", {
+            responseCount: responses.length,
+            round: session.round,
+          });
+        }
+      }
 
       if (responses.length === 0) {
         trace.log("warn", "no_responses_available");
@@ -2462,16 +2494,6 @@ export const analyzePerformance = action({
 
       let analysis = fallback;
 
-      if (analysisMode === "focus") {
-        if (!session.analysis || !resolvedFocusTopic) {
-          trace.log("warn", "focus_mode_downgraded_to_full", {
-            hasExistingAnalysis: Boolean(session.analysis),
-            focusTopic: resolvedFocusTopic || null,
-          });
-          analysisMode = "full";
-        }
-      }
-
       if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
         const topicResponses = responses.filter((response) =>
           topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
@@ -2482,6 +2504,25 @@ export const analyzePerformance = action({
             focusTopic: resolvedFocusTopic,
           });
           analysisMode = "full";
+
+          const fullContext = await ctx.runQuery(
+            internal.study.getAnalysisContext,
+            {
+              grantToken: args.grantToken,
+              sessionId: args.sessionId,
+              mode: "full",
+            },
+          );
+
+          session = fullContext.session;
+          responses = fullContext.responses;
+          responseCount = responses.length;
+
+          trace.log("info", "context_reloaded_for_full_mode", {
+            responseCount: responses.length,
+            round: session.round,
+            reason: "focus_mode_missing_topic_responses",
+          });
         } else {
           const fallbackAverage =
             topicResponses.reduce(
@@ -2546,13 +2587,7 @@ export const analyzePerformance = action({
               prompt: `Analysiere ausschließlich das Thema "${resolvedFocusTopic}" anhand der Antworten.
 
 Vorherige Themenbewertung (falls vorhanden):
-${JSON.stringify(
-  session.analysis.topics.find((topic) =>
-    topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
-  ) ?? null,
-  null,
-  2,
-)}
+${JSON.stringify(focusTopicInsight, null, 2)}
 
 Antworten nur zu diesem Thema:
 ${JSON.stringify(topicResponses, null, 2)}
@@ -2606,6 +2641,12 @@ Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
 
       if (analysisMode === "full") {
         try {
+          const coveredTopics = [
+            ...new Set(responses.map((response) => response.topic)),
+          ];
+          const fullModePromptContext =
+            buildFullModePromptResponseContext(responses);
+
           trace.log("info", "llm_request", {
             modelId: "gemini-3-flash-preview",
             mode: "full",

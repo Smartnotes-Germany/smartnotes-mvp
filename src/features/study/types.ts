@@ -36,6 +36,7 @@ export type StudySession = {
   title: string;
   stage: StudyStage;
   round: number;
+  currentFocusTopic?: string;
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;
 };

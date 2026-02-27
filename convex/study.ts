@@ -633,9 +633,8 @@ export const getAnalysisContext = internalQuery({
 
     const responses = await ctx.db
       .query("quizResponses")
-      .withIndex("by_session_round", (q) =>
-        q.eq("sessionId", args.sessionId).eq("round", session.round),
-      )
+      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId))
+      .order("asc")
       .collect();
 
     const documents = await ctx.db

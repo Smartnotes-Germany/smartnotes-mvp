@@ -2449,6 +2449,27 @@ export const analyzePerformance = action({
             ) ?? null)
           : null;
 
+      const reloadContextForFullMode = async (reason: string) => {
+        const fullContext = await ctx.runQuery(
+          internal.study.getAnalysisContext,
+          {
+            grantToken: args.grantToken,
+            sessionId: args.sessionId,
+            mode: "full",
+          },
+        );
+
+        session = fullContext.session;
+        responses = fullContext.responses;
+        responseCount = responses.length;
+
+        trace.log("info", "context_reloaded_for_full_mode", {
+          responseCount: responses.length,
+          round: session.round,
+          reason,
+        });
+      };
+
       if (analysisMode === "focus") {
         if (!session.analysis || !resolvedFocusTopic || !focusTopicInsight) {
           trace.log("warn", "focus_mode_downgraded_to_full", {
@@ -2457,25 +2478,8 @@ export const analyzePerformance = action({
             hasFocusTopicInsight: Boolean(focusTopicInsight),
           });
           analysisMode = "full";
-
-          const fullContext = await ctx.runQuery(
-            internal.study.getAnalysisContext,
-            {
-              grantToken: args.grantToken,
-              sessionId: args.sessionId,
-              mode: "full",
-            },
-          );
-
-          session = fullContext.session;
-          responses = fullContext.responses;
-          responseCount = responses.length;
+          await reloadContextForFullMode("focus_mode_missing_prerequisites");
           focusTopicInsight = null;
-
-          trace.log("info", "context_reloaded_for_full_mode", {
-            responseCount: responses.length,
-            round: session.round,
-          });
         }
       }
 
@@ -2487,12 +2491,10 @@ export const analyzePerformance = action({
       }
 
       const model = createVertexModel();
-      const fallback = buildFallbackAnalysis(
+      let analysis = buildFallbackAnalysis(
         responses,
-        resolvedFocusTopic || undefined,
+        analysisMode === "focus" ? resolvedFocusTopic || undefined : undefined,
       );
-
-      let analysis = fallback;
 
       if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
         const topicResponses = responses.filter((response) =>
@@ -2504,25 +2506,8 @@ export const analyzePerformance = action({
             focusTopic: resolvedFocusTopic,
           });
           analysisMode = "full";
-
-          const fullContext = await ctx.runQuery(
-            internal.study.getAnalysisContext,
-            {
-              grantToken: args.grantToken,
-              sessionId: args.sessionId,
-              mode: "full",
-            },
-          );
-
-          session = fullContext.session;
-          responses = fullContext.responses;
-          responseCount = responses.length;
-
-          trace.log("info", "context_reloaded_for_full_mode", {
-            responseCount: responses.length,
-            round: session.round,
-            reason: "focus_mode_missing_topic_responses",
-          });
+          await reloadContextForFullMode("focus_mode_missing_topic_responses");
+          analysis = buildFallbackAnalysis(responses);
         } else {
           const fallbackAverage =
             topicResponses.reduce(
@@ -2640,6 +2625,9 @@ Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
       }
 
       if (analysisMode === "full") {
+        const fullModeFallback = buildFallbackAnalysis(responses);
+        analysis = fullModeFallback;
+
         try {
           const coveredTopics = [
             ...new Set(responses.map((response) => response.topic)),
@@ -2731,8 +2719,8 @@ Sei streng, aber konstruktiv.`,
           trace.log("warn", "llm_failed_using_fallback", {
             error: extractErrorForLog(error),
             mode: "full",
-            fallbackOverallReadiness: fallback.overallReadiness,
-            fallbackTopicCount: fallback.topics.length,
+            fallbackOverallReadiness: fullModeFallback.overallReadiness,
+            fallbackTopicCount: fullModeFallback.topics.length,
           });
           // Keep deterministic fallback analysis when the LLM call fails.
         }

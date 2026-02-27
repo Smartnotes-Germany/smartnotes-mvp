@@ -200,7 +200,7 @@ export function NavigationShell({
       </aside>
 
       <main className="bg-cream flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:p-8 md:pb-8 lg:p-12 lg:pb-12">
-        <div className="mx-auto min-h-full max-w-5xl">{children}</div>
+        <div className="mx-auto h-full min-h-full max-w-5xl">{children}</div>
       </main>
     </div>
   );

@@ -42,7 +42,7 @@ export function QuizStage({
   onContinueAfterFeedback,
 }: QuizStageProps) {
   return (
-    <section className="flex h-full flex-col items-center justify-center">
+    <section className="flex min-h-full flex-col items-center justify-start py-4 md:justify-center md:py-0">
       <div className="w-full max-w-3xl text-center">
         {!currentQuestion && stats.totalQuestions > 0 && !feedback ? (
           <div className="border-cream-border bg-cream-light animate-in zoom-in-95 rounded-[2.5rem] border p-8 text-center duration-500 md:p-16">

@@ -33,7 +33,7 @@ export function UploadStage({
   );
 
   return (
-    <section className="flex h-full flex-col items-center justify-center text-center">
+    <section className="flex min-h-full flex-col items-center justify-start py-4 text-center md:justify-center md:py-0">
       <label className="border-cream-border bg-cream-light hover:border-accent/40 mb-6 flex w-full max-w-3xl cursor-pointer flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed px-6 py-12 text-center transition md:py-24">
         {isUploading ? (
           <Loader2 size={48} className="text-accent animate-spin" />

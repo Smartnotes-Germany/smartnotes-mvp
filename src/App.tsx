@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
+import { Routes, Route } from "react-router-dom";
 import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
@@ -17,8 +18,9 @@ import {
   useQuizFlow,
   useUploadFlow,
 } from "./features/study/hooks";
+import AdminDashboard from "./admin/AdminDashboard";
 
-function App() {
+function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
     useTheme();
   const {
@@ -174,6 +176,15 @@ function App() {
         />
       )}
     </NavigationShell>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="*" element={<StudyApp />} />
+    </Routes>
   );
 }
 

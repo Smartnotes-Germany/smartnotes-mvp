@@ -72,7 +72,14 @@ function App() {
   }, [responseByQuestionId, session]);
 
   const uploadFlow = useUploadFlow({ grantToken, sessionId, documents });
-  const analysisFlow = useAnalysisFlow({ grantToken, sessionId, documents });
+  const analysisFlow = useAnalysisFlow({
+    grantToken,
+    sessionId,
+    documents,
+    quizQuestions: session?.quizQuestions ?? [],
+    currentFocusTopic: session?.currentFocusTopic ?? null,
+    hasExistingAnalysis: Boolean(session?.analysis),
+  });
   const quizFlow = useQuizFlow({ grantToken, sessionId, currentQuestion });
   const [sessionActionError, setSessionActionError] = useState<string | null>(
     null,

@@ -106,7 +106,13 @@ export const evaluateAnswerRef = makeFunctionReference<
 
 export const analyzePerformanceRef = makeFunctionReference<
   "action",
-  { grantToken: string; sessionId: string; clientRequestId?: string },
+  {
+    grantToken: string;
+    sessionId: string;
+    mode?: "full" | "focus";
+    focusTopic?: string;
+    clientRequestId?: string;
+  },
   unknown
 >("ai:analyzePerformance");
 

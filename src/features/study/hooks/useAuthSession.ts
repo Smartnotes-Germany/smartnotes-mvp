@@ -9,6 +9,14 @@ import {
 } from "../convexRefs";
 import { STORAGE_KEYS } from "../constants";
 import { formatError } from "../errorUtils";
+import {
+  trackAuthCodeRedeemFailed,
+  trackAuthCodeRedeemStarted,
+  trackAuthCodeRedeemSucceeded,
+  trackSessionResumed,
+  trackSessionSignout,
+  trackSessionStarted,
+} from "../analytics";
 
 export function useAuthSession() {
   const [grantToken, setGrantToken] = useState<string | null>(() =>
@@ -26,6 +34,29 @@ export function useAuthSession() {
 
   const isProcessingMagicLink = useRef(false);
   const signOutTimeoutRef = useRef<number | null>(null);
+  const startedSessionIdsRef = useRef(new Set<string>());
+  const lastResumedSessionIdRef = useRef<string | null>(null);
+
+  const markStartedSession = useCallback(
+    (newSessionId: string, source: "auth_code" | "auto" | "fresh") => {
+      startedSessionIdsRef.current.add(newSessionId);
+      trackSessionStarted(source);
+    },
+    [],
+  );
+
+  const maybeTrackResumedSession = useCallback((resumedSessionId: string) => {
+    if (startedSessionIdsRef.current.has(resumedSessionId)) {
+      return;
+    }
+
+    if (lastResumedSessionIdRef.current === resumedSessionId) {
+      return;
+    }
+
+    lastResumedSessionIdRef.current = resumedSessionId;
+    trackSessionResumed();
+  }, []);
 
   const redeemAccessCode = useMutation(redeemAccessCodeRef);
   const consumeMagicLink = useMutation(consumeMagicLinkRef);
@@ -98,6 +129,7 @@ export function useAuthSession() {
     if (latestSessionId) {
       setSessionId(latestSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, latestSessionId);
+      maybeTrackResumedSession(latestSessionId);
       return;
     }
 
@@ -106,6 +138,7 @@ export function useAuthSession() {
       .then((newSessionId) => {
         setSessionId(newSessionId);
         localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+        markStartedSession(newSessionId, "auto");
       })
       .catch((error: unknown) => {
         setAuthError(
@@ -121,6 +154,8 @@ export function useAuthSession() {
     grantStatus,
     isCreatingSession,
     latestSessionId,
+    markStartedSession,
+    maybeTrackResumedSession,
     sessionId,
     startSession,
   ]);
@@ -139,8 +174,15 @@ export function useAuthSession() {
     if (sessionId !== latestSessionId) {
       setSessionId(latestSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, latestSessionId);
+      maybeTrackResumedSession(latestSessionId);
     }
-  }, [grantStatus, grantToken, latestSessionId, sessionId]);
+  }, [
+    grantStatus,
+    grantToken,
+    latestSessionId,
+    maybeTrackResumedSession,
+    sessionId,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -156,6 +198,7 @@ export function useAuthSession() {
       return;
     }
 
+    trackAuthCodeRedeemStarted();
     setIsRedeemingCode(true);
     setAuthError(null);
 
@@ -167,7 +210,10 @@ export function useAuthSession() {
       localStorage.setItem(STORAGE_KEYS.grantToken, auth.grantToken);
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
       setAccessCodeInput("");
+      markStartedSession(newSessionId, "auth_code");
+      trackAuthCodeRedeemSucceeded();
     } catch (error: unknown) {
+      trackAuthCodeRedeemFailed();
       setAuthError(
         formatError(error, {
           fallback:
@@ -177,7 +223,7 @@ export function useAuthSession() {
     } finally {
       setIsRedeemingCode(false);
     }
-  }, [accessCodeInput, redeemAccessCode, startSession]);
+  }, [accessCodeInput, markStartedSession, redeemAccessCode, startSession]);
 
   const startFreshSession = useCallback(async (): Promise<string | null> => {
     if (!grantToken) {
@@ -189,6 +235,7 @@ export function useAuthSession() {
       const newSessionId = await startSession({ grantToken });
       setSessionId(newSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+      markStartedSession(newSessionId, "fresh");
       return null;
     } catch (error: unknown) {
       return formatError(error, {
@@ -198,9 +245,10 @@ export function useAuthSession() {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [grantToken, startSession]);
+  }, [grantToken, markStartedSession, startSession]);
 
   const signOut = useCallback(() => {
+    trackSessionSignout();
     setIsSigningOut(true);
     signOutTimeoutRef.current = window.setTimeout(() => {
       setGrantToken(null);

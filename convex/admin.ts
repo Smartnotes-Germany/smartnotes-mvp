@@ -6,14 +6,14 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./errorTracking";
+import { readRequiredEnv } from "./env";
 import { v } from "convex/values";
 
 const getConfiguredAdminSecret = () => {
-  const secret = process.env.ACCESS_CODE_ADMIN_SECRET;
-  if (!secret) {
-    throw new Error("ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.");
-  }
-  return secret;
+  return readRequiredEnv(
+    "ACCESS_CODE_ADMIN_SECRET",
+    "ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.",
+  );
 };
 
 const assertAdminSecret = (providedSecret: string) => {

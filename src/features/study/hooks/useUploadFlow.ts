@@ -17,17 +17,35 @@ import {
   validateUploadFile,
 } from "../../../../shared/uploadPolicy";
 import type { StudyDocument } from "../types";
+import {
+  trackDocumentExtractionFailed,
+  trackDocumentRemoved,
+  trackDocumentUploadFailed,
+  trackDocumentUploadStarted,
+  trackDocumentUploadSucceeded,
+  trackQuizGenerationFailed,
+  trackQuizGenerationRequested,
+  trackQuizGenerationSucceeded,
+} from "../analytics";
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
   documents: StudyDocument[];
+  documentCount: number;
+  readyDocumentCount: number;
+};
+
+type ExtractionResult = {
+  extractionStatus?: "ready" | "failed";
 };
 
 export function useUploadFlow({
   grantToken,
   sessionId,
   documents,
+  documentCount,
+  readyDocumentCount,
 }: UseUploadFlowArgs) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -51,6 +69,7 @@ export function useUploadFlow({
       setIsUploading(true);
       setUploadError(null);
       const errors: string[] = [];
+      trackDocumentUploadStarted(files.length);
 
       for (const file of files) {
         const clientRequestId = createClientRequestId("extractDocument");
@@ -86,13 +105,25 @@ export function useUploadFlow({
             fileSizeBytes: file.size,
           });
 
-          await extractDocumentContent({
+          const extractionResult = (await extractDocumentContent({
             grantToken,
             sessionId,
             documentId,
             clientRequestId,
-          });
+          })) as ExtractionResult;
+
+          if (extractionResult.extractionStatus === "failed") {
+            trackDocumentExtractionFailed();
+            trackDocumentUploadFailed();
+            errors.push(
+              `${file.name}: Die Datei konnte nicht vollständig verarbeitet werden.`,
+            );
+            continue;
+          }
+
+          trackDocumentUploadSucceeded();
         } catch (error: unknown) {
+          trackDocumentUploadFailed();
           errors.push(
             `${file.name}: ${formatError(error, {
               fallback:
@@ -155,9 +186,14 @@ export function useUploadFlow({
       return;
     }
 
+    const startedAt = Date.now();
     const clientRequestId = createClientRequestId("generateQuiz");
     setIsGeneratingQuiz(true);
     setUploadError(null);
+    trackQuizGenerationRequested({
+      documents: documentCount,
+      readyDocuments: readyDocumentCount,
+    });
 
     try {
       await generateQuiz({
@@ -166,7 +202,15 @@ export function useUploadFlow({
         questionCount: 30,
         clientRequestId,
       });
+      trackQuizGenerationSucceeded(Date.now() - startedAt, {
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+      });
     } catch (error: unknown) {
+      trackQuizGenerationFailed(Date.now() - startedAt, {
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+      });
       setUploadError(
         formatError(error, {
           fallback: "Quizfragen konnten nicht erstellt werden.",
@@ -176,7 +220,14 @@ export function useUploadFlow({
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [documents, generateQuiz, grantToken, sessionId]);
+  }, [
+    documents,
+    generateQuiz,
+    grantToken,
+    sessionId,
+    documentCount,
+    readyDocumentCount,
+  ]);
 
   const removeDocumentById = useCallback(
     async (documentId: string) => {
@@ -187,7 +238,9 @@ export function useUploadFlow({
       setIsRemovingDocument(documentId);
       try {
         await removeDocument({ grantToken, sessionId, documentId });
+        trackDocumentRemoved("succeeded");
       } catch (error: unknown) {
+        trackDocumentRemoved("failed");
         setUploadError(
           formatError(error, {
             fallback: "Die Datei konnte nicht entfernt werden.",

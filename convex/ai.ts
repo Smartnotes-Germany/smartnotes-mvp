@@ -24,6 +24,8 @@ import {
   isSensitiveCaptureEnabled,
   redactTextForLog,
 } from "./observability";
+import { captureAiOperationCompleted } from "./posthog";
+import { readOptionalEnv, readRequiredEnv } from "./env";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -117,6 +119,7 @@ const deepDiveSchema = z.object({
 });
 
 type SessionDocumentInput = {
+  _id: Id<"sessionDocuments">;
   storageId: string;
   fileName: string;
   fileType: string;
@@ -281,21 +284,19 @@ const createDocumentReadUrl = async (
 };
 
 const createVertexModel = () => {
-  const apiKey = process.env.GOOGLE_VERTEX_API_KEY;
+  const apiKey = readOptionalEnv("GOOGLE_VERTEX_API_KEY");
   if (apiKey) {
     return createVertex({ apiKey });
   }
 
-  const project = process.env.GOOGLE_VERTEX_PROJECT;
-  if (!project) {
-    throw new Error(
-      "Konfiguriere GOOGLE_VERTEX_API_KEY (Express Mode) oder GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_LOCATION.",
-    );
-  }
+  const project = readRequiredEnv(
+    "GOOGLE_VERTEX_PROJECT",
+    "Konfiguriere GOOGLE_VERTEX_API_KEY (Express Mode) oder GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_LOCATION.",
+  );
 
   return createVertex({
     project,
-    location: process.env.GOOGLE_VERTEX_LOCATION ?? "us-central1",
+    location: readOptionalEnv("GOOGLE_VERTEX_LOCATION") ?? "us-central1",
   });
 };
 
@@ -624,6 +625,11 @@ type PersistedAiAnalyticsPayload = {
   metadata?: Record<string, unknown>;
 };
 
+type DocumentCorrelationMetadata = {
+  documentIds?: string[];
+  readyDocumentIds?: string[];
+};
+
 const analyticsMetadataAllowlist = new Set([
   "clientRequestId",
   "responseCount",
@@ -641,6 +647,8 @@ const analyticsMetadataAllowlist = new Set([
   "filePartCount",
   "sourceContextLength",
   "outputQuestionCount",
+  "documentIds",
+  "readyDocumentIds",
   "fallbackStrategy",
   "finishReason",
   "currentFocusTopic",
@@ -701,6 +709,29 @@ const sanitizeAnalyticsMetadata = (metadata?: Record<string, unknown>) => {
   }
 
   return JSON.stringify(Object.fromEntries(sanitizedEntries));
+};
+
+const toStringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const normalized = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.slice(0, 120))
+    .slice(0, 50);
+
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const buildDocumentCorrelationMetadata = (
+  documentIds: string[],
+  readyDocumentIds: string[],
+): DocumentCorrelationMetadata => {
+  return {
+    ...(documentIds.length > 0 ? { documentIds } : {}),
+    ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
+  };
 };
 
 const buildAiSdkTelemetry = (
@@ -1213,6 +1244,25 @@ const persistAiAnalyticsEvent = async (
           : undefined,
       metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
     });
+
+    const sessionHash = hashIdentifier(payload.sessionId);
+
+    await captureAiOperationCompleted({
+      distinctId: `session_${sessionHash}`,
+      traceId: payload.traceId,
+      scope: payload.scope,
+      status: payload.status,
+      latencyMs: payload.latencyMs,
+      inputTokens: payload.usage?.inputTokens,
+      outputTokens: payload.usage?.outputTokens,
+      totalTokens: payload.usage?.totalTokens,
+      llmAttempts: payload.llmAttempts,
+      fallbackUsed: payload.fallbackUsed,
+      telemetryProvider,
+      privacyMode,
+      documentIds: toStringArray(payload.metadata?.documentIds),
+      readyDocumentIds: toStringArray(payload.metadata?.readyDocumentIds),
+    });
   } catch (error) {
     console.warn("[KI-Monitoring]", {
       event: "analytics_persist_failed",
@@ -1540,6 +1590,9 @@ export const generateQuiz = action({
     let finishReason: string | undefined;
     let totalDocuments = 0;
     let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
@@ -1580,11 +1633,18 @@ Anforderungen:
           document.extractionStatus === "ready",
       );
       readyDocumentsCount = readyDocuments.length;
+      documentIds = documents.map((document) => String(document._id));
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
 
       trace.log("info", "documents_loaded", {
         totalDocuments: documents.length,
         readyDocuments: readyDocuments.length,
         documents: documents.map((document) => ({
+          documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
           fileSizeBytes: document.fileSizeBytes,
@@ -1729,6 +1789,7 @@ Anforderungen:
               appScope: "generateQuiz",
               stage: "primary",
               readyDocuments: readyDocuments.length,
+              ...documentCorrelationMetadata,
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
             },
@@ -1802,6 +1863,7 @@ Anforderungen:
                   appScope: "generateQuiz",
                   stage: "fallback_structured",
                   readyDocuments: readyDocuments.length,
+                  ...documentCorrelationMetadata,
                   filePartCount: fileParts.length,
                   sourceContextLength: sourceContext.length,
                 },
@@ -1859,6 +1921,7 @@ Anforderungen:
                   appScope: "generateQuiz",
                   stage: "fallback_json",
                   readyDocuments: readyDocuments.length,
+                  ...documentCorrelationMetadata,
                   filePartCount: fileParts.length,
                   sourceContextLength: sourceContext.length,
                 },
@@ -1983,6 +2046,7 @@ Anforderungen:
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
+          ...documentCorrelationMetadata,
         },
       });
       await flushTelemetry({
@@ -2200,12 +2264,15 @@ export const analyzePerformance = action({
     let finishReason: string | undefined;
     let responseCount = 0;
     let usedFallback = false;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
     let analyticsError: unknown;
 
     try {
       trace.log("info", "start");
 
-      const { session, responses } = await ctx.runQuery(
+      const { session, responses, documents } = await ctx.runQuery(
         internal.study.getAnalysisContext,
         {
           grantToken: args.grantToken,
@@ -2217,8 +2284,20 @@ export const analyzePerformance = action({
         responseCount: responses.length,
         currentFocusTopic: session.currentFocusTopic ?? null,
         round: session.round,
+        totalDocuments: documents.length,
+        readyDocuments: documents.filter(
+          (document) => document.extractionStatus === "ready",
+        ).length,
       });
       responseCount = responses.length;
+      documentIds = documents.map((document) => String(document._id));
+      readyDocumentIds = documents
+        .filter((document) => document.extractionStatus === "ready")
+        .map((document) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
 
       if (responses.length === 0) {
         trace.log("warn", "no_responses_available");
@@ -2353,6 +2432,7 @@ Sei streng, aber konstruktiv.`,
           clientRequestId: args.clientRequestId,
           responseCount,
           usedFallback,
+          ...documentCorrelationMetadata,
         },
       });
       await flushTelemetry({
@@ -2382,6 +2462,9 @@ export const generateTopicDeepDive = action({
     let finishReason: string | undefined;
     let totalDocuments = 0;
     let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
@@ -2409,11 +2492,18 @@ export const generateTopicDeepDive = action({
           document.extractionStatus === "ready",
       );
       readyDocumentsCount = readyDocuments.length;
+      documentIds = documents.map((document) => String(document._id));
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
 
       trace.log("info", "documents_loaded", {
         totalDocuments: documents.length,
         readyDocuments: readyDocuments.length,
         documents: documents.map((document) => ({
+          documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
           fileSizeBytes: document.fileSizeBytes,
@@ -2558,6 +2648,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
               appScope: "generateTopicDeepDive",
               topic: args.topic,
               readyDocuments: readyDocuments.length,
+              ...documentCorrelationMetadata,
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
             },
@@ -2672,6 +2763,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
         metadata: {
           clientRequestId: args.clientRequestId,
           topic: args.topic,
+          ...documentCorrelationMetadata,
         },
       });
       await flushTelemetry({

@@ -3,6 +3,12 @@
 import { createHash } from "node:crypto";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { NodeSDK } from "@opentelemetry/sdk-node";
+import {
+  readBooleanEnv,
+  readIntegerEnv,
+  readOptionalEnv,
+  readOptionalEnvFromAliases,
+} from "./env";
 
 const OBSERVABILITY_SCOPE = "smartnotes-observability";
 const GLOBAL_STATE_KEY = Symbol.for("smartnotes.observability.state");
@@ -47,15 +53,8 @@ type FlushTelemetryResult = {
   timeoutMs: number;
 };
 
-const asBoolean = (value: string | undefined) => {
-  if (!value) {
-    return false;
-  }
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-};
-
 const getMode = (): ObservabilityMode => {
-  const rawMode = process.env.OBSERVABILITY_MODE?.trim().toLowerCase();
+  const rawMode = readOptionalEnv("OBSERVABILITY_MODE")?.toLowerCase();
   if (rawMode === "off") {
     return "off";
   }
@@ -70,19 +69,18 @@ const isFlushOnExitEnabled = () => {
     return true;
   }
 
-  return asBoolean(process.env.OBSERVABILITY_FLUSH_ON_EXIT);
+  return readBooleanEnv("OBSERVABILITY_FLUSH_ON_EXIT");
 };
 
 const getFlushTimeoutMs = () => {
-  const parsed = Number.parseInt(
-    process.env.OBSERVABILITY_FLUSH_TIMEOUT_MS ?? "",
-    10,
+  return readIntegerEnv(
+    "OBSERVABILITY_FLUSH_TIMEOUT_MS",
+    DEFAULT_FLUSH_TIMEOUT_MS,
+    {
+      min: MIN_FLUSH_TIMEOUT_MS,
+      max: MAX_FLUSH_TIMEOUT_MS,
+    },
   );
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_FLUSH_TIMEOUT_MS;
-  }
-
-  return Math.max(MIN_FLUSH_TIMEOUT_MS, Math.min(MAX_FLUSH_TIMEOUT_MS, parsed));
 };
 
 const getGlobalState = (): ObservabilityGlobalState => {
@@ -101,15 +99,21 @@ const getGlobalState = (): ObservabilityGlobalState => {
 };
 
 const hasLangfuseCredentials = () => {
-  const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
-  const secretKey = process.env.LANGFUSE_SECRET_KEY;
-  const baseUrl = process.env.LANGFUSE_BASEURL ?? process.env.LANGFUSE_BASE_URL;
+  const publicKey = readOptionalEnv("LANGFUSE_PUBLIC_KEY");
+  const secretKey = readOptionalEnv("LANGFUSE_SECRET_KEY");
+  const baseUrl = readOptionalEnvFromAliases([
+    "LANGFUSE_BASEURL",
+    "LANGFUSE_BASE_URL",
+  ]);
   return Boolean(publicKey && secretKey && baseUrl);
 };
 
 const applyLangfuseEnvironmentFallbacks = () => {
-  if (!process.env.LANGFUSE_BASEURL && process.env.LANGFUSE_BASE_URL) {
-    process.env.LANGFUSE_BASEURL = process.env.LANGFUSE_BASE_URL;
+  if (!readOptionalEnv("LANGFUSE_BASEURL")) {
+    const legacyBaseUrl = readOptionalEnv("LANGFUSE_BASE_URL");
+    if (legacyBaseUrl) {
+      process.env.LANGFUSE_BASEURL = legacyBaseUrl;
+    }
   }
 };
 
@@ -165,14 +169,18 @@ const sanitizeTelemetryMetadata = (
 export const getObservabilityMode = () => getMode();
 
 export const isSensitiveCaptureEnabled = () => {
-  if (!asBoolean(process.env.OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE)) {
+  if (!readBooleanEnv("OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE")) {
     return false;
   }
 
-  const untilTimestamp = Number.parseInt(
-    process.env.OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL ?? "",
-    10,
+  const rawUntilTimestamp = readOptionalEnv(
+    "OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL",
   );
+  if (!rawUntilTimestamp) {
+    return true;
+  }
+
+  const untilTimestamp = Number.parseInt(rawUntilTimestamp, 10);
   if (!Number.isFinite(untilTimestamp)) {
     return true;
   }
@@ -235,7 +243,8 @@ export const hashIdentifier = (
     return "";
   }
 
-  const salt = process.env.OBSERVABILITY_HASH_SALT ?? "smartnotes-default-salt";
+  const salt =
+    readOptionalEnv("OBSERVABILITY_HASH_SALT") ?? "smartnotes-default-salt";
   return createHash("sha256")
     .update(`${salt}:${String(rawValue)}`)
     .digest("hex")

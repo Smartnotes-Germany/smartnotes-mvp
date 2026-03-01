@@ -8,6 +8,7 @@ import {
 } from "./errorTracking";
 import { v } from "convex/values";
 
+// Access token
 const getConfiguredAdminSecret = () => {
   const secret = process.env.ACCESS_CODE_ADMIN_SECRET;
   if (!secret) {

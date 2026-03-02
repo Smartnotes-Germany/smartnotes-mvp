@@ -63,18 +63,13 @@ export function GenerationDecisionStage({
 
       <div className="grid gap-5 md:grid-cols-2">
         <article className="relative overflow-hidden rounded-[2rem] border border-emerald-500/20 bg-emerald-50/30 p-5 shadow-sm md:p-8 dark:border-emerald-500/20 dark:bg-emerald-950/20">
-          <div className="absolute -top-10 -right-8 h-28 w-28 rounded-full bg-emerald-500/12 blur-2xl dark:bg-emerald-300/12" />
-          <div className="absolute right-5 bottom-5 h-16 w-16 rounded-full border border-emerald-500/20" />
+          <div className="absolute -bottom-10 -left-8 h-32 w-32 rounded-full bg-emerald-500/12 blur-2xl dark:bg-emerald-300/12" />
 
           <div className="relative flex h-full flex-col">
             <div className="mb-5 flex items-start justify-between gap-3">
               <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-emerald-700 uppercase dark:text-emerald-300">
                 <Brain size={14} />
                 Direkt starten
-              </div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-white/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] text-emerald-700 uppercase dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                <Clock3 size={12} />
-                Schnell
               </div>
             </div>
 
@@ -90,9 +85,6 @@ export function GenerationDecisionStage({
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-[10px] font-bold tracking-[0.12em] text-emerald-700 uppercase dark:text-emerald-300">
                   Quiz-Vorschau
-                </p>
-                <p className="text-ink-muted text-[10px] font-bold tracking-[0.12em] uppercase">
-                  Wissenscheck
                 </p>
               </div>
               <div className="flex justify-center py-2">
@@ -254,18 +246,13 @@ export function GenerationDecisionStage({
         </article>
 
         <article className="relative overflow-hidden rounded-[2rem] border border-cyan-500/20 bg-cyan-50/30 p-5 shadow-sm md:p-8 dark:border-cyan-500/20 dark:bg-cyan-950/20">
-          <div className="absolute -top-10 -right-8 h-28 w-28 rounded-full bg-cyan-500/12 blur-2xl dark:bg-cyan-300/12" />
-          <div className="absolute right-5 bottom-5 h-16 w-16 rounded-full border border-cyan-500/20" />
+          <div className="absolute -top-10 -right-8 h-32 w-32 rounded-full bg-cyan-500/12 blur-2xl dark:bg-cyan-300/12" />
 
           <div className="relative flex h-full flex-col">
             <div className="mb-5 flex items-start justify-between gap-3">
               <div className="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-cyan-700 uppercase dark:text-cyan-300">
                 <BookOpen size={14} />
                 Erst lernen
-              </div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-white/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] text-cyan-700 uppercase dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200">
-                <Sparkles size={12} />
-                Mit Lernblatt
               </div>
             </div>
 
@@ -282,9 +269,6 @@ export function GenerationDecisionStage({
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-[10px] font-bold tracking-[0.12em] text-cyan-700 uppercase dark:text-cyan-300">
                   Lernblatt-Vorschau
-                </p>
-                <p className="text-ink-muted text-[10px] font-bold tracking-[0.12em] uppercase">
-                  Lernblatt
                 </p>
               </div>
               <div className="flex justify-center py-2">

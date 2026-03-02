@@ -4,9 +4,7 @@ import {
   BookOpen,
   Brain,
   CheckCircle2,
-  Clock3,
   Loader2,
-  Sparkles,
 } from "lucide-react";
 
 type GenerationDecisionStageProps = {
@@ -62,7 +60,7 @@ export function GenerationDecisionStage({
       )}
 
       <div className="grid gap-5 md:grid-cols-2">
-        <article className="relative overflow-hidden rounded-[2rem] border border-emerald-500/20 bg-emerald-50/30 p-5 shadow-sm md:p-8 dark:border-emerald-500/20 dark:bg-emerald-950/20">
+        <article className="relative overflow-hidden rounded-4xl border border-emerald-500/20 bg-emerald-50/30 p-5 shadow-sm md:p-8 dark:border-emerald-500/20 dark:bg-emerald-950/20">
           <div className="absolute -bottom-10 -left-8 h-32 w-32 rounded-full bg-emerald-500/12 blur-2xl dark:bg-emerald-300/12" />
 
           <div className="relative flex h-full flex-col">
@@ -220,7 +218,7 @@ export function GenerationDecisionStage({
                 >
                   <CheckCircle2
                     size={15}
-                    className="mt-0.5 flex-shrink-0 text-emerald-600 dark:text-emerald-400"
+                    className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400"
                   />
                   <span>{benefit}</span>
                 </p>
@@ -245,7 +243,7 @@ export function GenerationDecisionStage({
           </div>
         </article>
 
-        <article className="relative overflow-hidden rounded-[2rem] border border-cyan-500/20 bg-cyan-50/30 p-5 shadow-sm md:p-8 dark:border-cyan-500/20 dark:bg-cyan-950/20">
+        <article className="relative overflow-hidden rounded-4xl border border-cyan-500/20 bg-cyan-50/30 p-5 shadow-sm md:p-8 dark:border-cyan-500/20 dark:bg-cyan-950/20">
           <div className="absolute -top-10 -right-8 h-32 w-32 rounded-full bg-cyan-500/12 blur-2xl dark:bg-cyan-300/12" />
 
           <div className="relative flex h-full flex-col">
@@ -380,7 +378,7 @@ export function GenerationDecisionStage({
                 >
                   <CheckCircle2
                     size={15}
-                    className="mt-0.5 flex-shrink-0 text-cyan-700 dark:text-cyan-300"
+                    className="mt-0.5 shrink-0 text-cyan-700 dark:text-cyan-300"
                   />
                   <span>{benefit}</span>
                 </p>

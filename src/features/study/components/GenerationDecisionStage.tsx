@@ -38,11 +38,11 @@ export function GenerationDecisionStage({
 }: GenerationDecisionStageProps) {
   return (
     <section className="relative">
-      <div className="bg-accent/15 pointer-events-none absolute -top-20 -right-8 h-48 w-48 rounded-full blur-3xl" />
+      <div className="pointer-events-none absolute -top-20 -right-8 h-48 w-48 rounded-full bg-emerald-500/10 blur-3xl dark:bg-emerald-300/10" />
       <div className="pointer-events-none absolute -bottom-24 left-0 h-52 w-52 rounded-full bg-cyan-500/10 blur-3xl dark:bg-cyan-300/10" />
 
       <header className="mb-8 md:mb-10">
-        <p className="text-accent mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
+        <p className="text-ink-secondary mb-2 text-[10px] font-bold tracking-[0.2em] uppercase">
           Nächster Schritt
         </p>
         <h1 className="text-3xl font-black tracking-tighter md:text-5xl">
@@ -62,21 +62,17 @@ export function GenerationDecisionStage({
       )}
 
       <div className="grid gap-5 md:grid-cols-2">
-        <article className="border-accent/25 bg-surface-white relative overflow-hidden rounded-[2rem] border p-5 shadow-sm md:p-8">
-          <div className="bg-accent/10 absolute top-0 right-0 h-28 w-28 translate-x-10 -translate-y-10 rounded-full" />
-          <div className="absolute right-5 bottom-5 flex gap-2 opacity-70">
-            <span className="bg-accent/70 h-2 w-2 rounded-full" />
-            <span className="bg-accent/40 h-2 w-2 rounded-full" />
-            <span className="bg-accent/20 h-2 w-2 rounded-full" />
-          </div>
+        <article className="relative overflow-hidden rounded-[2rem] border border-emerald-500/20 bg-emerald-50/30 p-5 shadow-sm md:p-8 dark:border-emerald-500/20 dark:bg-emerald-950/20">
+          <div className="absolute -top-10 -right-8 h-28 w-28 rounded-full bg-emerald-500/12 blur-2xl dark:bg-emerald-300/12" />
+          <div className="absolute right-5 bottom-5 h-16 w-16 rounded-full border border-emerald-500/20" />
 
           <div className="relative flex h-full flex-col">
             <div className="mb-5 flex items-start justify-between gap-3">
-              <div className="bg-accent/10 text-accent inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] uppercase">
+              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-emerald-700 uppercase dark:text-emerald-300">
                 <Brain size={14} />
                 Direkt starten
               </div>
-              <div className="text-ink-secondary inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] uppercase dark:bg-emerald-900/40 dark:text-emerald-300">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-white/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] text-emerald-700 uppercase dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
                 <Clock3 size={12} />
                 Schnell
               </div>
@@ -90,24 +86,137 @@ export function GenerationDecisionStage({
               welche Themen schon sitzen und wo du noch üben solltest.
             </p>
 
-            <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl border border-emerald-200/70 bg-emerald-50/70 p-3 dark:border-emerald-800/60 dark:bg-emerald-950/30">
-              <div className="rounded-xl bg-white/70 p-2 text-center dark:bg-black/10">
-                <p className="text-accent text-[9px] font-bold tracking-[0.12em] uppercase">
-                  Fokus
+            <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-white/70 p-4 dark:bg-emerald-950/20">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] font-bold tracking-[0.12em] text-emerald-700 uppercase dark:text-emerald-300">
+                  Quiz-Vorschau
                 </p>
-                <p className="mt-1 text-xs font-semibold">Prüfen</p>
+                <p className="text-ink-muted text-[10px] font-bold tracking-[0.12em] uppercase">
+                  Wissenscheck
+                </p>
               </div>
-              <div className="rounded-xl bg-white/70 p-2 text-center dark:bg-black/10">
-                <p className="text-accent text-[9px] font-bold tracking-[0.12em] uppercase">
-                  Tempo
-                </p>
-                <p className="mt-1 text-xs font-semibold">Hoch</p>
-              </div>
-              <div className="rounded-xl bg-white/70 p-2 text-center dark:bg-black/10">
-                <p className="text-accent text-[9px] font-bold tracking-[0.12em] uppercase">
-                  Start
-                </p>
-                <p className="mt-1 text-xs font-semibold">Sofort</p>
+              <div className="flex justify-center py-2">
+                <svg
+                  width="110"
+                  height="120"
+                  viewBox="0 0 100 110"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="drop-shadow-sm transition-transform duration-500 hover:scale-105"
+                >
+                  <rect
+                    x="15"
+                    y="5"
+                    width="70"
+                    height="95"
+                    rx="6"
+                    className="fill-white stroke-emerald-500/20 dark:fill-slate-900"
+                    strokeWidth="1.5"
+                  />
+
+                  {/* Question */}
+                  <rect
+                    x="25"
+                    y="20"
+                    width="45"
+                    height="4"
+                    rx="2"
+                    className="fill-emerald-600/40 dark:fill-emerald-400/40"
+                  />
+                  <rect
+                    x="25"
+                    y="28"
+                    width="30"
+                    height="4"
+                    rx="2"
+                    className="fill-emerald-600/40 dark:fill-emerald-400/40"
+                  />
+
+                  {/* Text Input Area */}
+                  <rect
+                    x="25"
+                    y="42"
+                    width="50"
+                    height="32"
+                    rx="4"
+                    className="fill-emerald-50 stroke-emerald-500/30 dark:fill-emerald-900/30"
+                    strokeWidth="1.5"
+                  />
+
+                  {/* Typed Text */}
+                  <rect
+                    x="30"
+                    y="48"
+                    width="35"
+                    height="3"
+                    rx="1.5"
+                    className="fill-emerald-600/60 dark:fill-emerald-400/60"
+                  />
+                  <rect
+                    x="30"
+                    y="56"
+                    width="40"
+                    height="3"
+                    rx="1.5"
+                    className="fill-emerald-600/60 dark:fill-emerald-400/60"
+                  />
+                  <rect
+                    x="30"
+                    y="64"
+                    width="15"
+                    height="3"
+                    rx="1.5"
+                    className="fill-emerald-600/60 dark:fill-emerald-400/60"
+                  />
+                  {/* Cursor */}
+                  <rect
+                    x="47"
+                    y="63"
+                    width="1.5"
+                    height="5"
+                    rx="0.5"
+                    className="animate-pulse fill-emerald-500"
+                  />
+
+                  {/* Submit Button */}
+                  <rect
+                    x="50"
+                    y="80"
+                    width="25"
+                    height="10"
+                    rx="4"
+                    className="fill-emerald-500"
+                  />
+                  <rect
+                    x="57"
+                    y="84"
+                    width="11"
+                    height="2"
+                    rx="1"
+                    className="fill-white"
+                  />
+
+                  {/* Accents */}
+                  <circle
+                    cx="85"
+                    cy="15"
+                    r="3"
+                    className="fill-emerald-500/40"
+                  />
+                  <circle
+                    cx="20"
+                    cy="90"
+                    r="2"
+                    className="fill-emerald-500/40"
+                  />
+                  <path
+                    d="M15 15 L20 10 L25 15"
+                    className="stroke-emerald-500/30"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </div>
             </div>
 
@@ -130,7 +239,7 @@ export function GenerationDecisionStage({
               type="button"
               onClick={() => void onStartDirectQuiz()}
               disabled={isGeneratingQuiz}
-              className="bg-accent shadow-accent/25 mt-8 inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-xs font-bold tracking-[0.12em] text-white uppercase shadow-lg transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-3.5 text-xs font-bold tracking-[0.12em] text-white uppercase shadow-lg shadow-emerald-600/20 transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 dark:bg-emerald-500"
             >
               {isGeneratingQuiz ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -144,7 +253,7 @@ export function GenerationDecisionStage({
           </div>
         </article>
 
-        <article className="border-cream-border bg-cream-light relative overflow-hidden rounded-[2rem] border p-5 shadow-sm md:p-8">
+        <article className="relative overflow-hidden rounded-[2rem] border border-cyan-500/20 bg-cyan-50/30 p-5 shadow-sm md:p-8 dark:border-cyan-500/20 dark:bg-cyan-950/20">
           <div className="absolute -top-10 -right-8 h-28 w-28 rounded-full bg-cyan-500/12 blur-2xl dark:bg-cyan-300/12" />
           <div className="absolute right-5 bottom-5 h-16 w-16 rounded-full border border-cyan-500/20" />
 
@@ -154,7 +263,7 @@ export function GenerationDecisionStage({
                 <BookOpen size={14} />
                 Erst lernen
               </div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-white/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] text-cyan-700 uppercase dark:bg-cyan-950/40 dark:text-cyan-200">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-white/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] text-cyan-700 uppercase dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-200">
                 <Sparkles size={12} />
                 Mit Lernblatt
               </div>

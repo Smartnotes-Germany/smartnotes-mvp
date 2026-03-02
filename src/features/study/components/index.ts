@@ -1,5 +1,6 @@
 export { AnalysisStage } from "./AnalysisStage";
 export { AuthScreen } from "./AuthScreen";
+export { GenerationDecisionStage } from "./GenerationDecisionStage";
 export { KpiCard } from "./KpiCard";
 export { LoadingScreen } from "./LoadingScreen";
 export { NavigationShell } from "./NavigationShell";

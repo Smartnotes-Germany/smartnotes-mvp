@@ -224,7 +224,7 @@ export const verifySecret = query({
   args: {
     adminSecret: v.string(),
   },
-  handler: async ( _, args) => {
+  handler: async (_, args) => {
     try {
       assertAdminSecret(args.adminSecret);
       return { valid: true };

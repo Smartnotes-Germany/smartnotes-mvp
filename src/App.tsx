@@ -5,6 +5,7 @@ import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
   AuthScreen,
+  GenerationDecisionStage,
   LoadingScreen,
   NavigationShell,
   QuizStage,
@@ -83,6 +84,7 @@ function StudyApp() {
     hasExistingAnalysis: Boolean(session?.analysis),
   });
   const quizFlow = useQuizFlow({ grantToken, sessionId, currentQuestion });
+  const [showGenerationDecision, setShowGenerationDecision] = useState(false);
   const [sessionActionError, setSessionActionError] = useState<string | null>(
     null,
   );
@@ -91,10 +93,19 @@ function StudyApp() {
     setSessionActionError(null);
     analysisFlow.setAnalysisError(null);
     uploadFlow.setUploadError(null);
+    setShowGenerationDecision(false);
     const startError = await startFreshSession();
     if (startError) {
       setSessionActionError(startError);
     }
+  };
+
+  const handleStartDirectQuiz = async () => {
+    await uploadFlow.generateQuizQuestions();
+  };
+
+  const handleStartLearnFirst = async () => {
+    await uploadFlow.generateQuizQuestions();
   };
 
   if (!grantToken) {
@@ -117,6 +128,11 @@ function StudyApp() {
     return <LoadingScreen />;
   }
 
+  const shouldShowGenerationDecision =
+    showGenerationDecision &&
+    session.stage === "upload" &&
+    stats.readyDocuments > 0;
+
   return (
     <NavigationShell
       logoImage={logoImage}
@@ -135,16 +151,27 @@ function StudyApp() {
       )}
 
       {session.stage === "upload" && (
-        <UploadStage
-          documents={documents}
-          isUploading={uploadFlow.isUploading}
-          uploadError={uploadFlow.uploadError}
-          isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
-          isRemovingDocument={uploadFlow.isRemovingDocument}
-          onFileInputChange={uploadFlow.onFileInputChange}
-          onGenerateQuiz={uploadFlow.generateQuizQuestions}
-          onRemoveDocument={uploadFlow.removeDocumentById}
-        />
+        <>
+          {shouldShowGenerationDecision ? (
+            <GenerationDecisionStage
+              isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
+              uploadError={uploadFlow.uploadError}
+              onBackToUpload={() => setShowGenerationDecision(false)}
+              onStartDirectQuiz={handleStartDirectQuiz}
+              onStartLearnFirst={handleStartLearnFirst}
+            />
+          ) : (
+            <UploadStage
+              documents={documents}
+              isUploading={uploadFlow.isUploading}
+              uploadError={uploadFlow.uploadError}
+              isRemovingDocument={uploadFlow.isRemovingDocument}
+              onFileInputChange={uploadFlow.onFileInputChange}
+              onOpenGenerationDecision={() => setShowGenerationDecision(true)}
+              onRemoveDocument={uploadFlow.removeDocumentById}
+            />
+          )}
+        </>
       )}
 
       {session.stage === "quiz" && (

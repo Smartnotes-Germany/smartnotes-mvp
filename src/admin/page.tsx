@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/logo.png";
 
-export default function AdminDashboard() {
+export default function Page() {
   const [adminSecret, setAdminSecret] = useState(() => localStorage.getItem("adminSecret") || "");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [note, setNote] = useState("");

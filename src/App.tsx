@@ -18,7 +18,7 @@ import {
   useQuizFlow,
   useUploadFlow,
 } from "./features/study/hooks";
-import AdminDashboard from "./admin/AdminDashboard";
+import Page from "./admin/page.tsx";
 
 function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
@@ -182,7 +182,7 @@ function StudyApp() {
 function App() {
   return (
     <Routes>
-      <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="/admin" element={<Page />} />
       <Route path="*" element={<StudyApp />} />
     </Routes>
   );

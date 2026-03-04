@@ -53,7 +53,7 @@ export default function AdminDashboard() {
       try {
         await navigator.clipboard.writeText(generatedLink);
         setCopiedCode(generatedLink);
-        setTimeout(() => setCopiedCode(null), 2000); // Reset "Kopiert!" after 2 seconds
+        setTimeout(() => setCopiedCode(null), 2000);
       } catch (err) {
         console.error("Failed to copy:", err);
         alert("Fehler beim Kopieren des Links.");

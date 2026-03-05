@@ -5,7 +5,8 @@ import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/logo.png";
 
 export default function Page() {
-  const [adminSecret, setAdminSecret] = useState(() => localStorage.getItem("adminSecret") || "");
+  const [draftSecret, setDraftSecret] = useState(() => localStorage.getItem("adminSecret") || "");
+  const [adminSecret, setAdminSecret] = useState(draftSecret);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
@@ -13,8 +14,11 @@ export default function Page() {
   const verifySecret = useQuery(api.admin.verifySecret, { adminSecret });
   const generateMagicLink = useMutation(api.admin.generateMagicLink);
 
-  const [isAuthorized, setIsAuthorized] = useState(verifySecret?.valid ?? false);
-  const loginError = verifySecret && !verifySecret.valid && adminSecret ? "Ungültiges Admin-Secret." : "";
+  const isAuthorized = !!verifySecret?.valid;
+  const loginError =
+    verifySecret && !verifySecret.valid && adminSecret
+      ? "Ungültiges Admin-Secret."
+      : "";
 
   useEffect(() => {
     if (isAuthorized) {
@@ -24,14 +28,14 @@ export default function Page() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsAuthorized(true)
+    setAdminSecret(draftSecret);
   };
 
   const handleLogout = () => {
+    setDraftSecret("");
     setAdminSecret("");
-    setIsAuthorized(false);
     localStorage.removeItem("adminSecret");
-    setGeneratedLink(null); // Also clear generated link on logout
+    setGeneratedLink(null);
   };
 
   const handleGenerateLink = async () => {
@@ -90,8 +94,8 @@ export default function Page() {
                   id="secret"
                   type="password"
                   required
-                  value={adminSecret}
-                  onChange={(e) => setAdminSecret(e.target.value)}
+                  value={draftSecret}
+                  onChange={(e) => setDraftSecret(e.target.value)}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                   placeholder="Admin Secret"
                 />
@@ -102,9 +106,10 @@ export default function Page() {
             )}
             <button
               type="submit"
-              className="group relative flex w-full justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-lg shadow-blue-500/20"
+              disabled={verifySecret === undefined}
+              className="group relative flex w-full justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Anmelden
+              {verifySecret === undefined ? "Verifiziere..." : "Anmelden"}
             </button>
           </form>
         </div>

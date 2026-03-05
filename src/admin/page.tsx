@@ -43,7 +43,7 @@ export default function Page() {
       setCopiedCode(null); // Clear previous "Kopiert!" state
       setGeneratedLink(null); // Clear previous generated link
       const { code } = await generateMagicLink({ adminSecret, note });
-      const magicLink = `https://app.smartnotes.tech/?code=${code}`;
+      const magicLink = `${window.location.origin}/?code=SMARTNOTES-${code}`;
       setGeneratedLink(magicLink);
       setNote(""); // Clear the note input after link generation
     } catch (err) {

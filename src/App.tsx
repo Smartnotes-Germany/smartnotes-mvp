@@ -7,6 +7,7 @@ import {
   AuthScreen,
   LoadingScreen,
   NavigationShell,
+  PrivacyScreen,
   QuizStage,
   UploadStage,
 } from "./features/study/components";
@@ -34,9 +35,12 @@ function StudyApp() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
+    hasAcceptedPrivacy,
+    isAcceptingPrivacy,
     setAccessCodeInput,
     redeemCode,
     startFreshSession,
+    acceptPrivacy,
     signOut,
   } = useAuthSession();
 
@@ -109,6 +113,18 @@ function StudyApp() {
         onRedeemCode={redeemCode}
         isRedeemingCode={isRedeemingCode}
         authError={authError}
+      />
+    );
+  }
+
+  if (!hasAcceptedPrivacy) {
+    return (
+      <PrivacyScreen
+        onAcceptPrivacy={acceptPrivacy}
+        isAcceptingPrivacy={isAcceptingPrivacy}
+        logoImage={logoImage}
+        preference={themePreference}
+        setPreference={setThemePreference}
       />
     );
   }

@@ -243,12 +243,12 @@ export function GenerationDecisionStage({
           </div>
         </article>
 
-        <article className="relative overflow-hidden rounded-4xl border border-cyan-500/20 bg-cyan-50/30 p-5 shadow-sm md:p-8 dark:border-cyan-500/20 dark:bg-cyan-950/20">
-          <div className="absolute -top-10 -right-8 h-32 w-32 rounded-full bg-cyan-500/12 blur-2xl dark:bg-cyan-300/12" />
+        <article className="relative overflow-hidden rounded-4xl border border-accent/20 bg-accent/10 p-5 shadow-sm md:p-8 dark:border-accent/20 dark:bg-accent/20">
+          <div className="absolute -top-10 -right-8 h-32 w-32 rounded-full bg-accent/10 blur-2xl dark:bg-accent/10" />
 
           <div className="relative flex h-full flex-col">
             <div className="mb-5 flex items-start justify-between gap-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-cyan-700 uppercase dark:text-cyan-300">
+              <div className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-accent uppercase dark:text-accent">
                 <BookOpen size={14} />
                 Erst lernen
               </div>
@@ -263,9 +263,9 @@ export function GenerationDecisionStage({
               überprüfen.
             </p>
 
-            <div className="mb-6 rounded-2xl border border-cyan-500/20 bg-white/70 p-4 dark:bg-cyan-950/20">
+            <div className="mb-6 rounded-2xl border border-accent/20 bg-white/70 p-4 dark:bg-accent/20">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-[10px] font-bold tracking-[0.12em] text-cyan-700 uppercase dark:text-cyan-300">
+                <p className="text-[10px] font-bold tracking-[0.12em] text-accent uppercase dark:text-accent">
                   Lernblatt-Vorschau
                 </p>
               </div>
@@ -284,7 +284,7 @@ export function GenerationDecisionStage({
                     width="70"
                     height="95"
                     rx="6"
-                    className="fill-white stroke-cyan-500/20 dark:fill-slate-900"
+                    className="fill-white stroke-accent/20 dark:fill-slate-900"
                     strokeWidth="1.5"
                   />
 
@@ -294,7 +294,7 @@ export function GenerationDecisionStage({
                     width="30"
                     height="5"
                     rx="2.5"
-                    className="fill-cyan-600/40 dark:fill-cyan-400/40"
+                    className="fill-accent/40"
                   />
                   <rect
                     x="25"
@@ -302,7 +302,7 @@ export function GenerationDecisionStage({
                     width="15"
                     height="3"
                     rx="1.5"
-                    className="fill-cyan-600/20 dark:fill-cyan-400/20"
+                    className="fill-accent/20"
                   />
 
                   <rect
@@ -311,17 +311,17 @@ export function GenerationDecisionStage({
                     width="50"
                     height="24"
                     rx="3"
-                    className="fill-cyan-50 stroke-cyan-500/20 dark:fill-cyan-900/30"
+                    className="fill-accent/10 stroke-accent/20"
                     strokeWidth="1"
                   />
-                  <circle cx="38" cy="50" r="6" className="fill-cyan-500/20" />
+                  <circle cx="38" cy="50" r="6" className="fill-accent/20" />
                   <rect
                     x="50"
                     y="45"
                     width="16"
                     height="3"
                     rx="1.5"
-                    className="fill-cyan-500/20"
+                    className="fill-accent/20"
                   />
                   <rect
                     x="50"
@@ -329,7 +329,7 @@ export function GenerationDecisionStage({
                     width="10"
                     height="3"
                     rx="1.5"
-                    className="fill-cyan-500/20"
+                    className="fill-accent/20"
                   />
 
                   <rect
@@ -338,7 +338,7 @@ export function GenerationDecisionStage({
                     width="45"
                     height="3"
                     rx="1.5"
-                    className="fill-cyan-600/20 dark:fill-cyan-400/20"
+                    className="fill-accent/20"
                   />
                   <rect
                     x="25"
@@ -346,7 +346,7 @@ export function GenerationDecisionStage({
                     width="50"
                     height="3"
                     rx="1.5"
-                    className="fill-cyan-600/20 dark:fill-cyan-400/20"
+                    className="fill-accent/20"
                   />
                   <rect
                     x="25"
@@ -354,14 +354,14 @@ export function GenerationDecisionStage({
                     width="35"
                     height="3"
                     rx="1.5"
-                    className="fill-cyan-600/20 dark:fill-cyan-400/20"
+                    className="fill-accent/20"
                   />
 
-                  <circle cx="85" cy="15" r="3" className="fill-cyan-500/40" />
-                  <circle cx="20" cy="90" r="2" className="fill-cyan-500/40" />
+                  <circle cx="85" cy="15" r="3" className="fill-accent/40" />
+                  <circle cx="20" cy="90" r="2" className="fill-accent/40" />
                   <path
                     d="M75 95 L80 90 L85 95"
-                    className="stroke-cyan-500/30"
+                    className="stroke-accent/30"
                     strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -378,7 +378,7 @@ export function GenerationDecisionStage({
                 >
                   <CheckCircle2
                     size={15}
-                    className="mt-0.5 shrink-0 text-cyan-700 dark:text-cyan-300"
+                    className="mt-0.5 shrink-0 text-accent"
                   />
                   <span>{benefit}</span>
                 </p>
@@ -389,7 +389,7 @@ export function GenerationDecisionStage({
               type="button"
               onClick={() => void onStartLearnFirst()}
               disabled={isGeneratingQuiz}
-              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-cyan-600 px-6 py-3.5 text-xs font-bold tracking-[0.12em] text-white uppercase shadow-lg shadow-cyan-600/20 transition hover:scale-[1.02] active:scale-95 disabled:opacity-60 dark:bg-cyan-500"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-3.5 text-xs font-bold tracking-[0.12em] text-white uppercase shadow-lg shadow-accent/20 transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
             >
               {isGeneratingQuiz ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -397,7 +397,7 @@ export function GenerationDecisionStage({
                 <ArrowRight size={16} />
               )}
               {isGeneratingQuiz
-                ? "Lernpfad wird vorbereitet..."
+                ? "Lernübersicht wird erstellt..."
                 : "Lernübersicht starten"}
             </button>
           </div>

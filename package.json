@@ -23,6 +23,7 @@
     "@langfuse/otel": "^4.6.1",
     "@langfuse/tracing": "^4.6.1",
     "@opentelemetry/sdk-node": "^0.212.0",
+    "@react-pdf/renderer": "^4.3.2",
     "@tailwindcss/vite": "^4.1.18",
     "ai": "^6.0.86",
     "clsx": "^2.1.1",

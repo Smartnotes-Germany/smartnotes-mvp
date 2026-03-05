@@ -3,10 +3,12 @@ import type { ChangeEvent } from "react";
 import { useAction, useMutation } from "convex/react";
 import {
   extractDocumentContentRef,
+  generatePdfSummaryRef,
   generateQuizRef,
   generateUploadUrlRef,
   registerUploadedDocumentRef,
   removeDocumentRef,
+  startQuizRef,
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import { uploadFileToConvexStorage } from "../upload";
@@ -39,8 +41,53 @@ export function useUploadFlow({
   const generateUploadUrl = useMutation(generateUploadUrlRef);
   const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
+  const startQuiz = useMutation(startQuizRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
+  const generatePdfSummary = useAction(generatePdfSummaryRef);
+
+  const generatePdfSummaryQuestions = useCallback(async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    const clientRequestId = createClientRequestId("generatePdfSummary");
+    setIsGeneratingQuiz(true);
+    setUploadError(null);
+
+    try {
+      await generatePdfSummary({
+        grantToken,
+        sessionId,
+        clientRequestId,
+      });
+    } catch (error: unknown) {
+      setUploadError(
+        formatError(error, {
+          fallback: "Die Lernübersicht konnte nicht erstellt werden.",
+          clientRequestId,
+        }),
+      );
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  }, [generatePdfSummary, grantToken, sessionId]);
+
+  const startQuizStudySession = useCallback(async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    try {
+      await startQuiz({ grantToken, sessionId });
+    } catch (error: unknown) {
+      setUploadError(
+        formatError(error, {
+          fallback: "Das Quiz konnte nicht gestartet werden.",
+        }),
+      );
+    }
+  }, [grantToken, sessionId, startQuiz]);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
@@ -208,6 +255,8 @@ export function useUploadFlow({
     setUploadError,
     onFileInputChange,
     generateQuizQuestions,
+    generatePdfSummaryQuestions,
     removeDocumentById,
+    startQuizStudySession,
   };
 }

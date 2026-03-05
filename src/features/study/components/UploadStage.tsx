@@ -10,20 +10,22 @@ import type { ExtractionStatus, StudyDocument } from "../types";
 type UploadStageProps = {
   documents: StudyDocument[];
   isUploading: boolean;
+  isGeneratingQuiz: boolean;
   uploadError: string | null;
   isRemovingDocument: string | null;
   onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onOpenGenerationDecision: () => void;
+  onGenerateQuiz: () => void;
   onRemoveDocument: (documentId: string) => Promise<void>;
 };
 
 export function UploadStage({
   documents,
   isUploading,
+  isGeneratingQuiz,
   uploadError,
   isRemovingDocument,
   onFileInputChange,
-  onOpenGenerationDecision,
+  onGenerateQuiz,
   onRemoveDocument,
 }: UploadStageProps) {
   const readyDocuments = documents.filter(
@@ -116,16 +118,16 @@ export function UploadStage({
         {readyDocuments.length > 0 && (
           <button
             type="button"
-            onClick={onOpenGenerationDecision}
-            disabled={isUploading}
+            onClick={onGenerateQuiz}
+            disabled={isUploading || isGeneratingQuiz}
             className="bg-accent shadow-accent/20 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60"
           >
-            {isUploading ? (
+            {isUploading || isGeneratingQuiz ? (
               <Loader2 size={20} className="animate-spin" />
             ) : (
               <Sparkles size={20} />
             )}
-            Lernweg wählen
+            Lernmodus wählen
           </button>
         )}
       </div>

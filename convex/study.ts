@@ -710,6 +710,29 @@ export const storeSessionAnalysis = internalMutation({
   },
 });
 
+export const storePdfSummary = internalMutation({
+  args: {
+    sessionId: v.id("studySessions"),
+    pdfSummary: v.object({
+      title: v.string(),
+      sections: v.array(
+        v.object({
+          title: v.string(),
+          content: v.string(),
+          imageUrl: v.optional(v.string()),
+        }),
+      ),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      pdfSummary: args.pdfSummary,
+      stage: "pdf_summary",
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const storeAiAnalyticsEvent = internalMutation({
   args: {
     traceId: v.string(),

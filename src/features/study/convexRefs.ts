@@ -19,6 +19,12 @@ export const startSessionRef = makeFunctionReference<
   string
 >("study:startSession");
 
+export const startQuizRef = makeFunctionReference<
+  "mutation",
+  { grantToken: string; sessionId: string },
+  void
+>("study:startQuiz");
+
 export const generateUploadUrlRef = makeFunctionReference<
   "mutation",
   { grantToken: string; sessionId: string },
@@ -90,6 +96,16 @@ export const generateQuizRef = makeFunctionReference<
   },
   unknown
 >("ai:generateQuiz");
+
+export const generatePdfSummaryRef = makeFunctionReference<
+  "action",
+  {
+    grantToken: string;
+    sessionId: string;
+    clientRequestId?: string;
+  },
+  unknown
+>("ai:generatePdfSummary");
 
 export const evaluateAnswerRef = makeFunctionReference<
   "action",

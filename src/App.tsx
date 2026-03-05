@@ -7,8 +7,9 @@ import {
   AuthScreen,
   GenerationDecisionStage,
   LoadingScreen,
-  NavigationShell,
+  NavigationShell, PdfSummaryStage,
   QuizStage,
+  SummaryStage,
   UploadStage,
 } from "./features/study/components";
 import { sessionSnapshotRef } from "./features/study/convexRefs";
@@ -19,7 +20,7 @@ import {
   useQuizFlow,
   useUploadFlow,
 } from "./features/study/hooks";
-import AdminDashboard from "./admin/AdminDashboard";
+import Page from "./admin/AdminDashboard.tsx";
 
 function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
@@ -101,11 +102,15 @@ function StudyApp() {
   };
 
   const handleStartDirectQuiz = async () => {
+    // This will generate the quiz and summary, but we'll go straight to the quiz stage
+    // The backend logic needs to support this, or we set a flag.
+    // For now, we'll just generate and let the normal flow to summary happen.
+    // A future improvement could be to skip summary.
     await uploadFlow.generateQuizQuestions();
   };
 
   const handleStartLearnFirst = async () => {
-    await uploadFlow.generateQuizQuestions();
+    await uploadFlow.generatePdfSummaryQuestions();
   };
 
   if (!grantToken) {
@@ -164,14 +169,30 @@ function StudyApp() {
             <UploadStage
               documents={documents}
               isUploading={uploadFlow.isUploading}
+              isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
               uploadError={uploadFlow.uploadError}
               isRemovingDocument={uploadFlow.isRemovingDocument}
               onFileInputChange={uploadFlow.onFileInputChange}
-              onOpenGenerationDecision={() => setShowGenerationDecision(true)}
+              onGenerateQuiz={() => setShowGenerationDecision(true)}
               onRemoveDocument={uploadFlow.removeDocumentById}
             />
           )}
         </>
+      )}
+
+      {session.stage === "summary" && (
+        <SummaryStage
+          summary={session.sourceSummary ?? "Keine Zusammenfassung verfügbar."}
+          onStartQuiz={uploadFlow.startQuizStudySession}
+        />
+      )}
+
+      {session.stage === "pdf_summary" && (
+        <PdfSummaryStage
+          data={session.pdfSummary}
+          onBack={() => setShowGenerationDecision(true)}
+          onContinueToQuiz={uploadFlow.startQuizStudySession}
+        />
       )}
 
       {session.stage === "quiz" && (
@@ -209,7 +230,7 @@ function StudyApp() {
 function App() {
   return (
     <Routes>
-      <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="/admin" element={<Page />} />
       <Route path="*" element={<StudyApp />} />
     </Routes>
   );

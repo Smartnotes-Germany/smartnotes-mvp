@@ -5,7 +5,8 @@ export type StudyStage =
   | "mode_selection"
   | "quiz"
   | "analysis"
-  | "summary";
+  | "summary"
+  | "pdf_summary";
 
 export type ExtractionStatus = "pending" | "processing" | "ready" | "failed";
 
@@ -63,9 +64,18 @@ export type StudySession = {
   stage: StudyStage;
   round: number;
   currentFocusTopic?: string;
+  sourceSummary?: string;
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;
   summary?: StudySummary;
+  pdfSummary?: {
+    title: string;
+    sections: Array<{
+      title: string;
+      content: string;
+      imageUrl?: string;
+    }>;
+  };
 };
 
 export type StudyDocument = {

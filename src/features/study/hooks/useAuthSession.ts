@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
-  acceptPrivacyPolicyRef, // Added import
   consumeMagicLinkRef,
   latestSessionIdRef,
   redeemAccessCodeRef,
@@ -57,7 +56,6 @@ export function useAuthSession(): AuthSessionReturn {
 
   const redeemAccessCode = useMutation(redeemAccessCodeRef);
   const consumeMagicLink = useMutation(consumeMagicLinkRef);
-  const acceptPrivacyPolicy = useMutation(acceptPrivacyPolicyRef); // Added mutation hook
   const startSession = useMutation(startSessionRef);
 
   const grantStatus = useQuery(
@@ -71,24 +69,12 @@ export function useAuthSession(): AuthSessionReturn {
   );
 
   const acceptPrivacy = useCallback(async () => {
-    if (!grantToken) return;
     setIsAcceptingPrivacy(true);
-    try {
-      await acceptPrivacyPolicy({
-        grantToken,
-        version: "2026-02-22", // Use a version string for the policy
-      });
-      localStorage.setItem("smartnotes.privacy-accepted", "true");
-      setHasAcceptedPrivacy(true);
-    } catch (error) {
-      console.error("Fehler beim Speichern der Datenschutzzustimmung:", error);
-      // In case of error, still proceed for UX, but log it
-      localStorage.setItem("smartnotes.privacy-accepted", "true");
-      setHasAcceptedPrivacy(true);
-    } finally {
-      setIsAcceptingPrivacy(false);
-    }
-  }, [acceptPrivacyPolicy, grantToken]);
+    // Simuliere kurze Verzögerung für UX, falls gewünscht, oder direkt setzen
+    localStorage.setItem("smartnotes.privacy-accepted", "true");
+    setHasAcceptedPrivacy(true);
+    setIsAcceptingPrivacy(false);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

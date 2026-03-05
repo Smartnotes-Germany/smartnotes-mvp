@@ -13,11 +13,6 @@ export const consumeMagicLinkRef = makeFunctionReference<
   { grantToken: string; obfuscatedCodes: string[] }
 >("access:consumeMagicLink");
 
-export const acceptPrivacyPolicyRef = makeFunctionReference<
-    "mutation",
-    { grantToken: string, version: string }
->("access:acceptPrivacyPolicyRef");
-
 export const startSessionRef = makeFunctionReference<
   "mutation",
   { grantToken: string; title?: string },

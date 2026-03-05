@@ -1,4 +1,10 @@
 import type { ThemePreference } from "./types";
+import {
+  ACCEPTED_FILE_TYPES,
+  ACCEPTED_FILE_TYPES_LABEL,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+} from "../../../shared/uploadPolicy";
 
 export const STORAGE_KEYS = {
   grantToken: "smartnotes.grant-token",
@@ -12,5 +18,9 @@ export const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "dark", label: "Dunkel" },
 ];
 
-export const ACCEPTED_FILE_TYPES =
-  ".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.markdown,.csv,.json,.jpg,.jpeg,.png,.webp";
+export {
+  ACCEPTED_FILE_TYPES,
+  ACCEPTED_FILE_TYPES_LABEL,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+};

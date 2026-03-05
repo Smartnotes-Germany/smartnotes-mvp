@@ -1,6 +1,11 @@
 export type ThemePreference = "light" | "dark" | "system";
 
-export type StudyStage = "upload" | "quiz" | "analysis";
+export type StudyStage =
+  | "upload"
+  | "mode_selection"
+  | "quiz"
+  | "analysis"
+  | "summary";
 
 export type ExtractionStatus = "pending" | "processing" | "ready" | "failed";
 
@@ -32,17 +37,42 @@ export type SessionAnalysis = {
   topics: SessionAnalysisTopic[];
 };
 
+export type SummarySection = {
+  title: string;
+  content: string;
+  keyPoints: string[];
+  table?: {
+    headers: string[];
+    rows: string[][];
+  };
+  chart?: {
+    type: "bar" | "percentage";
+    data: { label: string; value: number }[];
+  };
+  imageQuery?: string;
+};
+
+export type StudySummary = {
+  title: string;
+  overview: string;
+  sections: SummarySection[];
+};
+
 export type StudySession = {
   title: string;
   stage: StudyStage;
   round: number;
+  currentFocusTopic?: string;
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;
+  summary?: StudySummary;
 };
 
 export type StudyDocument = {
   _id: string;
   fileName: string;
+  fileType: string;
+  fileSizeBytes: number;
   extractionStatus: ExtractionStatus;
   extractionError?: string;
 };

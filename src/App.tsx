@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
+import { Routes, Route } from "react-router-dom";
 import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
   AuthScreen,
   LoadingScreen,
   NavigationShell,
-  PrivacyScreen, // <-- Added PrivacyScreen import
   QuizStage,
   UploadStage,
 } from "./features/study/components";
@@ -18,8 +18,9 @@ import {
   useQuizFlow,
   useUploadFlow,
 } from "./features/study/hooks";
+import Page from "./admin/page.tsx";
 
-function App() {
+function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
     useTheme();
   const {
@@ -33,13 +34,10 @@ function App() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
-    hasAcceptedPrivacy, // <-- Added
-    isAcceptingPrivacy, // <-- Added
     setAccessCodeInput,
     redeemCode,
     startFreshSession,
     signOut,
-    acceptPrivacy, // <-- Added
   } = useAuthSession();
 
   const snapshot = useQuery(
@@ -75,8 +73,15 @@ function App() {
     );
   }, [responseByQuestionId, session]);
 
-  const uploadFlow = useUploadFlow({ grantToken, sessionId });
-  const analysisFlow = useAnalysisFlow({ grantToken, sessionId });
+  const uploadFlow = useUploadFlow({ grantToken, sessionId, documents });
+  const analysisFlow = useAnalysisFlow({
+    grantToken,
+    sessionId,
+    documents,
+    quizQuestions: session?.quizQuestions ?? [],
+    currentFocusTopic: session?.currentFocusTopic ?? null,
+    hasExistingAnalysis: Boolean(session?.analysis),
+  });
   const quizFlow = useQuizFlow({ grantToken, sessionId, currentQuestion });
   const [sessionActionError, setSessionActionError] = useState<string | null>(
     null,
@@ -110,19 +115,6 @@ function App() {
 
   if (!grantStatus || !grantStatus.valid || !sessionId || !session || !stats) {
     return <LoadingScreen />;
-  }
-
-  // Render Privacy Screen if not accepted yet
-  if (!hasAcceptedPrivacy) {
-    return (
-      <PrivacyScreen
-        logoImage={logoImage}
-        preference={themePreference}
-        setPreference={setThemePreference}
-        onAcceptPrivacy={acceptPrivacy}
-        isAcceptingPrivacy={isAcceptingPrivacy}
-      />
-    );
   }
 
   return (
@@ -184,6 +176,15 @@ function App() {
         />
       )}
     </NavigationShell>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/admin" element={<Page />} />
+      <Route path="*" element={<StudyApp />} />
+    </Routes>
   );
 }
 

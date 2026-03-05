@@ -1,4 +1,5 @@
 import type { Id } from "./_generated/dataModel";
+import { components } from "./_generated/api";
 import {
   internalMutation,
   internalQuery,
@@ -8,6 +9,22 @@ import {
   type QueryCtx,
 } from "./errorTracking";
 import { v } from "convex/values";
+import { validateUploadFile } from "../shared/uploadPolicy";
+import { topicsMatchForFocusMode } from "../shared/topicMatching";
+
+const MAX_ANALYSIS_FULL_RESPONSES = 240;
+const MAX_ANALYSIS_FOCUS_RESPONSES = 180;
+const MAX_ANALYSIS_FOCUS_SCAN_RESPONSES = 720;
+
+const clampAnalysisResponseLimit = (value: number, mode: "full" | "focus") => {
+  const fallback =
+    mode === "focus"
+      ? MAX_ANALYSIS_FOCUS_RESPONSES
+      : MAX_ANALYSIS_FULL_RESPONSES;
+  const numeric = Number.isFinite(value) ? Math.round(value) : fallback;
+
+  return Math.max(20, Math.min(MAX_ANALYSIS_FOCUS_SCAN_RESPONSES, numeric));
+};
 
 const quizQuestionValidator = v.object({
   id: v.string(),
@@ -45,10 +62,78 @@ const aiAnalyticsTelemetryProviderValidator = v.union(
   v.literal("langfuse"),
   v.literal("none"),
 );
+const aiAnalyticsErrorCategoryValidator = v.union(
+  v.literal("file_too_large"),
+  v.literal("storage_fetch_failed"),
+  v.literal("model_no_output"),
+  v.literal("vertex_request_failed"),
+  v.literal("unknown"),
+);
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
   revokedAt?: number;
+};
+
+const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
+
+const deleteStorageFileWithFallback = async (
+  ctx: MutationCtx,
+  storageId: Id<"_storage">,
+) => {
+  try {
+    const deleted = await ctx.runMutation(
+      components.convexFilesControl.cleanUp.deleteFile,
+      {
+        storageId,
+      },
+    );
+
+    if (!deleted.deleted) {
+      await ctx.storage.delete(storageId);
+    }
+  } catch {
+    try {
+      await ctx.storage.delete(storageId);
+    } catch {
+      // Best-effort cleanup.
+    }
+  }
+};
+
+const parseMetadataJson = (
+  raw: string | undefined,
+): Record<string, unknown> | null => {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const extractClientRequestId = (
+  metadata: Record<string, unknown> | null,
+): string | null => {
+  if (!metadata) {
+    return null;
+  }
+
+  return typeof metadata.clientRequestId === "string"
+    ? metadata.clientRequestId
+    : null;
 };
 
 const ensureGrant = async (
@@ -180,7 +265,13 @@ export const generateUploadUrl = mutation({
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
-    return ctx.storage.generateUploadUrl();
+
+    return ctx.runMutation(
+      components.convexFilesControl.upload.generateUploadUrl,
+      {
+        provider: "convex",
+      },
+    );
   },
 });
 
@@ -188,6 +279,7 @@ export const registerUploadedDocument = mutation({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    uploadToken: v.string(),
     storageId: v.id("_storage"),
     fileName: v.string(),
     fileType: v.string(),
@@ -197,13 +289,70 @@ export const registerUploadedDocument = mutation({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
+    const finalizedUpload = await ctx.runMutation(
+      components.convexFilesControl.upload.finalizeUpload,
+      {
+        uploadToken: args.uploadToken,
+        storageId: args.storageId,
+        accessKeys: [buildGrantAccessKey(grant._id)],
+      },
+    );
+
+    if (finalizedUpload.storageProvider !== "convex") {
+      throw new Error(
+        "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
+      );
+    }
+    if (finalizedUpload.storageId !== args.storageId) {
+      throw new Error(
+        "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
+      );
+    }
+
+    const trustedMetadata = finalizedUpload.metadata;
+    if (!trustedMetadata) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(
+        "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
+      );
+    }
+
+    if (trustedMetadata.storageId !== args.storageId) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(
+        "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
+      );
+    }
+
+    const trustedFileSizeBytes = trustedMetadata.size;
+    const trustedFileType =
+      trustedMetadata.contentType ||
+      args.fileType ||
+      "application/octet-stream";
+
+    if (args.fileSizeBytes !== trustedFileSizeBytes) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(
+        "Uploadgröße konnte nicht verifiziert werden. Bitte lade die Datei erneut hoch.",
+      );
+    }
+
+    const uploadValidation = validateUploadFile({
+      name: args.fileName,
+      size: trustedFileSizeBytes,
+    });
+    if (!uploadValidation.valid) {
+      await deleteStorageFileWithFallback(ctx, args.storageId);
+      throw new Error(uploadValidation.message);
+    }
+
     const now = Date.now();
     const documentId = await ctx.db.insert("sessionDocuments", {
       sessionId: args.sessionId,
       storageId: args.storageId,
       fileName: args.fileName,
-      fileType: args.fileType,
-      fileSizeBytes: args.fileSizeBytes,
+      fileType: trustedFileType,
+      fileSizeBytes: trustedFileSizeBytes,
       extractionStatus: "pending",
       createdAt: now,
       updatedAt: now,
@@ -228,7 +377,54 @@ export const removeDocument = mutation({
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
+    await deleteStorageFileWithFallback(ctx, document.storageId);
+
     await ctx.db.delete(args.documentId);
+  },
+});
+
+export const createDocumentDownloadUrl = mutation({
+  // Not wired in the current UI yet; kept as the download endpoint for planned
+  // document preview/export actions without exposing raw storage IDs.
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    documentId: v.id("sessionDocuments"),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    const document = await ctx.db.get(args.documentId);
+    if (!document || document.sessionId !== args.sessionId) {
+      throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
+    }
+
+    const accessKey = buildGrantAccessKey(grant._id);
+    const downloadGrant = await ctx.runMutation(
+      components.convexFilesControl.download.createDownloadGrant,
+      {
+        storageId: document.storageId,
+        maxUses: 1,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      },
+    );
+
+    const consumeResult = await ctx.runMutation(
+      components.convexFilesControl.download.consumeDownloadGrantForUrl,
+      {
+        downloadToken: downloadGrant.downloadToken,
+        accessKey,
+      },
+    );
+
+    if (consumeResult.status !== "ok" || !consumeResult.downloadUrl) {
+      throw new Error("Download-Link konnte nicht erstellt werden.");
+    }
+
+    return {
+      downloadUrl: consumeResult.downloadUrl,
+    };
   },
 });
 
@@ -244,11 +440,12 @@ export const getDocumentExtractionContext = internalQuery({
 
     const document = await ctx.db.get(args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
-      throw new Error("Dokument gehoert nicht zu dieser Sitzung.");
+      throw new Error("Dokument gehört nicht zu dieser Sitzung.");
     }
 
     return {
       document,
+      accessKey: buildGrantAccessKey(grant._id),
     };
   },
 });
@@ -310,6 +507,7 @@ export const getQuizGenerationContext = internalQuery({
     return {
       session,
       documents,
+      accessKey: buildGrantAccessKey(grant._id),
     };
   },
 });
@@ -439,6 +637,9 @@ export const getAnalysisContext = internalQuery({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    mode: v.optional(v.union(v.literal("full"), v.literal("focus"))),
+    focusTopic: v.optional(v.string()),
+    maxResponses: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
@@ -448,12 +649,39 @@ export const getAnalysisContext = internalQuery({
       grant._id,
     );
 
-    const responses = await ctx.db
+    const mode = args.mode ?? "full";
+    const resolvedFocusTopic =
+      args.focusTopic?.trim() || session.currentFocusTopic?.trim() || "";
+    const responseLimit = clampAnalysisResponseLimit(
+      args.maxResponses ??
+        (mode === "focus"
+          ? MAX_ANALYSIS_FOCUS_RESPONSES
+          : MAX_ANALYSIS_FULL_RESPONSES),
+      mode,
+    );
+
+    const recentResponses = await ctx.db
       .query("quizResponses")
-      .withIndex("by_session_round", (q) =>
-        q.eq("sessionId", args.sessionId).eq("round", session.round),
-      )
-      .collect();
+      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(
+        mode === "focus"
+          ? Math.min(
+              MAX_ANALYSIS_FOCUS_SCAN_RESPONSES,
+              Math.max(responseLimit * 3, responseLimit + 40),
+            )
+          : responseLimit,
+      );
+
+    const responses =
+      mode === "focus" && resolvedFocusTopic
+        ? recentResponses
+            .filter((response) =>
+              topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
+            )
+            .slice(0, responseLimit)
+            .reverse()
+        : recentResponses.slice(0, responseLimit).reverse();
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -509,6 +737,7 @@ export const storeAiAnalyticsEvent = internalMutation({
     filePartCount: v.optional(v.number()),
     sourceContextLength: v.optional(v.number()),
     outputQuestionCount: v.optional(v.number()),
+    errorCategory: v.optional(aiAnalyticsErrorCategoryValidator),
     errorName: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
     errorStackPreview: v.optional(v.string()),
@@ -541,5 +770,48 @@ export const getAiAnalyticsForSession = query({
       )
       .order("desc")
       .take(limit);
+  },
+});
+
+export const getLatestAiFailureByClientRequestId = query({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    clientRequestId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    const candidates = await ctx.db
+      .query("aiAnalyticsEvents")
+      .withIndex("by_session_createdAt", (q) =>
+        q.eq("sessionId", args.sessionId),
+      )
+      .order("desc")
+      .take(250);
+
+    for (const event of candidates) {
+      if (event.status !== "error") {
+        continue;
+      }
+
+      const metadata = parseMetadataJson(event.metadataJson);
+      const metadataClientRequestId = extractClientRequestId(metadata);
+      if (metadataClientRequestId !== args.clientRequestId) {
+        continue;
+      }
+
+      return {
+        traceId: event.traceId,
+        scope: event.scope,
+        errorCategory: event.errorCategory,
+        errorName: event.errorName,
+        errorMessage: event.errorMessage,
+        createdAt: event.createdAt,
+      };
+    }
+
+    return null;
   },
 });

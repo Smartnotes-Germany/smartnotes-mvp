@@ -1,4 +1,5 @@
 import type { Id } from "./_generated/dataModel";
+import { components } from "./_generated/api";
 import {
   mutation,
   query,
@@ -7,6 +8,7 @@ import {
 } from "./errorTracking";
 import { v } from "convex/values";
 
+// Access token
 const getConfiguredAdminSecret = () => {
   const secret = process.env.ACCESS_CODE_ADMIN_SECRET;
   if (!secret) {
@@ -156,7 +158,17 @@ export const deleteData = mutation({
 
       for (const document of documents) {
         try {
-          await ctx.storage.delete(document.storageId);
+          const deleted = await ctx.runMutation(
+            components.convexFilesControl.cleanUp.deleteFile,
+            {
+              storageId: document.storageId,
+            },
+          );
+
+          if (!deleted.deleted) {
+            await ctx.storage.delete(document.storageId);
+          }
+
           deletedStorageFiles += 1;
         } catch {
           // Continue deleting DB records even if storage deletion fails.
@@ -205,5 +217,41 @@ export const deleteData = mutation({
       deletedStorageFiles,
       revokedGrant: Boolean(target.grant),
     };
+  },
+});
+
+export const verifySecret = query({
+  args: {
+    adminSecret: v.string(),
+  },
+  handler: async ( _, args) => {
+    try {
+      assertAdminSecret(args.adminSecret);
+      return { valid: true };
+    } catch {
+      return { valid: false };
+    }
+  },
+});
+
+export const generateMagicLink = mutation({
+  args: {
+    adminSecret: v.string(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    assertAdminSecret(args.adminSecret);
+
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const now = Date.now();
+
+    await ctx.db.insert("accessCodes", {
+      code,
+      normalizedCode: "SMARTNOTES-" + code,
+      note: args.note,
+      createdAt: now,
+    });
+
+    return { code };
   },
 });

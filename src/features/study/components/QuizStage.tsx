@@ -3,7 +3,8 @@ import {
   Brain,
   CheckCircle2,
   Lightbulb,
-  Loader2, LogOut,
+  Loader2,
+  LogOut,
   RefreshCcw,
   XCircle,
 } from "lucide-react";
@@ -41,8 +42,8 @@ export function QuizStage({
   onContinueAfterFeedback,
 }: QuizStageProps) {
   return (
-    <section className="flex h-full flex-col items-center justify-center">
-      <div className="w-full max-w-3xl text-center">
+    <section className="flex h-full min-h-full flex-col items-center py-4">
+      <div className="my-auto w-full max-w-3xl text-center">
         {!currentQuestion && stats.totalQuestions > 0 && !feedback ? (
           <div className="border-cream-border bg-cream-light animate-in zoom-in-95 rounded-[2.5rem] border p-8 text-center duration-500 md:p-16">
             <h2 className="mb-4 text-3xl font-black tracking-tighter md:text-5xl">

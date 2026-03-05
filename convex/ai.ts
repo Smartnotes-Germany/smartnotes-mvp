@@ -1,13 +1,24 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import { createVertex, vertex } from "@ai-sdk/google-vertex";
+import { createVertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
 import { action, type ActionCtx } from "./errorTracking";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import { v } from "convex/values";
+import {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_LABEL,
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
+  formatFileSizeMiB,
+} from "../shared/uploadPolicy";
+import {
+  normalizeTopicKey,
+  topicsMatchForFocusMode,
+} from "../shared/topicMatching";
 import {
   buildTelemetryConfig,
   flushTelemetry,
@@ -20,9 +31,10 @@ import {
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
-const MAX_VERTEX_INLINE_FILE_BYTES = 7 * 1024 * 1024;
-const MAX_VERTEX_INLINE_FILE_LABEL = "7 MiB";
+const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
+const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
+const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
 const vertexProviderOptions = {
   google: {
@@ -41,27 +53,12 @@ const plainTextExtensions = new Set([
   "yaml",
   "yml",
 ]);
-const vertexNativeFileExtensions = new Set([
-  "pdf",
-  "ppt",
-  "pptx",
-  "doc",
-  "docx",
-  "jpg",
-  "jpeg",
-  "png",
-  "webp",
-]);
-const vertexNativeMediaTypes = new Set([
-  "application/pdf",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+const vertexNativeFileExtensions = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_EXTENSIONS,
+);
+const vertexNativeMediaTypes = new Set<string>(
+  VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
+);
 
 const extensionToMediaType: Record<string, string> = {
   pdf: "application/pdf",
@@ -95,19 +92,25 @@ const answerEvaluationSchema = z.object({
   idealAnswer: z.string(),
 });
 
+const analysisTopicSchema = z.object({
+  topic: z.string(),
+  comfortScore: z.number().min(0).max(100),
+  rationale: z.string(),
+  recommendation: z.string(),
+});
+
 const analysisSchema = z.object({
   overallReadiness: z.number().min(0).max(100),
   strongestTopics: z.array(z.string()).min(1).max(3),
   weakestTopics: z.array(z.string()).min(1).max(3),
-  topics: z.array(
-    z.object({
-      topic: z.string(),
-      comfortScore: z.number().min(0).max(100),
-      rationale: z.string(),
-      recommendation: z.string(),
-    }),
-  ),
+  topics: z.array(analysisTopicSchema),
   recommendedNextStep: z.string(),
+});
+
+const focusTopicAnalysisSchema = z.object({
+  comfortScore: z.number().min(0).max(100),
+  rationale: z.string(),
+  recommendation: z.string(),
 });
 
 const deepDiveSchema = z.object({
@@ -127,6 +130,7 @@ type SessionDocumentInput = {
   storageId: string;
   fileName: string;
   fileType: string;
+  fileSizeBytes: number;
   extractedText?: string;
   extractionStatus: "pending" | "processing" | "ready" | "failed";
 };
@@ -142,7 +146,10 @@ type QuestionForEvaluation = {
 type QuizGenerationResult = z.infer<typeof quizGenerationSchema>;
 type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
 type AnalysisResult = z.infer<typeof analysisSchema>;
+type AnalysisTopicInsight = z.infer<typeof analysisTopicSchema>;
+type FocusTopicAnalysisResult = z.infer<typeof focusTopicAnalysisSchema>;
 type DeepDiveGenerationResult = z.infer<typeof deepDiveSchema>;
+type AnalysisMode = "full" | "focus";
 
 const compactText = (value: string, maxChars: number) => {
   const normalized = value
@@ -153,7 +160,7 @@ const compactText = (value: string, maxChars: number) => {
   if (normalized.length <= maxChars) {
     return normalized;
   }
-  return `${normalized.slice(0, maxChars)}\n\n[Inhalt wurde fuer die Verarbeitung gekuerzt.]`;
+  return `${normalized.slice(0, maxChars)}\n\n[Inhalt wurde für die Verarbeitung gekürzt.]`;
 };
 
 const filenameExtension = (name: string) => {
@@ -166,19 +173,28 @@ const filenameExtension = (name: string) => {
 
 const decodeUtf8 = (buffer: Buffer) => new TextDecoder("utf-8").decode(buffer);
 
-const formatMebibytes = (bytes: number) => {
-  const mebibytes = bytes / (1024 * 1024);
-  return `${mebibytes.toFixed(1)} MiB`;
-};
-
 const buildInlineFileTooLargeError = (fileName: string, sizeBytes?: number) => {
   const sizeDetail =
     sizeBytes && Number.isFinite(sizeBytes)
-      ? ` (${formatMebibytes(sizeBytes)})`
+      ? ` (${formatFileSizeMiB(sizeBytes)})`
       : "";
 
   return new Error(
     `Die Datei "${fileName}"${sizeDetail} ist zu groß für die aktuelle KI-Verarbeitung (maximal ${MAX_VERTEX_INLINE_FILE_LABEL} pro Datei). Bitte verkleinere die Datei oder teile sie auf.`,
+  );
+};
+
+const getOversizedInlineDocuments = (
+  documents: Array<{
+    fileName: string;
+    fileType: string;
+    fileSizeBytes: number;
+  }>,
+) => {
+  return documents.filter(
+    (document) =>
+      isVertexNativeCandidate(document.fileType, document.fileName) &&
+      document.fileSizeBytes > MAX_VERTEX_INLINE_FILE_BYTES,
   );
 };
 
@@ -196,6 +212,85 @@ const resolveMediaType = (fileType: string, fileName: string) => {
   }
   const extension = filenameExtension(fileName);
   return extensionToMediaType[extension] ?? "application/octet-stream";
+};
+
+const createDocumentReadUrl = async (
+  ctx: {
+    runMutation: ActionCtx["runMutation"];
+    storage: { getUrl: (storageId: string) => Promise<string | null> };
+  },
+  storageId: string,
+  accessKey?: string,
+  trace?: {
+    log: (
+      level: "info" | "warn" | "error",
+      event: string,
+      details?: Record<string, unknown>,
+    ) => void;
+  },
+) => {
+  if (accessKey) {
+    try {
+      const downloadGrant = await ctx.runMutation(
+        components.convexFilesControl.download.createDownloadGrant,
+        {
+          storageId,
+          maxUses: 1,
+          expiresAt: Date.now() + DOWNLOAD_GRANT_TTL_MS,
+        },
+      );
+
+      const consumeResult = await ctx.runMutation(
+        components.convexFilesControl.download.consumeDownloadGrantForUrl,
+        {
+          downloadToken: downloadGrant.downloadToken,
+          accessKey,
+        },
+      );
+
+      if (consumeResult.status === "ok" && consumeResult.downloadUrl) {
+        return {
+          fileUrl: consumeResult.downloadUrl,
+          source: "download_grant" as const,
+          status: consumeResult.status,
+        };
+      }
+
+      return {
+        fileUrl: await ctx.storage.getUrl(storageId),
+        source: "storage" as const,
+        status: consumeResult.status,
+      };
+    } catch (error) {
+      const grantErrorDetail =
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+            }
+          : {
+              type: typeof error,
+            };
+
+      trace?.log("warn", "document_download_grant_url_failed", {
+        storageId,
+        grantErrorDetail,
+      });
+
+      return {
+        fileUrl: await ctx.storage.getUrl(storageId),
+        source: "storage" as const,
+        status: "grant_error",
+        grantErrorDetail,
+      };
+    }
+  }
+
+  return {
+    fileUrl: await ctx.storage.getUrl(storageId),
+    source: "storage" as const,
+    status: "direct",
+  };
 };
 
 const createVertexModel = () => {
@@ -251,16 +346,19 @@ const buildSourceContext = (
   return compactText(sections.join("\n\n---\n\n"), MAX_PROMPT_CONTEXT_CHARS);
 };
 
-const buildModelInputFromDocuments = async <TStorageId>(
+const buildModelInputFromDocuments = async (
   ctx: {
-    storage: { getUrl: (storageId: TStorageId) => Promise<string | null> };
+    runMutation: ActionCtx["runMutation"];
+    storage: { getUrl: (storageId: string) => Promise<string | null> };
   },
   documents: Array<{
-    storageId: TStorageId;
+    storageId: string;
     fileName: string;
     fileType: string;
+    fileSizeBytes?: number;
     extractedText?: string;
   }>,
+  accessKey?: string,
   trace?: {
     log: (
       level: "info" | "warn" | "error",
@@ -284,9 +382,26 @@ const buildModelInputFromDocuments = async <TStorageId>(
       trace?.log("info", "model_input_document_load_started", {
         fileName: document.fileName,
         fileType: document.fileType,
+        fileSizeBytes: document.fileSizeBytes,
       });
 
-      const fileUrl = await ctx.storage.getUrl(document.storageId);
+      if (
+        Number.isFinite(document.fileSizeBytes) &&
+        (document.fileSizeBytes ?? 0) > MAX_VERTEX_INLINE_FILE_BYTES
+      ) {
+        trace?.log("warn", "model_input_document_size_precheck_failed", {
+          fileName: document.fileName,
+          fileSizeBytes: document.fileSizeBytes,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+        });
+        throw buildInlineFileTooLargeError(
+          document.fileName,
+          document.fileSizeBytes,
+        );
+      }
+
+      const { fileUrl, source, status, grantErrorDetail } =
+        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
       if (!fileUrl) {
         if (document.extractedText) {
           textOnlyDocuments.push({
@@ -302,6 +417,9 @@ const buildModelInputFromDocuments = async <TStorageId>(
 
       trace?.log("info", "model_input_document_url_loaded", {
         fileName: document.fileName,
+        source,
+        status,
+        grantErrorDetail,
         elapsedMs: Date.now() - fileLoadStartedAt,
       });
 
@@ -315,7 +433,7 @@ const buildModelInputFromDocuments = async <TStorageId>(
           continue;
         }
         throw new Error(
-          `Datei-Download fehlgeschlagen (${response.status}) fuer ${document.fileName}`,
+          `Datei-Download fehlgeschlagen (${response.status}) für ${document.fileName}`,
         );
       }
 
@@ -394,6 +512,111 @@ const buildModelInputFromDocuments = async <TStorageId>(
   };
 };
 
+const toComfortScore = (value: number) =>
+  Math.round(Math.max(0, Math.min(100, value)));
+
+const buildTopicInsightFromScore = (
+  topic: string,
+  comfortScore: number,
+): AnalysisTopicInsight => {
+  const roundedScore = toComfortScore(comfortScore);
+  const rationale =
+    roundedScore >= 75
+      ? "Sehr sichere Wissensabfrage mit präzisen Antworten."
+      : roundedScore >= 50
+        ? "Gemischte Leistung. Teile des Themas sitzen, aber es braucht mehr Wiederholung."
+        : "Hier besteht deutlicher Lernbedarf. Konzentriere dich auf Grundkonzepte und kurze Active-Recall-Runden.";
+
+  return {
+    topic,
+    comfortScore: roundedScore,
+    rationale,
+    recommendation:
+      roundedScore >= 75
+        ? "Mit kurzer Spaced Repetition stabil halten."
+        : roundedScore >= 50
+          ? "Mache eine gezielte Vertiefung mit 5-10 Abruffragen."
+          : "Starte eine geführte Vertiefung und wiederhole zuerst die Grundlagen.",
+  };
+};
+
+const sortTopicsByComfort = (topics: AnalysisTopicInsight[]) =>
+  [...topics].sort((a, b) => a.comfortScore - b.comfortScore);
+
+const buildRecommendedNextStep = (
+  weakestTopics: string[],
+  focusTopic?: string,
+) => {
+  const primaryWeakTopic = weakestTopics[0];
+  const secondaryWeakTopic = weakestTopics[1];
+
+  if (!primaryWeakTopic) {
+    return "Wähle dein schwächstes Thema und beginne eine fokussierte Vertiefung.";
+  }
+
+  if (
+    focusTopic &&
+    normalizeTopicKey(primaryWeakTopic) === normalizeTopicKey(focusTopic)
+  ) {
+    return secondaryWeakTopic
+      ? `Du hast ${focusTopic} bereits vertieft. Wechsle jetzt zu ${secondaryWeakTopic}, damit du alle Themen abdeckst.`
+      : `Du hast ${focusTopic} bereits vertieft. Wechsle jetzt zu einem anderen Thema, damit du breiter lernst.`;
+  }
+
+  return `Starte als Nächstes eine Vertiefung zu ${primaryWeakTopic}.`;
+};
+
+const summarizeAnalysisTopics = (
+  topics: AnalysisTopicInsight[],
+  focusTopic?: string,
+) => {
+  const sortedTopics = sortTopicsByComfort(topics);
+  const overallReadiness = sortedTopics.length
+    ? Math.round(
+        sortedTopics.reduce((total, topic) => total + topic.comfortScore, 0) /
+          sortedTopics.length,
+      )
+    : 0;
+  const weakestTopics = sortedTopics.slice(0, 3).map((topic) => topic.topic);
+  const strongestTopics = sortedTopics
+    .slice(-3)
+    .reverse()
+    .map((topic) => topic.topic);
+
+  return {
+    overallReadiness,
+    strongestTopics,
+    weakestTopics,
+    recommendedNextStep: buildRecommendedNextStep(weakestTopics, focusTopic),
+  };
+};
+
+const mergeTopicInsight = (
+  topics: AnalysisTopicInsight[],
+  updatedTopic: AnalysisTopicInsight,
+) => {
+  const updatedTopicKey = normalizeTopicKey(updatedTopic.topic);
+  let replaced = false;
+
+  const merged = topics.map((topic) => {
+    if (normalizeTopicKey(topic.topic) !== updatedTopicKey) {
+      return topic;
+    }
+
+    replaced = true;
+    return {
+      ...updatedTopic,
+      topic: topic.topic,
+    };
+  });
+
+  if (!replaced) {
+    merged.push(updatedTopic);
+  }
+
+  return sortTopicsByComfort(merged);
+};
+
 const buildFallbackAnalysis = (
   responses: Array<{ topic: string; score: number }>,
   focusTopic?: string,
@@ -409,47 +632,156 @@ const buildFallbackAnalysis = (
     const average =
       scores.reduce((total, value) => total + value, 0) /
       Math.max(scores.length, 1);
-    const comfortScore = Math.round(Math.max(0, Math.min(100, average)));
-    const rationale =
-      comfortScore >= 75
-        ? "Sehr sichere Wissensabfrage mit praezisen Antworten."
-        : comfortScore >= 50
-          ? "Gemischte Leistung. Teile des Themas sitzen, aber es braucht mehr Wiederholung."
-          : "Hier besteht deutlicher Lernbedarf. Konzentriere dich auf Grundkonzepte und kurze Active-Recall-Runden.";
-
-    return {
-      topic,
-      comfortScore,
-      rationale,
-      recommendation:
-        comfortScore >= 75
-          ? "Mit kurzer Spaced Repetition stabil halten."
-          : comfortScore >= 50
-            ? "Mache eine gezielte Vertiefung mit 5-10 Abruffragen."
-            : "Starte eine gefuehrte Vertiefung und wiederhole zuerst die Grundlagen.",
-    };
+    return buildTopicInsightFromScore(topic, average);
   });
 
-  topics.sort((a, b) => a.comfortScore - b.comfortScore);
-
-  const overallReadiness = topics.length
-    ? Math.round(
-        topics.reduce((total, topic) => total + topic.comfortScore, 0) /
-          topics.length,
-      )
-    : 0;
+  const summary = summarizeAnalysisTopics(topics, focusTopic);
 
   return {
-    overallReadiness,
-    strongestTopics: topics
-      .slice(-3)
-      .reverse()
-      .map((topic) => topic.topic),
-    weakestTopics: topics.slice(0, 3).map((topic) => topic.topic),
-    topics,
-    recommendedNextStep: focusTopic
-      ? `Starte eine Vertiefung zu ${focusTopic} mit gezielten Uebungsfragen.`
-      : "Wähle dein schwächstes Thema und beginne eine fokussierte Vertiefung.",
+    ...summary,
+    topics: sortTopicsByComfort(topics),
+  };
+};
+
+const MAX_FULL_MODE_RECENT_RESPONSES = 90;
+const MAX_FULL_MODE_TOPIC_SUMMARIES = 20;
+const MAX_FULL_MODE_PROMPT_CONTEXT_CHARS = 24_000;
+const MAX_FULL_MODE_FIELD_PREVIEW_CHARS = 220;
+
+type FullModeResponseContextInput = {
+  round: number;
+  topic: string;
+  score: number;
+  isCorrect: boolean;
+  prompt: string;
+  userAnswer: string;
+  explanation: string;
+  timeSpentSeconds: number;
+};
+
+const toSingleLinePreview = (value: string, maxChars: number) => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxChars)}…`;
+};
+
+const buildFullModePromptResponseContext = (
+  responses: FullModeResponseContextInput[],
+) => {
+  const roundsCovered = new Set<number>();
+  const topicAggregates = new Map<
+    string,
+    {
+      topic: string;
+      attempts: number;
+      totalScore: number;
+      correctAnswers: number;
+      totalTimeSeconds: number;
+      latestRound: number;
+      latestScore: number;
+    }
+  >();
+
+  for (const response of responses) {
+    roundsCovered.add(response.round);
+
+    const topicKey = normalizeTopicKey(response.topic);
+    const current = topicAggregates.get(topicKey) ?? {
+      topic: response.topic,
+      attempts: 0,
+      totalScore: 0,
+      correctAnswers: 0,
+      totalTimeSeconds: 0,
+      latestRound: response.round,
+      latestScore: response.score,
+    };
+
+    current.attempts += 1;
+    current.totalScore += response.score;
+    current.correctAnswers += response.isCorrect ? 1 : 0;
+    current.totalTimeSeconds += response.timeSpentSeconds;
+
+    if (response.round >= current.latestRound) {
+      current.topic = response.topic;
+      current.latestRound = response.round;
+      current.latestScore = response.score;
+    }
+
+    topicAggregates.set(topicKey, current);
+  }
+
+  const topicSummaries = [...topicAggregates.values()]
+    .map((topic) => {
+      const attempts = Math.max(1, topic.attempts);
+      return {
+        topic: topic.topic,
+        attempts: topic.attempts,
+        averageScore: Math.round(topic.totalScore / attempts),
+        correctnessRate: Math.round((topic.correctAnswers / attempts) * 100),
+        averageTimeSeconds: Math.round(topic.totalTimeSeconds / attempts),
+        latestRound: topic.latestRound,
+        latestScore: Math.round(topic.latestScore),
+      };
+    })
+    .sort((a, b) => {
+      if (a.averageScore !== b.averageScore) {
+        return a.averageScore - b.averageScore;
+      }
+      return b.attempts - a.attempts;
+    })
+    .slice(0, MAX_FULL_MODE_TOPIC_SUMMARIES);
+
+  const recentResponses = responses.slice(-MAX_FULL_MODE_RECENT_RESPONSES);
+  const responsePayload = recentResponses.map((response) => ({
+    round: response.round,
+    topic: response.topic,
+    score: response.score,
+    isCorrect: response.isCorrect,
+    timeSpentSeconds: response.timeSpentSeconds,
+    prompt: toSingleLinePreview(
+      response.prompt,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+    userAnswer: toSingleLinePreview(
+      response.userAnswer,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+    explanation: toSingleLinePreview(
+      response.explanation,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+  }));
+
+  const serializedContext = compactText(
+    JSON.stringify(
+      {
+        overview: {
+          totalResponses: responses.length,
+          includedRecentResponses: responsePayload.length,
+          omittedResponses: Math.max(
+            0,
+            responses.length - responsePayload.length,
+          ),
+          roundsCovered: roundsCovered.size,
+          totalTopics: topicAggregates.size,
+        },
+        topicSummaries,
+        recentResponses: responsePayload,
+      },
+      null,
+      2,
+    ),
+    MAX_FULL_MODE_PROMPT_CONTEXT_CHARS,
+  );
+
+  return {
+    serializedContext,
+    includedRecentResponses: responsePayload.length,
+    omittedResponses: Math.max(0, responses.length - responsePayload.length),
+    topicSummaryCount: topicSummaries.length,
   };
 };
 
@@ -487,6 +819,12 @@ type VertexUsageSnapshot = {
 type PersistedAiAnalyticsStatus = "success" | "error";
 type PersistedPrivacyMode = "balanced" | "full" | "off";
 type PersistedTelemetryProvider = "langfuse" | "none";
+type PersistedAiErrorCategory =
+  | "file_too_large"
+  | "storage_fetch_failed"
+  | "model_no_output"
+  | "vertex_request_failed"
+  | "unknown";
 
 type PersistedAiAnalyticsPayload = {
   traceId: string;
@@ -508,6 +846,7 @@ type PersistedAiAnalyticsPayload = {
   filePartCount?: number;
   sourceContextLength?: number;
   outputQuestionCount?: number;
+  errorCategory?: PersistedAiErrorCategory;
   error?: ReturnType<typeof extractErrorForLog>;
   metadata?: Record<string, unknown>;
 };
@@ -532,6 +871,7 @@ const analyticsMetadataAllowlist = new Set([
   "fallbackStrategy",
   "finishReason",
   "currentFocusTopic",
+  "analysisMode",
 ]);
 
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
@@ -786,6 +1126,64 @@ const extractErrorForLog = (error: unknown) => {
   };
 };
 
+const classifyAiErrorCategory = (
+  error: unknown,
+): PersistedAiErrorCategory | undefined => {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+
+  const message = error.message.toLowerCase();
+  const hasMaximalSizeHint =
+    message.includes("maximal") &&
+    (/(maximal\s+[\d.,]+\s*(kib|kb|mib|mb|gib|gb))/.test(message) ||
+      /(maximal(?:e|er|en)?\s+(dateigröße|datei[- ]?größe|file size|größe|size))/.test(
+        message,
+      ) ||
+      /((dateigröße|datei[- ]?größe|file size|größe|size)\s+maximal)/.test(
+        message,
+      ));
+
+  if (
+    message.includes("zu groß") ||
+    message.includes("too large") ||
+    message.includes("payload too large") ||
+    message.includes("entity too large") ||
+    hasMaximalSizeHint
+  ) {
+    return "file_too_large";
+  }
+
+  if (
+    message.includes("datei konnte nicht gelesen werden") ||
+    message.includes("datei-download fehlgeschlagen") ||
+    message.includes("kann nicht zugegriffen") ||
+    message.includes("storage")
+  ) {
+    return "storage_fetch_failed";
+  }
+
+  if (
+    message.includes("keine fragen erzeugt") ||
+    message.includes("keine vertiefungsfragen erzeugt") ||
+    message.includes("no output")
+  ) {
+    return "model_no_output";
+  }
+
+  if (
+    message.includes("vertex") ||
+    message.includes("generatecontent") ||
+    message.includes("quota") ||
+    message.includes("ratelimit") ||
+    message.includes("rate limit")
+  ) {
+    return "vertex_request_failed";
+  }
+
+  return "unknown";
+};
+
 const extractUsageFromError = (error: unknown) => {
   if (typeof error !== "object" || error === null) {
     return undefined;
@@ -1022,6 +1420,7 @@ const persistAiAnalyticsEvent = async (
       filePartCount: payload.filePartCount,
       sourceContextLength: payload.sourceContextLength,
       outputQuestionCount: payload.outputQuestionCount,
+      errorCategory: payload.errorCategory,
       errorName:
         errorRecord &&
         "name" in errorRecord &&
@@ -1228,14 +1627,16 @@ export const extractDocumentContent = action({
       extractionStatus: "processing",
     });
 
-    const { document } = await ctx.runQuery(
-      internal.study.getDocumentExtractionContext,
-      {
-        grantToken: args.grantToken,
-        sessionId: args.sessionId,
-        documentId: args.documentId,
-      },
-    );
+    const extractionContext: {
+      document: SessionDocumentInput;
+      accessKey?: string;
+    } = await ctx.runQuery(internal.study.getDocumentExtractionContext, {
+      grantToken: args.grantToken,
+      sessionId: args.sessionId,
+      documentId: args.documentId,
+    });
+    const document = extractionContext.document;
+    const accessKey = extractionContext.accessKey;
 
     trace.log("info", "context_loaded", {
       fileName: document.fileName,
@@ -1267,16 +1668,20 @@ export const extractDocumentContent = action({
     }
 
     try {
-      const fileUrl = await ctx.storage.getUrl(document.storageId);
+      const { fileUrl, source, status, grantErrorDetail } =
+        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
       if (!fileUrl) {
         throw new Error(
           "Auf das hochgeladene Dokument kann nicht zugegriffen werden.",
         );
       }
 
-      trace.log("info", "storage_url_loaded", {
+      trace.log("info", "document_url_loaded", {
         fileName: document.fileName,
         hasUrl: true,
+        source,
+        status,
+        grantErrorDetail,
       });
 
       const response = await fetch(fileUrl);
@@ -1386,13 +1791,16 @@ Anforderungen:
         instructionLength: quizInstruction.length,
       });
 
-      const quizContext: { documents: SessionDocumentInput[] } =
-        await ctx.runQuery(internal.study.getQuizGenerationContext, {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        });
+      const quizContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
 
       const documents = quizContext.documents;
+      const accessKey = quizContext.accessKey;
       totalDocuments = documents.length;
 
       const readyDocuments = documents.filter(
@@ -1407,6 +1815,7 @@ Anforderungen:
         documents: documents.map((document) => ({
           fileName: document.fileName,
           fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
           extractionStatus: document.extractionStatus,
           extractedTextLength: document.extractedText?.length ?? 0,
         })),
@@ -1416,6 +1825,28 @@ Anforderungen:
         trace.log("warn", "no_ready_documents");
         throw new Error(
           "Lade mindestens ein Dokument hoch und verarbeite es, bevor du Quizfragen generierst.",
+        );
+      }
+
+      const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
+      if (oversizedDocuments.length > 0) {
+        trace.log("warn", "oversized_documents_blocked", {
+          oversizedCount: oversizedDocuments.length,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          files: oversizedDocuments.map((document) => ({
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+          })),
+        });
+
+        const filesPreview = oversizedDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedDocuments.length > 3 ? " ..." : "";
+
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${filesPreview}${suffix}`,
         );
       }
 
@@ -1439,8 +1870,10 @@ Anforderungen:
             storageId: document.storageId,
             fileName: document.fileName,
             fileType: document.fileType,
+            fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
+          accessKey,
           trace,
         );
         fileParts = modelInput.fileParts;
@@ -1772,6 +2205,9 @@ Anforderungen:
         filePartCount,
         sourceContextLength,
         outputQuestionCount,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
@@ -1838,7 +2274,7 @@ export const evaluateAnswer = action({
         trace.log("info", "llm_request", {
           modelId: "gemini-3-flash-preview",
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 300,
           thinkingBudget: 0,
         });
 
@@ -1847,7 +2283,7 @@ export const evaluateAnswer = action({
         const result = await generateText({
           model: model("gemini-3-flash-preview"),
           temperature: 0.1,
-          maxOutputTokens: 800,
+          maxOutputTokens: 300,
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: answerEvaluationSchema,
@@ -1863,21 +2299,18 @@ export const evaluateAnswer = action({
               questionTopic: question.topic,
             },
           ),
-          tools: { google_search: vertex.tools.googleSearch({}) },
           system:
             "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder fehlt.",
           prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
-Nutze für deine Antwort zudem die Google Suche (das Internet) um zu überprüfen ob deine 
-Antwort korrekt ist. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
 
 Antwort der lernenden Person:
 ${args.userAnswer}
 
-Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
+Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`,
         });
 
         const resultLog = extractGenerationResultForLog(result);
@@ -1958,6 +2391,9 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100.`,
         usage: trace.getUsageTotals(),
         vertexUsage: vertexUsageTotals,
         finishReason,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
@@ -1978,6 +2414,8 @@ export const analyzePerformance = action({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    mode: v.optional(v.union(v.literal("full"), v.literal("focus"))),
+    focusTopic: v.optional(v.string()),
     clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1992,16 +2430,23 @@ export const analyzePerformance = action({
     let finishReason: string | undefined;
     let responseCount = 0;
     let usedFallback = false;
+    let analysisMode: AnalysisMode = args.mode ?? "full";
+    let resolvedFocusTopic = toTrimmedString(args.focusTopic);
     let analyticsError: unknown;
 
     try {
-      trace.log("info", "start");
+      trace.log("info", "start", {
+        requestedMode: args.mode ?? "full",
+        requestedFocusTopic: args.focusTopic ?? null,
+      });
 
-      const { session, responses } = await ctx.runQuery(
+      let { session, responses } = await ctx.runQuery(
         internal.study.getAnalysisContext,
         {
           grantToken: args.grantToken,
           sessionId: args.sessionId,
+          mode: analysisMode,
+          focusTopic: resolvedFocusTopic || undefined,
         },
       );
 
@@ -2009,8 +2454,53 @@ export const analyzePerformance = action({
         responseCount: responses.length,
         currentFocusTopic: session.currentFocusTopic ?? null,
         round: session.round,
+        requestedMode: args.mode ?? "full",
       });
       responseCount = responses.length;
+      if (!resolvedFocusTopic) {
+        resolvedFocusTopic = toTrimmedString(session.currentFocusTopic);
+      }
+
+      let focusTopicInsight =
+        analysisMode === "focus" && session.analysis && resolvedFocusTopic
+          ? (session.analysis.topics.find((topic) =>
+              topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
+            ) ?? null)
+          : null;
+
+      const reloadContextForFullMode = async (reason: string) => {
+        const fullContext = await ctx.runQuery(
+          internal.study.getAnalysisContext,
+          {
+            grantToken: args.grantToken,
+            sessionId: args.sessionId,
+            mode: "full",
+          },
+        );
+
+        session = fullContext.session;
+        responses = fullContext.responses;
+        responseCount = responses.length;
+
+        trace.log("info", "context_reloaded_for_full_mode", {
+          responseCount: responses.length,
+          round: session.round,
+          reason,
+        });
+      };
+
+      if (analysisMode === "focus") {
+        if (!session.analysis || !resolvedFocusTopic || !focusTopicInsight) {
+          trace.log("warn", "focus_mode_downgraded_to_full", {
+            hasExistingAnalysis: Boolean(session.analysis),
+            focusTopic: resolvedFocusTopic || null,
+            hasFocusTopicInsight: Boolean(focusTopicInsight),
+          });
+          analysisMode = "full";
+          await reloadContextForFullMode("focus_mode_missing_prerequisites");
+          focusTopicInsight = null;
+        }
+      }
 
       if (responses.length === 0) {
         trace.log("warn", "no_responses_available");
@@ -2020,90 +2510,239 @@ export const analyzePerformance = action({
       }
 
       const model = createVertexModel();
-      const fallback = buildFallbackAnalysis(
+      let analysis = buildFallbackAnalysis(
         responses,
-        session.currentFocusTopic,
+        analysisMode === "focus" ? resolvedFocusTopic || undefined : undefined,
       );
 
-      let analysis = fallback;
+      if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
+        const topicResponses = responses.filter((response) =>
+          topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
+        );
 
-      try {
-        trace.log("info", "llm_request", {
-          modelId: "gemini-3-flash-preview",
-          temperature: 0.2,
-          maxOutputTokens: 1_500,
-          thinkingBudget: 0,
-        });
+        if (topicResponses.length === 0) {
+          trace.log("warn", "focus_mode_missing_topic_responses", {
+            focusTopic: resolvedFocusTopic,
+          });
+          analysisMode = "full";
+          await reloadContextForFullMode("focus_mode_missing_topic_responses");
+          analysis = buildFallbackAnalysis(responses);
+        } else {
+          const fallbackAverage =
+            topicResponses.reduce(
+              (total, response) => total + response.score,
+              0,
+            ) / topicResponses.length;
+          const fallbackTopicInsight = buildTopicInsightFromScore(
+            resolvedFocusTopic,
+            fallbackAverage,
+          );
+          const fallbackMergedTopics = mergeTopicInsight(
+            session.analysis.topics,
+            fallbackTopicInsight,
+          );
+          const fallbackSummary = summarizeAnalysisTopics(
+            fallbackMergedTopics,
+            resolvedFocusTopic,
+          );
+          const focusFallbackAnalysis = {
+            ...fallbackSummary,
+            topics: fallbackMergedTopics,
+          };
 
-        llmAttempts += 1;
+          analysis = focusFallbackAnalysis;
 
-        const result = await generateText({
-          model: model("gemini-3-flash-preview"),
-          temperature: 0.2,
-          maxOutputTokens: 1_500,
-          providerOptions: vertexProviderOptions,
-          output: Output.object({
-            schema: analysisSchema,
-          }),
-          experimental_telemetry: buildAiSdkTelemetry(
-            "analyzePerformance",
-            args.sessionId,
-            trace.traceId,
-            {
-              appScope: "analyzePerformance",
-              round: session.round,
-              responseCount: responses.length,
-              currentFocusTopic: session.currentFocusTopic ?? "",
-            },
-          ),
-          system:
-            "Du bist ein Lerncoach. Analysiere Wissensluecken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
-          prompt: `Analysiere diese Uebungssitzung und erstelle einen themenbasierten Lernstandsbericht.
+          try {
+            trace.log("info", "llm_request", {
+              modelId: "gemini-3-flash-preview",
+              mode: "focus",
+              focusTopic: resolvedFocusTopic,
+              responseCount: topicResponses.length,
+              temperature: 0.2,
+              maxOutputTokens: 600,
+              thinkingBudget: 0,
+            });
+
+            llmAttempts += 1;
+
+            const result = await generateText({
+              model: model("gemini-3-flash-preview"),
+              temperature: 0.2,
+              maxOutputTokens: 600,
+              providerOptions: vertexProviderOptions,
+              output: Output.object({
+                schema: focusTopicAnalysisSchema,
+              }),
+              experimental_telemetry: buildAiSdkTelemetry(
+                "analyzePerformance",
+                args.sessionId,
+                trace.traceId,
+                {
+                  appScope: "analyzePerformance",
+                  analysisMode,
+                  round: session.round,
+                  responseCount: topicResponses.length,
+                  currentFocusTopic: resolvedFocusTopic,
+                  topic: resolvedFocusTopic,
+                },
+              ),
+              system:
+                "Du bist ein Lerncoach. Bewerte in dieser Auswertung ausschließlich ein einzelnes Thema auf Deutsch.",
+              prompt: `Analysiere ausschließlich das Thema "${resolvedFocusTopic}" anhand der Antworten.
+
+Vorherige Themenbewertung (falls vorhanden):
+${JSON.stringify(focusTopicInsight, null, 2)}
+
+Antworten nur zu diesem Thema:
+${JSON.stringify(topicResponses, null, 2)}
+
+Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
+            });
+
+            const resultLog = extractGenerationResultForLog(result);
+            trace.addUsage(resultLog.usage);
+            finishReason = resultLog.details.finishReason;
+            mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+            trace.log("info", "llm_response", {
+              ...resultLog.details,
+              mode: "focus",
+              outputPreview: {
+                focusTopic: resolvedFocusTopic,
+                comfortScore: result.output.comfortScore,
+              },
+            });
+
+            const generated: FocusTopicAnalysisResult = result.output;
+
+            const mergedTopics = mergeTopicInsight(session.analysis.topics, {
+              topic: resolvedFocusTopic,
+              comfortScore: toComfortScore(generated.comfortScore),
+              rationale: generated.rationale,
+              recommendation: generated.recommendation,
+            });
+            const summary = summarizeAnalysisTopics(
+              mergedTopics,
+              resolvedFocusTopic,
+            );
+
+            analysis = {
+              ...summary,
+              topics: mergedTopics,
+            };
+          } catch (error) {
+            trace.addUsage(extractUsageFromError(error));
+            usedFallback = true;
+            trace.log("warn", "llm_failed_using_fallback", {
+              error: extractErrorForLog(error),
+              mode: "focus",
+              fallbackOverallReadiness: focusFallbackAnalysis.overallReadiness,
+              fallbackTopicCount: focusFallbackAnalysis.topics.length,
+            });
+            // Keep deterministic fallback analysis when the LLM call fails.
+          }
+        }
+      }
+
+      if (analysisMode === "full") {
+        const fullModeFallback = buildFallbackAnalysis(responses);
+        analysis = fullModeFallback;
+
+        try {
+          const coveredTopics = [
+            ...new Set(responses.map((response) => response.topic)),
+          ];
+          const fullModePromptContext =
+            buildFullModePromptResponseContext(responses);
+
+          trace.log("info", "llm_request", {
+            modelId: "gemini-3-flash-preview",
+            mode: "full",
+            responseCount: responses.length,
+            promptResponseCount: fullModePromptContext.includedRecentResponses,
+            omittedResponseCount: fullModePromptContext.omittedResponses,
+            topicSummaryCount: fullModePromptContext.topicSummaryCount,
+            temperature: 0.2,
+            maxOutputTokens: 1_500,
+            thinkingBudget: 0,
+          });
+
+          llmAttempts += 1;
+
+          const result = await generateText({
+            model: model("gemini-3-flash-preview"),
+            temperature: 0.2,
+            maxOutputTokens: 1_500,
+            providerOptions: vertexProviderOptions,
+            output: Output.object({
+              schema: analysisSchema,
+            }),
+            experimental_telemetry: buildAiSdkTelemetry(
+              "analyzePerformance",
+              args.sessionId,
+              trace.traceId,
+              {
+                appScope: "analyzePerformance",
+                analysisMode,
+                round: session.round,
+                responseCount: responses.length,
+                currentFocusTopic: session.currentFocusTopic ?? "",
+              },
+            ),
+            system:
+              "Du bist ein Lerncoach. Analysiere Wissenslücken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
+            prompt: `Analysiere diese Übungssitzung und erstelle einen themenbasierten Lernstandsbericht.
+
+Die Antworten enthalten mehrere Runden. Beziehe den gesamten Verlauf ein.
+Bewerte alle behandelten Themen ausgewogen und vermeide eine reine Fokussierung auf das aktuelle Fokus-Thema.
 
 Fokus-Thema der Sitzung: ${session.currentFocusTopic ?? "kein spezielles Fokus-Thema"}
-Antworten:
-${JSON.stringify(responses, null, 2)}
+Alle behandelten Themen: ${coveredTopics.join(", ") || "keine"}
+Antwortkontext (kompakt, neueste Antworten + Themenstatistik):
+${fullModePromptContext.serializedContext}
 
 Sei streng, aber konstruktiv.`,
-        });
+          });
 
-        const resultLog = extractGenerationResultForLog(result);
-        trace.addUsage(resultLog.usage);
-        finishReason = resultLog.details.finishReason;
-        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-        trace.log("info", "llm_response", {
-          ...resultLog.details,
-          outputPreview: {
-            overallReadiness: result.output.overallReadiness,
-            strongestTopics: result.output.strongestTopics,
-            weakestTopics: result.output.weakestTopics,
-            topicCount: result.output.topics.length,
-          },
-        });
+          const resultLog = extractGenerationResultForLog(result);
+          trace.addUsage(resultLog.usage);
+          finishReason = resultLog.details.finishReason;
+          mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+          trace.log("info", "llm_response", {
+            ...resultLog.details,
+            mode: "full",
+            outputPreview: {
+              overallReadiness: result.output.overallReadiness,
+              strongestTopics: result.output.strongestTopics,
+              weakestTopics: result.output.weakestTopics,
+              topicCount: result.output.topics.length,
+            },
+          });
 
-        const generated: AnalysisResult = result.output;
+          const generated: AnalysisResult = result.output;
 
-        analysis = {
-          overallReadiness: Math.round(generated.overallReadiness),
-          strongestTopics: generated.strongestTopics,
-          weakestTopics: generated.weakestTopics,
-          topics: generated.topics.map((topic) => ({
-            topic: topic.topic,
-            comfortScore: Math.round(topic.comfortScore),
-            rationale: topic.rationale,
-            recommendation: topic.recommendation,
-          })),
-          recommendedNextStep: generated.recommendedNextStep,
-        };
-      } catch (error) {
-        trace.addUsage(extractUsageFromError(error));
-        usedFallback = true;
-        trace.log("warn", "llm_failed_using_fallback", {
-          error: extractErrorForLog(error),
-          fallbackOverallReadiness: fallback.overallReadiness,
-          fallbackTopicCount: fallback.topics.length,
-        });
-        // Keep deterministic fallback analysis when the LLM call fails.
+          analysis = {
+            overallReadiness: toComfortScore(generated.overallReadiness),
+            strongestTopics: generated.strongestTopics,
+            weakestTopics: generated.weakestTopics,
+            topics: generated.topics.map((topic) => ({
+              topic: topic.topic,
+              comfortScore: toComfortScore(topic.comfortScore),
+              rationale: topic.rationale,
+              recommendation: topic.recommendation,
+            })),
+            recommendedNextStep: generated.recommendedNextStep,
+          };
+        } catch (error) {
+          trace.addUsage(extractUsageFromError(error));
+          usedFallback = true;
+          trace.log("warn", "llm_failed_using_fallback", {
+            error: extractErrorForLog(error),
+            mode: "full",
+            fallbackOverallReadiness: fullModeFallback.overallReadiness,
+            fallbackTopicCount: fullModeFallback.topics.length,
+          });
+          // Keep deterministic fallback analysis when the LLM call fails.
+        }
       }
 
       await ctx.runMutation(internal.study.storeSessionAnalysis, {
@@ -2112,13 +2751,12 @@ Sei streng, aber konstruktiv.`,
       });
 
       trace.log("info", "completed", {
-        usedFallback: analysis === fallback,
+        usedFallback,
+        analysisMode,
         overallReadiness: analysis.overallReadiness,
         topicCount: analysis.topics.length,
         usageTotals: trace.getUsageTotals(),
       });
-
-      usedFallback = analysis === fallback;
 
       return analysis;
     } catch (error) {
@@ -2137,11 +2775,16 @@ Sei streng, aber konstruktiv.`,
         usage: trace.getUsageTotals(),
         vertexUsage: vertexUsageTotals,
         finishReason,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
           responseCount,
           usedFallback,
+          analysisMode,
+          topic: resolvedFocusTopic || undefined,
         },
       });
       await flushTelemetry({
@@ -2181,13 +2824,16 @@ export const generateTopicDeepDive = action({
         topic: args.topic,
       });
 
-      const deepDiveContext: { documents: SessionDocumentInput[] } =
-        await ctx.runQuery(internal.study.getQuizGenerationContext, {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        });
+      const deepDiveContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
 
       const documents = deepDiveContext.documents;
+      const accessKey = deepDiveContext.accessKey;
       totalDocuments = documents.length;
 
       const readyDocuments = documents.filter(
@@ -2202,6 +2848,7 @@ export const generateTopicDeepDive = action({
         documents: documents.map((document) => ({
           fileName: document.fileName,
           fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
           extractionStatus: document.extractionStatus,
           extractedTextLength: document.extractedText?.length ?? 0,
         })),
@@ -2210,7 +2857,29 @@ export const generateTopicDeepDive = action({
       if (readyDocuments.length === 0) {
         trace.log("warn", "no_ready_documents");
         throw new Error(
-          "Es ist kein verarbeitetes Material fuer die Vertiefung verfuegbar.",
+          "Es ist kein verarbeitetes Material für die Vertiefung verfügbar.",
+        );
+      }
+
+      const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
+      if (oversizedDocuments.length > 0) {
+        trace.log("warn", "oversized_documents_blocked", {
+          oversizedCount: oversizedDocuments.length,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          files: oversizedDocuments.map((document) => ({
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+          })),
+        });
+
+        const filesPreview = oversizedDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedDocuments.length > 3 ? " ..." : "";
+
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${filesPreview}${suffix}`,
         );
       }
 
@@ -2229,8 +2898,10 @@ export const generateTopicDeepDive = action({
             storageId: document.storageId,
             fileName: document.fileName,
             fileType: document.fileType,
+            fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
+          accessKey,
           trace,
         );
 
@@ -2260,7 +2931,7 @@ export const generateTopicDeepDive = action({
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
         throw new Error(
-          "Es konnten keine nutzbaren Inhalte fuer die Vertiefung gelesen werden.",
+          "Es konnten keine nutzbaren Inhalte für die Vertiefung gelesen werden.",
         );
       }
 
@@ -2272,14 +2943,14 @@ export const generateTopicDeepDive = action({
           type: "text",
           text: `Erstelle 5 kurze Vertiefungsfragen zu folgendem Thema: ${args.topic}
 
-Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah.`,
+Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsnah.`,
         },
       ];
 
       if (sourceContext) {
         userContent.push({
           type: "text",
-          text: `Zusaetzliche Textauszuege aus den Dateien:\n${sourceContext}`,
+          text: `Zusätzliche Textauszüge aus den Dateien:\n${sourceContext}`,
         });
       }
 
@@ -2426,6 +3097,9 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prufungsnah
         filePartCount,
         sourceContextLength,
         outputQuestionCount,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,

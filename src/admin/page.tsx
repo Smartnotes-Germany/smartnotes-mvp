@@ -4,10 +4,9 @@ import { api } from "../../convex/_generated/api";
 import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/logo.png";
 
-export default function AdminDashboard() {
-  const [adminSecret, setAdminSecret] = useState(
-    () => localStorage.getItem("adminSecret") || "",
-  );
+export default function Page() {
+  const [draftSecret, setDraftSecret] = useState(() => localStorage.getItem("adminSecret") || "");
+  const [adminSecret, setAdminSecret] = useState(draftSecret);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
@@ -15,9 +14,7 @@ export default function AdminDashboard() {
   const verifySecret = useQuery(api.admin.verifySecret, { adminSecret });
   const generateMagicLink = useMutation(api.admin.generateMagicLink);
 
-  const [isAuthorized, setIsAuthorized] = useState(
-    verifySecret?.valid ?? false,
-  );
+  const isAuthorized = !!verifySecret?.valid;
   const loginError =
     verifySecret && !verifySecret.valid && adminSecret
       ? "Ungültiges Admin-Secret."
@@ -31,14 +28,14 @@ export default function AdminDashboard() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsAuthorized(true);
+    setAdminSecret(draftSecret);
   };
 
   const handleLogout = () => {
+    setDraftSecret("");
     setAdminSecret("");
-    setIsAuthorized(false);
     localStorage.removeItem("adminSecret");
-    setGeneratedLink(null); // Also clear generated link on logout
+    setGeneratedLink(null);
   };
 
   const handleGenerateLink = async () => {
@@ -46,7 +43,7 @@ export default function AdminDashboard() {
       setCopiedCode(null); // Clear previous "Kopiert!" state
       setGeneratedLink(null); // Clear previous generated link
       const { code } = await generateMagicLink({ adminSecret, note });
-      const magicLink = `https://app.smartnotes.tech/?code=${code}`;
+      const magicLink = `${window.location.origin}/?code=SMARTNOTES-${code}`;
       setGeneratedLink(magicLink);
       setNote(""); // Clear the note input after link generation
     } catch (err) {
@@ -60,7 +57,7 @@ export default function AdminDashboard() {
       try {
         await navigator.clipboard.writeText(generatedLink);
         setCopiedCode(generatedLink);
-        setTimeout(() => setCopiedCode(null), 2000); // Reset "Kopiert!" after 2 seconds
+        setTimeout(() => setCopiedCode(null), 2000);
       } catch (err) {
         console.error("Failed to copy:", err);
         alert("Fehler beim Kopieren des Links.");
@@ -103,9 +100,9 @@ export default function AdminDashboard() {
                   id="secret"
                   type="password"
                   required
-                  value={adminSecret}
-                  onChange={(e) => setAdminSecret(e.target.value)}
-                  className="block w-full rounded-xl border border-gray-300 bg-gray-50 py-3 pr-3 pl-10 text-gray-900 transition-all outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                  value={draftSecret}
+                  onChange={(e) => setDraftSecret(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
                   placeholder="Admin Secret"
                 />
               </div>
@@ -117,9 +114,10 @@ export default function AdminDashboard() {
             )}
             <button
               type="submit"
-              className="group relative flex w-full justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+              disabled={verifySecret === undefined}
+              className="group relative flex w-full justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Anmelden
+              {verifySecret === undefined ? "Verifiziere..." : "Anmelden"}
             </button>
           </form>
         </div>

@@ -6,6 +6,7 @@ export { LoadingScreen } from "./LoadingScreen";
 export { NavigationShell } from "./NavigationShell";
 export { PdfSummaryStage } from "./PdfSummaryStage";
 export { QuizStage } from "./QuizStage";
+export { PrivacyScreen } from "./PrivacyScreen";
 export { StageBadge } from "./StageBadge";
 export { SummaryStage } from "./SummaryStage";
 export { ThemeToggle } from "./ThemeToggle";

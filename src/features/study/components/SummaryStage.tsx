@@ -4,12 +4,14 @@ type SummaryStageProps = {
   summary: string;
   onStartQuiz: () => void;
   isLoading?: boolean;
+  quizError?: string | null;
 };
 
 export function SummaryStage({
   summary,
   onStartQuiz,
   isLoading = false,
+  quizError,
 }: SummaryStageProps) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-3xl space-y-8 duration-700">
@@ -44,15 +46,22 @@ export function SummaryStage({
           </div>
 
           <div className="mt-12 flex flex-col items-center justify-between gap-6 border-t border-gray-100 pt-8 sm:flex-row dark:border-gray-800">
-            <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
-              Bereit, dein Wissen zu testen?
+            <div>
+              <div className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                Bereit, dein Wissen zu testen?
+              </div>
+              {quizError ? (
+                <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                  {quizError}
+                </p>
+              ) : null}
             </div>
             <button
               onClick={onStartQuiz}
               disabled={isLoading}
               className="group flex items-center gap-2 rounded-full bg-blue-600 px-8 py-4 font-bold text-white shadow-lg shadow-blue-600/20 transition-all hover:-translate-y-0.5 hover:bg-blue-700 disabled:translate-y-0 disabled:opacity-50"
             >
-              Jetzt Quiz starten
+              {isLoading ? "Quiz wird vorbereitet" : "Jetzt Quiz starten"}
               <ArrowRight
                 size={20}
                 className="transition-transform group-hover:translate-x-1"

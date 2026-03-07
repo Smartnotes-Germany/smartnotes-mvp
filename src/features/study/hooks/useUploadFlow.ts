@@ -24,12 +24,14 @@ type UseUploadFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
   documents: StudyDocument[];
+  quizQuestionsCount: number;
 };
 
 export function useUploadFlow({
   grantToken,
   sessionId,
   documents,
+  quizQuestionsCount,
 }: UseUploadFlowArgs) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -78,16 +80,32 @@ export function useUploadFlow({
       return;
     }
 
+    const clientRequestId = createClientRequestId("startQuiz");
+    setIsGeneratingQuiz(true);
+    setUploadError(null);
+
     try {
-      await startQuiz({ grantToken, sessionId });
+      if (quizQuestionsCount > 0) {
+        await startQuiz({ grantToken, sessionId });
+      } else {
+        await generateQuiz({
+          grantToken,
+          sessionId,
+          questionCount: 30,
+          clientRequestId,
+        });
+      }
     } catch (error: unknown) {
       setUploadError(
         formatError(error, {
           fallback: "Das Quiz konnte nicht gestartet werden.",
+          clientRequestId,
         }),
       );
+    } finally {
+      setIsGeneratingQuiz(false);
     }
-  }, [grantToken, sessionId, startQuiz]);
+  }, [generateQuiz, grantToken, quizQuestionsCount, sessionId, startQuiz]);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {

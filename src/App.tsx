@@ -80,7 +80,13 @@ function StudyApp() {
     );
   }, [responseByQuestionId, session]);
 
-  const uploadFlow = useUploadFlow({ grantToken, sessionId, documents });
+  const uploadFlow = useUploadFlow({
+    grantToken,
+    sessionId,
+    documents,
+    quizQuestionsCount: session?.quizQuestions.length ?? 0,
+  });
+
   const analysisFlow = useAnalysisFlow({
     grantToken,
     sessionId,
@@ -201,6 +207,8 @@ function StudyApp() {
         <SummaryStage
           summary={session.sourceSummary ?? "Keine Zusammenfassung verfügbar."}
           onStartQuiz={uploadFlow.startQuizStudySession}
+          isLoading={uploadFlow.isGeneratingQuiz}
+          quizError={uploadFlow.uploadError}
         />
       )}
 
@@ -209,6 +217,8 @@ function StudyApp() {
           data={session.pdfSummary}
           onBack={() => setShowGenerationDecision(true)}
           onContinueToQuiz={uploadFlow.startQuizStudySession}
+          isStartingQuiz={uploadFlow.isGeneratingQuiz}
+          quizError={uploadFlow.uploadError}
         />
       )}
 

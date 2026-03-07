@@ -216,6 +216,32 @@ export const getLatestSessionId = query({
   },
 });
 
+export const startQuiz = mutation({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    const session = await ensureSessionOwnership(
+      ctx,
+      args.sessionId,
+      grant._id,
+    );
+
+    if (session.quizQuestions.length === 0) {
+      throw new Error(
+        "Es sind noch keine Quizfragen vorhanden. Bitte erstelle zuerst einen Wissenscheck.",
+      );
+    }
+
+    await ctx.db.patch(args.sessionId, {
+      stage: "quiz",
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const getSessionSnapshot = query({
   args: {
     grantToken: v.string(),

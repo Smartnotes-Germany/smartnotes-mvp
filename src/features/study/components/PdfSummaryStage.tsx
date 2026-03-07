@@ -6,7 +6,7 @@ import {
   StyleSheet,
   PDFViewer,
 } from "@react-pdf/renderer";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 
 // Register a nice font if needed, but standard ones are fine for now
 // Font.register({ family: 'Inter', src: '...' });
@@ -113,12 +113,16 @@ type PdfSummaryStageProps = {
   data: PdfSummaryData | undefined;
   onBack: () => void;
   onContinueToQuiz: () => void;
+  isStartingQuiz?: boolean;
+  quizError?: string | null;
 };
 
 export function PdfSummaryStage({
   data,
   onBack,
   onContinueToQuiz,
+  isStartingQuiz = false,
+  quizError,
 }: PdfSummaryStageProps) {
   if (!data) {
     return (
@@ -162,11 +166,26 @@ export function PdfSummaryStage({
         </div>
 
         <div className="flex items-center gap-3">
+          {quizError ? (
+            <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+              {quizError}
+            </p>
+          ) : null}
           <button
             onClick={onContinueToQuiz}
-            className="bg-accent shadow-accent/20 flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:opacity-90 active:scale-95"
+            disabled={isStartingQuiz}
+            className="bg-accent shadow-accent/20 flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:opacity-90 active:scale-95 disabled:translate-y-0 disabled:opacity-60"
           >
-            Wissen testen <Sparkles size={16} />
+            {isStartingQuiz ? (
+              <>
+                Quiz wird vorbereitet{" "}
+                <Loader2 size={16} className="animate-spin" />
+              </>
+            ) : (
+              <>
+                Wissen testen <Sparkles size={16} />
+              </>
+            )}
           </button>
         </div>
       </div>

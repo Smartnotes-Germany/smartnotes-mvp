@@ -2820,8 +2820,6 @@ export const generatePdfSummary = action({
     );
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
-    let llmAttempts = 0;
-    let finishReason: string | undefined;
     let analyticsError: unknown;
 
     try {
@@ -2855,7 +2853,10 @@ export const generatePdfSummary = action({
       );
 
       const model = createVertexModel();
-      const userContent: Array<any> = [
+      const userContent: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; data: Buffer; mediaType: string; filename: string }
+      > = [
         {
           type: "text",
           text: "Erstelle eine strukturierte Lernzusammenfassung basierend auf den bereitgestellten Inhalten. Unterteile sie in logische Abschnitte. Für jeden Abschnitt gib einen aussagekräftigen Titel, eine detaillierte Zusammenfassung (ca. 3-5 Sätze) und einen präzisen Google-Suchbegriff für ein passendes Bild oder Diagramm an (z.B. 'Schema Aufbau Pflanzenzelle' oder 'Diagramm Photosynthese Kreislauf').",
@@ -2867,7 +2868,6 @@ export const generatePdfSummary = action({
       }
       userContent.push(...fileParts);
 
-      llmAttempts += 1;
       const result = await generateText({
         model: model(analyticsModelId),
         temperature: 0.3,

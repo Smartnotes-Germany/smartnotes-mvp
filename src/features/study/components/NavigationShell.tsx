@@ -85,7 +85,7 @@ export function NavigationShell({
               />
               <StageBadge
                 label="2. Zusammenfassung"
-                active={stage === "summary"}
+                active={stage === "summary" || stage === "pdf_summary"}
                 done={stage === "quiz" || stage === "analysis"}
               />
               <StageBadge
@@ -158,7 +158,7 @@ export function NavigationShell({
           />
           <StageBadge
             label="2. Zusammenfassung"
-            active={stage === "summary"}
+            active={stage === "summary" || stage === "pdf_summary"}
             done={stage === "quiz" || stage === "analysis"}
           />
           <StageBadge

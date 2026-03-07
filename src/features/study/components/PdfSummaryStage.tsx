@@ -84,7 +84,6 @@ const MyDocument = ({ data }: { data: PdfSummaryData }) => (
   <Document title={data.title}>
     <Page size="A4" style={styles.page}>
       <View style={styles.header}>
-        <Text style={styles.subtitle}>SmartNotes Master Summary</Text>
         <Text style={styles.title}>{data.title}</Text>
       </View>
 

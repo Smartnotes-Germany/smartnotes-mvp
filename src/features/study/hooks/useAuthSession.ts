@@ -9,14 +9,41 @@ import {
 } from "../convexRefs";
 import { STORAGE_KEYS } from "../constants";
 import { formatError } from "../errorUtils";
+import type { GrantStatus } from "../types";
 
-export function useAuthSession() {
+export type AuthSessionReturn = {
+  grantToken: string | null;
+  sessionId: string | null;
+  grantStatus: GrantStatus | undefined;
+  latestSessionId: string | null | undefined;
+  accessCodeInput: string;
+  authError: string | null;
+  isRedeemingCode: boolean;
+  isCreatingSession: boolean;
+  isSigningOut: boolean;
+  isConsumingMagicLink: boolean;
+  hasAcceptedPrivacy: boolean;
+  isAcceptingPrivacy: boolean;
+  setAccessCodeInput: (value: string) => void;
+  setAuthError: (error: string | null) => void;
+  redeemCode: () => Promise<void>;
+  startFreshSession: () => Promise<string | null>;
+  signOut: () => void;
+  acceptPrivacy: () => Promise<void>;
+};
+
+export function useAuthSession(): AuthSessionReturn {
   const [grantToken, setGrantToken] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEYS.grantToken),
   );
   const [sessionId, setSessionId] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEYS.sessionId),
   );
+  const [hasAcceptedPrivacy, setHasAcceptedPrivacy] = useState<boolean>(() => {
+    return localStorage.getItem("smartnotes.privacy-accepted") === "true";
+  });
+  const [isAcceptingPrivacy, setIsAcceptingPrivacy] = useState(false);
+
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRedeemingCode, setIsRedeemingCode] = useState(false);
@@ -40,6 +67,14 @@ export function useAuthSession() {
     latestSessionIdRef,
     grantToken && grantStatus?.valid ? { grantToken } : "skip",
   );
+
+  const acceptPrivacy = useCallback(async () => {
+    setIsAcceptingPrivacy(true);
+    // Simuliere kurze Verzögerung für UX, falls gewünscht, oder direkt setzen
+    localStorage.setItem("smartnotes.privacy-accepted", "true");
+    setHasAcceptedPrivacy(true);
+    setIsAcceptingPrivacy(false);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -206,12 +241,14 @@ export function useAuthSession() {
       setGrantToken(null);
       setSessionId(null);
       setAuthError(null);
+      setHasAcceptedPrivacy(false); // Reset privacy acceptance on sign out
       localStorage.removeItem(STORAGE_KEYS.grantToken);
       localStorage.removeItem(STORAGE_KEYS.sessionId);
+      localStorage.removeItem("smartnotes.privacy-accepted"); // Also remove from local storage
       setIsSigningOut(false);
       signOutTimeoutRef.current = null;
     }, 500);
-  }, []);
+  }, [setHasAcceptedPrivacy]);
 
   return {
     grantToken,
@@ -224,10 +261,13 @@ export function useAuthSession() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
+    hasAcceptedPrivacy,
+    isAcceptingPrivacy,
     setAccessCodeInput,
     setAuthError,
     redeemCode,
     startFreshSession,
     signOut,
+    acceptPrivacy,
   };
 }

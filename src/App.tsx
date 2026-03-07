@@ -7,7 +7,9 @@ import {
   AuthScreen,
   GenerationDecisionStage,
   LoadingScreen,
-  NavigationShell, PdfSummaryStage,
+  NavigationShell,
+  PdfSummaryStage,
+  PrivacyScreen,
   QuizStage,
   SummaryStage,
   UploadStage,
@@ -20,7 +22,7 @@ import {
   useQuizFlow,
   useUploadFlow,
 } from "./features/study/hooks";
-import Page from "./admin/AdminDashboard.tsx";
+import Page from "./admin/page.tsx";
 
 function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
@@ -36,9 +38,12 @@ function StudyApp() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
+    hasAcceptedPrivacy,
+    isAcceptingPrivacy,
     setAccessCodeInput,
     redeemCode,
     startFreshSession,
+    acceptPrivacy,
     signOut,
   } = useAuthSession();
 
@@ -125,6 +130,18 @@ function StudyApp() {
         onRedeemCode={redeemCode}
         isRedeemingCode={isRedeemingCode}
         authError={authError}
+      />
+    );
+  }
+
+  if (!hasAcceptedPrivacy) {
+    return (
+      <PrivacyScreen
+        onAcceptPrivacy={acceptPrivacy}
+        isAcceptingPrivacy={isAcceptingPrivacy}
+        logoImage={logoImage}
+        preference={themePreference}
+        setPreference={setThemePreference}
       />
     );
   }

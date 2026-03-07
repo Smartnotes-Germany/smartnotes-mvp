@@ -243,12 +243,12 @@ export function GenerationDecisionStage({
           </div>
         </article>
 
-        <article className="relative overflow-hidden rounded-4xl border border-accent/20 bg-accent/10 p-5 shadow-sm md:p-8 dark:border-accent/20 dark:bg-accent/20">
-          <div className="absolute -top-10 -right-8 h-32 w-32 rounded-full bg-accent/10 blur-2xl dark:bg-accent/10" />
+        <article className="border-accent/20 bg-accent/10 dark:border-accent/20 dark:bg-accent/20 relative overflow-hidden rounded-4xl border p-5 shadow-sm md:p-8">
+          <div className="bg-accent/10 dark:bg-accent/10 absolute -top-10 -right-8 h-32 w-32 rounded-full blur-2xl" />
 
           <div className="relative flex h-full flex-col">
             <div className="mb-5 flex items-start justify-between gap-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-accent uppercase dark:text-accent">
+              <div className="bg-accent/10 text-accent dark:text-accent inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] uppercase">
                 <BookOpen size={14} />
                 Erst lernen
               </div>
@@ -263,9 +263,9 @@ export function GenerationDecisionStage({
               überprüfen.
             </p>
 
-            <div className="mb-6 rounded-2xl border border-accent/20 bg-white/70 p-4 dark:bg-accent/20">
+            <div className="border-accent/20 dark:bg-accent/20 mb-6 rounded-2xl border bg-white/70 p-4">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-[10px] font-bold tracking-[0.12em] text-accent uppercase dark:text-accent">
+                <p className="text-accent dark:text-accent text-[10px] font-bold tracking-[0.12em] uppercase">
                   Lernblatt-Vorschau
                 </p>
               </div>
@@ -284,7 +284,7 @@ export function GenerationDecisionStage({
                     width="70"
                     height="95"
                     rx="6"
-                    className="fill-white stroke-accent/20 dark:fill-slate-900"
+                    className="stroke-accent/20 fill-white dark:fill-slate-900"
                     strokeWidth="1.5"
                   />
 
@@ -378,7 +378,7 @@ export function GenerationDecisionStage({
                 >
                   <CheckCircle2
                     size={15}
-                    className="mt-0.5 shrink-0 text-accent"
+                    className="text-accent mt-0.5 shrink-0"
                   />
                   <span>{benefit}</span>
                 </p>
@@ -389,7 +389,7 @@ export function GenerationDecisionStage({
               type="button"
               onClick={() => void onStartLearnFirst()}
               disabled={isGeneratingQuiz}
-              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-3.5 text-xs font-bold tracking-[0.12em] text-white uppercase shadow-lg shadow-accent/20 transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
+              className="bg-accent shadow-accent/20 mt-8 inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-xs font-bold tracking-[0.12em] text-white uppercase shadow-lg transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
             >
               {isGeneratingQuiz ? (
                 <Loader2 size={16} className="animate-spin" />

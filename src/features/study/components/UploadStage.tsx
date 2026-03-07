@@ -10,19 +10,19 @@ import type { ExtractionStatus, StudyDocument } from "../types";
 type UploadStageProps = {
   documents: StudyDocument[];
   isUploading: boolean;
-  uploadError: string | null;
   isGeneratingQuiz: boolean;
+  uploadError: string | null;
   isRemovingDocument: string | null;
   onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onGenerateQuiz: () => Promise<void>;
+  onGenerateQuiz: () => void;
   onRemoveDocument: (documentId: string) => Promise<void>;
 };
 
 export function UploadStage({
   documents,
   isUploading,
-  uploadError,
   isGeneratingQuiz,
+  uploadError,
   isRemovingDocument,
   onFileInputChange,
   onGenerateQuiz,
@@ -118,7 +118,7 @@ export function UploadStage({
         {readyDocuments.length > 0 && (
           <button
             type="button"
-            onClick={() => void onGenerateQuiz()}
+            onClick={onGenerateQuiz}
             disabled={isUploading || isGeneratingQuiz}
             className="bg-accent shadow-accent/20 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60"
           >
@@ -127,9 +127,7 @@ export function UploadStage({
             ) : (
               <Sparkles size={20} />
             )}
-            {isGeneratingQuiz
-              ? "KI erstellt Fragen..."
-              : "Quizfragen generieren"}
+            Lernmodus wählen
           </button>
         )}
       </div>

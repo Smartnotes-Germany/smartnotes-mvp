@@ -5,10 +5,13 @@ import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
   AuthScreen,
+  GenerationDecisionStage,
   LoadingScreen,
   NavigationShell,
+  PdfSummaryStage,
   PrivacyScreen,
   QuizStage,
+  SummaryStage,
   UploadStage,
 } from "./features/study/components";
 import { sessionSnapshotRef } from "./features/study/convexRefs";
@@ -87,6 +90,7 @@ function StudyApp() {
     hasExistingAnalysis: Boolean(session?.analysis),
   });
   const quizFlow = useQuizFlow({ grantToken, sessionId, currentQuestion });
+  const [showGenerationDecision, setShowGenerationDecision] = useState(false);
   const [sessionActionError, setSessionActionError] = useState<string | null>(
     null,
   );
@@ -95,10 +99,23 @@ function StudyApp() {
     setSessionActionError(null);
     analysisFlow.setAnalysisError(null);
     uploadFlow.setUploadError(null);
+    setShowGenerationDecision(false);
     const startError = await startFreshSession();
     if (startError) {
       setSessionActionError(startError);
     }
+  };
+
+  const handleStartDirectQuiz = async () => {
+    // This will generate the quiz and summary, but we'll go straight to the quiz stage
+    // The backend logic needs to support this, or we set a flag.
+    // For now, we'll just generate and let the normal flow to summary happen.
+    // A future improvement could be to skip summary.
+    await uploadFlow.generateQuizQuestions();
+  };
+
+  const handleStartLearnFirst = async () => {
+    await uploadFlow.generatePdfSummaryQuestions();
   };
 
   if (!grantToken) {
@@ -133,6 +150,11 @@ function StudyApp() {
     return <LoadingScreen />;
   }
 
+  const shouldShowGenerationDecision =
+    showGenerationDecision &&
+    session.stage === "upload" &&
+    stats.readyDocuments > 0;
+
   return (
     <NavigationShell
       logoImage={logoImage}
@@ -151,15 +173,42 @@ function StudyApp() {
       )}
 
       {session.stage === "upload" && (
-        <UploadStage
-          documents={documents}
-          isUploading={uploadFlow.isUploading}
-          uploadError={uploadFlow.uploadError}
-          isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
-          isRemovingDocument={uploadFlow.isRemovingDocument}
-          onFileInputChange={uploadFlow.onFileInputChange}
-          onGenerateQuiz={uploadFlow.generateQuizQuestions}
-          onRemoveDocument={uploadFlow.removeDocumentById}
+        <>
+          {shouldShowGenerationDecision ? (
+            <GenerationDecisionStage
+              isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
+              uploadError={uploadFlow.uploadError}
+              onBackToUpload={() => setShowGenerationDecision(false)}
+              onStartDirectQuiz={handleStartDirectQuiz}
+              onStartLearnFirst={handleStartLearnFirst}
+            />
+          ) : (
+            <UploadStage
+              documents={documents}
+              isUploading={uploadFlow.isUploading}
+              isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
+              uploadError={uploadFlow.uploadError}
+              isRemovingDocument={uploadFlow.isRemovingDocument}
+              onFileInputChange={uploadFlow.onFileInputChange}
+              onGenerateQuiz={() => setShowGenerationDecision(true)}
+              onRemoveDocument={uploadFlow.removeDocumentById}
+            />
+          )}
+        </>
+      )}
+
+      {session.stage === "summary" && (
+        <SummaryStage
+          summary={session.sourceSummary ?? "Keine Zusammenfassung verfügbar."}
+          onStartQuiz={uploadFlow.startQuizStudySession}
+        />
+      )}
+
+      {session.stage === "pdf_summary" && (
+        <PdfSummaryStage
+          data={session.pdfSummary}
+          onBack={() => setShowGenerationDecision(true)}
+          onContinueToQuiz={uploadFlow.startQuizStudySession}
         />
       )}
 

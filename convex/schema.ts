@@ -65,6 +65,7 @@ export default defineSchema({
     title: v.string(),
     stage: v.union(
       v.literal("upload"),
+      v.literal("pdf_summary"),
       v.literal("quiz"),
       v.literal("analysis"),
     ),
@@ -74,6 +75,18 @@ export default defineSchema({
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),
     analysis: v.optional(analysisValidator), // KI-Analyse des Lernfortschritts
+    pdfSummary: v.optional(
+      v.object({
+        title: v.string(),
+        sections: v.array(
+          v.object({
+            title: v.string(),
+            content: v.string(),
+            imageUrl: v.optional(v.string()),
+          }),
+        ),
+      }),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_grantId", ["grantId"]),

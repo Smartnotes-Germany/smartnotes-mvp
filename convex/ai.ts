@@ -1,7 +1,7 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import { createVertex } from "@ai-sdk/google-vertex";
+import { createVertex, vertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
@@ -122,6 +122,17 @@ const deepDiveSchema = z.object({
       prompt: z.string(),
       idealAnswer: z.string(),
       explanationHint: z.string(),
+    }),
+  ),
+});
+
+const pdfSummarySchema = z.object({
+  title: z.string(),
+  overview: z.string(),
+  sections: z.array(
+    z.object({
+      title: z.string(),
+      content: z.array(z.string()),
     }),
   ),
 });
@@ -2790,6 +2801,136 @@ Sei streng, aber konstruktiv.`,
       await flushTelemetry({
         traceId: trace.traceId,
         appScope: "analyzePerformance",
+      });
+    }
+  },
+});
+
+export const generatePdfSummary = action({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    clientRequestId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const trace = createAiTraceLogger(
+      "generatePdfSummary",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const analyticsModelId = "gemini-3-flash-preview";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let analyticsError: unknown;
+
+    try {
+      const context: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
+
+      const readyDocuments = context.documents.filter(
+        (doc) => doc.extractionStatus === "ready",
+      );
+
+      if (readyDocuments.length === 0) {
+        throw new Error("Keine verarbeiteten Dokumente gefunden.");
+      }
+
+      const { fileParts, sourceContext } = await buildModelInputFromDocuments(
+        ctx,
+        readyDocuments.map((doc) => ({
+          storageId: doc.storageId,
+          fileName: doc.fileName,
+          fileType: doc.fileType,
+          fileSizeBytes: doc.fileSizeBytes,
+          extractedText: doc.extractedText,
+        })),
+        context.accessKey,
+        trace,
+      );
+
+      const model = createVertexModel();
+      const userContent: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; data: Buffer; mediaType: string; filename: string }
+      > = [
+        {
+          type: "text",
+          text: "Erstelle eine strukturierte Lernzusammenfassung basierend auf den bereitgestellten Inhalten. Unterteile sie in logische Abschnitte. Für jeden Abschnitt gib einen aussagekräftigen Titel, eine detaillierte Zusammenfassung (ca. 3-5 Sätze) und einen präzisen Google-Suchbegriff für ein passendes Bild oder Diagramm an (z.B. 'Schema Aufbau Pflanzenzelle' oder 'Diagramm Photosynthese Kreislauf').",
+        },
+      ];
+
+      if (sourceContext) {
+        userContent.push({ type: "text", text: sourceContext });
+      }
+      userContent.push(...fileParts);
+
+      const result = await generateText({
+        model: model(analyticsModelId),
+        temperature: 0.3,
+        maxOutputTokens: 2500,
+        tools: { google_search: vertex.tools.googleSearch({}) },
+        providerOptions: {
+          google: {
+            ...vertexProviderOptions.google,
+            useSearchGrounding: true,
+          },
+        },
+        output: Output.object({
+          schema: pdfSummarySchema,
+        }),
+        experimental_telemetry: buildAiSdkTelemetry(
+          "generatePdfSummary.primary",
+          args.sessionId,
+          trace.traceId,
+          { appScope: "generatePdfSummary" },
+        ),
+        system:
+          "Du bist ein Experte für Lernmaterialien und Faktenchecker. Deine Aufgabe ist es, extrem übersichtliche Lernzusammenfassungen zu erstellen. \n\nREGELN FÜR DEN INHALT:\n- Nutze konsequent STICHKUNKTE für das Feld 'content'. Gib pro Abschnitt 4-7 prägnante Stichpunkte zurück.\n- Vermeide lange Sätze.\n- Verifiziere alle Fakten mit der Google-Suche.",
+        messages: [{ role: "user", content: userContent }],
+      });
+
+      const resultLog = extractGenerationResultForLog(result);
+      trace.addUsage(resultLog.usage);
+      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+
+      const summary = result.output;
+
+      const sectionsForDb = summary.sections.map((section) => {
+        return {
+          title: section.title,
+          content: section.content.join("\n"),
+        };
+      });
+
+      const finalSummary = {
+        title: summary.title,
+        sections: sectionsForDb,
+      };
+
+      await ctx.runMutation(internal.study.storePdfSummary, {
+        sessionId: args.sessionId,
+        pdfSummary: finalSummary,
+      });
+
+      return finalSummary;
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        scope: "generatePdfSummary",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
       });
     }
   },

@@ -129,8 +129,8 @@ export function AnalysisStage({
                     <Sparkles size={14} />
                   )}
                   {topicLoading === topic.topic
-                    ? "KI vertieft..."
-                    : "Vertiefung"}
+                    ? "KI fasst zusammen..."
+                    : "Lernzusammenfassung"}
                 </button>
               </div>
             ))}

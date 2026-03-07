@@ -5,7 +5,9 @@ import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/logo.png";
 
 export default function Page() {
-  const [draftSecret, setDraftSecret] = useState(() => localStorage.getItem("adminSecret") || "");
+  const [draftSecret, setDraftSecret] = useState(
+    () => localStorage.getItem("adminSecret") || "",
+  );
   const [adminSecret, setAdminSecret] = useState(draftSecret);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -102,7 +104,7 @@ export default function Page() {
                   required
                   value={draftSecret}
                   onChange={(e) => setDraftSecret(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all outline-none"
+                  className="block w-full rounded-xl border border-gray-300 bg-gray-50 py-3 pr-3 pl-10 text-gray-900 transition-all outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   placeholder="Admin Secret"
                 />
               </div>
@@ -115,7 +117,7 @@ export default function Page() {
             <button
               type="submit"
               disabled={verifySecret === undefined}
-              className="group relative flex w-full justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative flex w-full justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
               {verifySecret === undefined ? "Verifiziere..." : "Anmelden"}
             </button>

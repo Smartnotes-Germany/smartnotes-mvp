@@ -1,7 +1,7 @@
 "use node";
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
-import {createVertex, vertex} from "@ai-sdk/google-vertex";
+import { createVertex, vertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
@@ -2888,7 +2888,8 @@ export const generatePdfSummary = action({
           trace.traceId,
           { appScope: "generatePdfSummary" },
         ),
-        system: "Du bist ein Experte für Lernmaterialien und Faktenchecker. Deine Aufgabe ist es, extrem übersichtliche Lernzusammenfassungen zu erstellen. \n\nREGELN FÜR DEN INHALT:\n- Nutze konsequent STICHKUNKTE für das Feld 'content'. Gib pro Abschnitt 4-7 prägnante Stichpunkte zurück.\n- Vermeide lange Sätze.\n- Verifiziere alle Fakten mit der Google-Suche.",
+        system:
+          "Du bist ein Experte für Lernmaterialien und Faktenchecker. Deine Aufgabe ist es, extrem übersichtliche Lernzusammenfassungen zu erstellen. \n\nREGELN FÜR DEN INHALT:\n- Nutze konsequent STICHKUNKTE für das Feld 'content'. Gib pro Abschnitt 4-7 prägnante Stichpunkte zurück.\n- Vermeide lange Sätze.\n- Verifiziere alle Fakten mit der Google-Suche.",
         messages: [{ role: "user", content: userContent }],
       });
 

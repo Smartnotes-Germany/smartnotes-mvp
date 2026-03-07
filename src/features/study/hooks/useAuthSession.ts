@@ -271,4 +271,3 @@ export function useAuthSession(): AuthSessionReturn {
     acceptPrivacy,
   };
 }
-

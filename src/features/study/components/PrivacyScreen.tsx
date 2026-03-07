@@ -43,11 +43,11 @@ export function PrivacyScreen({
             Ein letzter Schritt
           </h1>
           <p className="text-ink-secondary mb-6 text-sm leading-relaxed">
-            Um Smartnotes stetig zu verbessern, analysieren wir Interaktionsdaten
-            und hochgeladene Inhalte. Durch deine Zustimmung erlaubst du uns,
-            deine Dokumente und Nutzungsdaten zur Bereitstellung des Services
-            sowie zur Fehlerbehebung und Weiterentwicklung unserer KI-Modelle zu
-            verwenden.
+            Um Smartnotes stetig zu verbessern, analysieren wir
+            Interaktionsdaten und hochgeladene Inhalte. Durch deine Zustimmung
+            erlaubst du uns, deine Dokumente und Nutzungsdaten zur
+            Bereitstellung des Services sowie zur Fehlerbehebung und
+            Weiterentwicklung unserer KI-Modelle zu verwenden.
           </p>
 
           <a

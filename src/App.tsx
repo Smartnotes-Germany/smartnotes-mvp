@@ -8,7 +8,7 @@ import {
   GenerationDecisionStage,
   LoadingScreen,
   NavigationShell,
-    PdfSummaryStage,
+  PdfSummaryStage,
   PrivacyScreen,
   QuizStage,
   SummaryStage,

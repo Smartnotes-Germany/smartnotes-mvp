@@ -102,7 +102,7 @@ const MyDocument = ({ data }: { data: PdfSummaryData }) => (
       ))}
 
       <Text style={styles.footer}>
-        Professionell aufbereitet mit SmartNotes •{" "}
+        Professionell aufbereitet mit Smartnotes •{" "}
         {new Date().toLocaleDateString("de-DE")}
       </Text>
     </Page>

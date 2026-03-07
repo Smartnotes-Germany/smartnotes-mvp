@@ -1,15 +1,12 @@
-import React from "react";
-import { 
-  Document, 
-  Page, 
-  Text, 
-  View, 
-  StyleSheet, 
-  PDFViewer, 
-  Image,
-  Font
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  StyleSheet,
+  PDFViewer,
 } from "@react-pdf/renderer";
-import { ArrowLeft, Download, FileText, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 
 // Register a nice font if needed, but standard ones are fine for now
 // Font.register({ family: 'Inter', src: '...' });
@@ -72,7 +69,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     borderTop: "0.5pt solid #e2e8f0",
     paddingTop: 15,
-  }
+  },
 });
 
 type PdfSummaryData = {
@@ -106,7 +103,8 @@ const MyDocument = ({ data }: { data: PdfSummaryData }) => (
       ))}
 
       <Text style={styles.footer}>
-        Professionell aufbereitet mit SmartNotes • {new Date().toLocaleDateString("de-DE")}
+        Professionell aufbereitet mit SmartNotes •{" "}
+        {new Date().toLocaleDateString("de-DE")}
       </Text>
     </Page>
   </Document>
@@ -118,45 +116,56 @@ type PdfSummaryStageProps = {
   onContinueToQuiz: () => void;
 };
 
-export function PdfSummaryStage({ data, onBack, onContinueToQuiz }: PdfSummaryStageProps) {
+export function PdfSummaryStage({
+  data,
+  onBack,
+  onContinueToQuiz,
+}: PdfSummaryStageProps) {
   if (!data) {
     return (
       <div className="flex h-[70vh] flex-col items-center justify-center space-y-6">
         <div className="relative">
-          <div className="h-20 w-20 rounded-full border-4 border-accent/10 border-t-accent animate-spin" />
-          <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-accent" size={32} />
+          <div className="border-accent/10 border-t-accent h-20 w-20 animate-spin rounded-full border-4" />
+          <Sparkles
+            className="text-accent absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+            size={32}
+          />
         </div>
         <div className="text-center">
-          <h3 className="text-xl font-bold text-ink">Zusammenfassung wird generiert</h3>
-          <p className="text-ink-muted mt-1 text-sm font-medium">Deine Unterlagen werden strukturiert aufbereitet...</p>
+          <h3 className="text-ink text-xl font-bold">
+            Zusammenfassung wird generiert
+          </h3>
+          <p className="text-ink-muted mt-1 text-sm font-medium">
+            Deine Unterlagen werden strukturiert aufbereitet...
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col fixed inset-0 z-50 bg-cream lg:left-[300px] animate-in fade-in duration-500">
+    <div className="bg-cream animate-in fade-in fixed inset-0 z-50 flex flex-col duration-500 lg:left-[300px]">
       {/* Sleek Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-surface-white border-b border-cream-border shadow-sm">
+      <div className="bg-surface-white border-cream-border flex items-center justify-between border-b px-6 py-4 shadow-sm">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={onBack}
-            className="p-2 rounded-xl hover:bg-cream-light text-ink-muted transition-all active:scale-90"
+            className="hover:bg-cream-light text-ink-muted rounded-xl p-2 transition-all active:scale-90"
             title="Zurück"
           >
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-xl font-black text-ink tracking-tight leading-none">
+            <h1 className="text-ink text-xl leading-none font-black tracking-tight">
               Lernübersicht
             </h1>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <button
             onClick={onContinueToQuiz}
-            className="bg-accent hover:opacity-90 text-white px-6 py-2.5 rounded-full font-bold shadow-lg shadow-accent/20 transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 text-sm"
+            className="bg-accent shadow-accent/20 flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:opacity-90 active:scale-95"
           >
             Wissen testen <Sparkles size={16} />
           </button>
@@ -164,8 +173,13 @@ export function PdfSummaryStage({ data, onBack, onContinueToQuiz }: PdfSummarySt
       </div>
 
       {/* Main Viewer - Pure Focus, No Margins */}
-      <div className="flex-1 bg-cream overflow-hidden">
-        <PDFViewer width="100%" height="100%" className="border-none" showToolbar={true}>
+      <div className="bg-cream flex-1 overflow-hidden">
+        <PDFViewer
+          width="100%"
+          height="100%"
+          className="border-none"
+          showToolbar={true}
+        >
           <MyDocument data={data} />
         </PDFViewer>
       </div>

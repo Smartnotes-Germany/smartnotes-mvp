@@ -25,6 +25,12 @@ export const startQuizRef = makeFunctionReference<
   void
 >("study:startQuiz");
 
+export const returnToUploadRef = makeFunctionReference<
+  "mutation",
+  { grantToken: string; sessionId: string },
+  void
+>("study:returnToUpload");
+
 export const generateUploadUrlRef = makeFunctionReference<
   "mutation",
   { grantToken: string; sessionId: string },

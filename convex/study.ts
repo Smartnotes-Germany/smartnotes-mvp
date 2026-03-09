@@ -49,6 +49,54 @@ const analysisValidator = v.object({
   recommendedNextStep: v.string(),
 });
 
+const summaryDefinitionValidator = v.object({
+  term: v.string(),
+  definition: v.string(),
+});
+
+const summaryExampleValidator = v.object({
+  title: v.string(),
+  details: v.string(),
+});
+
+const summaryTimelineEventValidator = v.object({
+  label: v.string(),
+  period: v.string(),
+  description: v.string(),
+});
+
+const summaryComparisonTableValidator = v.object({
+  title: v.string(),
+  headers: v.array(v.string()),
+  rows: v.array(v.array(v.string())),
+});
+
+const summarySubtopicValidator = v.object({
+  title: v.string(),
+  description: v.string(),
+  keyPoints: v.array(v.string()),
+  examples: v.array(summaryExampleValidator),
+});
+
+const pdfSummarySectionValidator = v.object({
+  title: v.string(),
+  content: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  definitions: v.optional(v.array(summaryDefinitionValidator)),
+  subtopics: v.optional(v.array(summarySubtopicValidator)),
+  comparisonTables: v.optional(v.array(summaryComparisonTableValidator)),
+  imageUrl: v.optional(v.string()),
+});
+
+const pdfSummaryValidator = v.object({
+  title: v.string(),
+  overview: v.optional(v.string()),
+  themeOverview: v.optional(v.array(v.string())),
+  timeline: v.optional(v.array(summaryTimelineEventValidator)),
+  keyTakeaways: v.optional(v.array(v.string())),
+  sections: v.array(pdfSummarySectionValidator),
+});
+
 const aiAnalyticsStatusValidator = v.union(
   v.literal("success"),
   v.literal("error"),
@@ -237,6 +285,22 @@ export const startQuiz = mutation({
 
     await ctx.db.patch(args.sessionId, {
       stage: "quiz",
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const returnToUpload = mutation({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    await ctx.db.patch(args.sessionId, {
+      stage: "upload",
       updatedAt: Date.now(),
     });
   },
@@ -739,16 +803,7 @@ export const storeSessionAnalysis = internalMutation({
 export const storePdfSummary = internalMutation({
   args: {
     sessionId: v.id("studySessions"),
-    pdfSummary: v.object({
-      title: v.string(),
-      sections: v.array(
-        v.object({
-          title: v.string(),
-          content: v.string(),
-          imageUrl: v.optional(v.string()),
-        }),
-      ),
-    }),
+    pdfSummary: pdfSummaryValidator,
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, {

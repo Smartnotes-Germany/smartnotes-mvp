@@ -126,15 +126,50 @@ const deepDiveSchema = z.object({
   ),
 });
 
+const summaryDefinitionSchema = z.object({
+  term: z.string(),
+  definition: z.string(),
+});
+
+const summaryExampleSchema = z.object({
+  title: z.string(),
+  details: z.string(),
+});
+
+const summaryTimelineEventSchema = z.object({
+  label: z.string(),
+  period: z.string(),
+  description: z.string(),
+});
+
+const summaryComparisonTableSchema = z.object({
+  title: z.string(),
+  headers: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+});
+
+const summarySubtopicSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  keyPoints: z.array(z.string()),
+  examples: z.array(summaryExampleSchema),
+});
+
+const pdfSummarySectionSchema = z.object({
+  title: z.string(),
+  summary: z.string(),
+  definitions: z.array(summaryDefinitionSchema),
+  subtopics: z.array(summarySubtopicSchema),
+  comparisonTables: z.array(summaryComparisonTableSchema),
+});
+
 const pdfSummarySchema = z.object({
   title: z.string(),
   overview: z.string(),
-  sections: z.array(
-    z.object({
-      title: z.string(),
-      content: z.array(z.string()),
-    }),
-  ),
+  themeOverview: z.array(z.string()),
+  timeline: z.array(summaryTimelineEventSchema),
+  keyTakeaways: z.array(z.string()),
+  sections: z.array(pdfSummarySectionSchema),
 });
 
 type SessionDocumentInput = {
@@ -160,6 +195,7 @@ type AnalysisResult = z.infer<typeof analysisSchema>;
 type AnalysisTopicInsight = z.infer<typeof analysisTopicSchema>;
 type FocusTopicAnalysisResult = z.infer<typeof focusTopicAnalysisSchema>;
 type DeepDiveGenerationResult = z.infer<typeof deepDiveSchema>;
+type PdfSummaryResult = z.infer<typeof pdfSummarySchema>;
 type AnalysisMode = "full" | "focus";
 
 const compactText = (value: string, maxChars: number) => {
@@ -172,6 +208,238 @@ const compactText = (value: string, maxChars: number) => {
     return normalized;
   }
   return `${normalized.slice(0, maxChars)}\n\n[Inhalt wurde für die Verarbeitung gekürzt.]`;
+};
+
+const normalizeSummaryText = (value: string) =>
+  value
+    .replace(/\r/g, "")
+    .replace(/\t/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const uniqueNonEmptyStrings = (values: string[]) => {
+  const seen = new Set<string>();
+
+  return values
+    .map((value) => normalizeSummaryText(value))
+    .filter((value) => {
+      if (!value) {
+        return false;
+      }
+
+      const key = value.toLocaleLowerCase("de-DE");
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+};
+
+const buildLegacySectionContent = (
+  section: PdfSummaryResult["sections"][number],
+) => {
+  return uniqueNonEmptyStrings([
+    section.summary,
+    ...section.subtopics.flatMap((subtopic) =>
+      subtopic.keyPoints.map((point) => `${subtopic.title}: ${point}`),
+    ),
+  ]).join("\n");
+};
+
+const normalizePdfSummaryResult = (summary: PdfSummaryResult) => {
+  const sections = summary.sections
+    .map((section) => {
+      const definitions = section.definitions
+        .map((definition) => ({
+          term: normalizeSummaryText(definition.term),
+          definition: normalizeSummaryText(definition.definition),
+        }))
+        .filter((definition) => definition.term && definition.definition);
+
+      const subtopics = section.subtopics
+        .map((subtopic) => ({
+          title: normalizeSummaryText(subtopic.title),
+          description: normalizeSummaryText(subtopic.description),
+          keyPoints: uniqueNonEmptyStrings(subtopic.keyPoints),
+          examples: subtopic.examples
+            .map((example) => ({
+              title: normalizeSummaryText(example.title),
+              details: normalizeSummaryText(example.details),
+            }))
+            .filter((example) => example.title && example.details),
+        }))
+        .filter(
+          (subtopic) =>
+            subtopic.title &&
+            subtopic.description &&
+            (subtopic.keyPoints.length > 0 || subtopic.examples.length > 0),
+        );
+
+      const comparisonTables = section.comparisonTables
+        .map((table) => ({
+          title: normalizeSummaryText(table.title),
+          headers: uniqueNonEmptyStrings(table.headers),
+          rows: table.rows
+            .map((row) => row.map((cell) => normalizeSummaryText(cell)))
+            .filter((row) => row.some(Boolean)),
+        }))
+        .filter(
+          (table) =>
+            table.title &&
+            table.headers.length >= 2 &&
+            table.rows.some((row) => row.length === table.headers.length),
+        )
+        .map((table) => ({
+          ...table,
+          rows: table.rows.filter((row) => row.length === table.headers.length),
+        }));
+
+      const normalizedSection = {
+        title: normalizeSummaryText(section.title),
+        summary: normalizeSummaryText(section.summary),
+        definitions,
+        subtopics,
+        comparisonTables,
+      };
+
+      return {
+        ...normalizedSection,
+        content: buildLegacySectionContent(normalizedSection),
+      };
+    })
+    .filter((section) => section.title && section.summary);
+
+  const themeOverview = uniqueNonEmptyStrings(summary.themeOverview);
+  const keyTakeaways = uniqueNonEmptyStrings(summary.keyTakeaways);
+
+  return {
+    title: normalizeSummaryText(summary.title),
+    overview: normalizeSummaryText(summary.overview),
+    themeOverview: themeOverview.length
+      ? themeOverview
+      : sections.map((section) => section.title),
+    timeline: summary.timeline
+      .map((event) => ({
+        label: normalizeSummaryText(event.label),
+        period: normalizeSummaryText(event.period),
+        description: normalizeSummaryText(event.description),
+      }))
+      .filter((event) => event.label && event.period && event.description),
+    keyTakeaways: keyTakeaways.length
+      ? keyTakeaways
+      : sections.flatMap((section) => section.content.split("\n").slice(0, 1)),
+    sections,
+  };
+};
+
+type NormalizedPdfSummaryResult = ReturnType<typeof normalizePdfSummaryResult>;
+
+const containsComparisonSignals = (value: string) => {
+  const normalized = value.toLocaleLowerCase("de-DE");
+  return [
+    "vergleich",
+    "unterschied",
+    "gemeinsamkeit",
+    "gegenüber",
+    "vs",
+    "kontrast",
+    "abgrenz",
+  ].some((signal) => normalized.includes(signal));
+};
+
+const containsTimelineSignals = (value: string) => {
+  const normalized = value.toLocaleLowerCase("de-DE");
+  return [
+    "jahr",
+    "jahre",
+    "jahrhundert",
+    "epoche",
+    "chronolog",
+    "zeitlich",
+    "entwicklung",
+    "verlauf",
+    "geschichte",
+    "histor",
+    "revolution",
+    "phase",
+  ].some((signal) => normalized.includes(signal));
+};
+
+const collectPdfSummaryQualityIssues = (
+  summary: NormalizedPdfSummaryResult,
+  sourceContext: string,
+) => {
+  const issues: string[] = [];
+  const normalizedContext = sourceContext.toLocaleLowerCase("de-DE");
+  const totalDefinitions = summary.sections.reduce(
+    (count, section) => count + section.definitions.length,
+    0,
+  );
+  const totalTables = summary.sections.reduce(
+    (count, section) => count + section.comparisonTables.length,
+    0,
+  );
+
+  if (!summary.title || !summary.overview) {
+    issues.push("Titel oder Gesamtüberblick fehlen.");
+  }
+
+  if (summary.themeOverview.length === 0) {
+    issues.push("Die Themenübersicht fehlt.");
+  }
+
+  if (summary.sections.length === 0) {
+    issues.push("Es wurden keine inhaltlichen Abschnitte erstellt.");
+  }
+
+  if (totalDefinitions === 0) {
+    issues.push("Es fehlt mindestens eine Begriffsdefinition.");
+  }
+
+  if (
+    (containsComparisonSignals(normalizedContext) ||
+      summary.sections.some(
+        (section) =>
+          containsComparisonSignals(section.title) ||
+          containsComparisonSignals(section.summary),
+      )) &&
+    totalTables === 0
+  ) {
+    issues.push(
+      "Es fehlt mindestens eine Vergleichstabelle trotz Vergleichssignalen.",
+    );
+  }
+
+  if (
+    containsTimelineSignals(normalizedContext) &&
+    summary.timeline.length === 0
+  ) {
+    issues.push(
+      "Es fehlt eine zeitliche Einordnung, obwohl das Thema danach aussieht.",
+    );
+  }
+
+  for (const section of summary.sections) {
+    if (section.subtopics.length === 0) {
+      issues.push(`Abschnitt '${section.title}' hat keine Unterthemen.`);
+    }
+
+    for (const subtopic of section.subtopics) {
+      if (subtopic.keyPoints.length < 2) {
+        issues.push(
+          `Unterthema '${subtopic.title}' hat zu wenig relevante Stichpunkte.`,
+        );
+      }
+
+      if (subtopic.examples.length === 0) {
+        issues.push(`Unterthema '${subtopic.title}' hat kein Beispiel.`);
+      }
+    }
+  }
+
+  return uniqueNonEmptyStrings(issues);
 };
 
 const filenameExtension = (name: string) => {
@@ -2853,13 +3121,47 @@ export const generatePdfSummary = action({
       );
 
       const model = createVertexModel();
+      const promptBlueprint = [
+        "Erstelle eine deutschsprachige Lernübersicht für Schüler und Studierende.",
+        "Die Übersicht soll sich wie eine schlichte App-Ansicht lesen: klar gegliedert, inhaltlich dicht, ohne Deko oder Fülltext.",
+        "Arbeite in dieser Reihenfolge:",
+        "1. Identifiziere die wichtigsten Themenfelder aus allen Quellen.",
+        "2. Formuliere einen kurzen Gesamtüberblick in 'overview' und liste die Hauptthemen in 'themeOverview'.",
+        "3. Gliedere alle relevanten Inhalte in 'sections' und darin in 'subtopics'.",
+        "4. Ergänze Begriffsdefinitionen nur für wirklich relevante Fachbegriffe.",
+        "5. Ergänze pro Unterthema mindestens ein konkretes Beispiel.",
+        "6. Ergänze 'timeline' nur dann, wenn eine zeitliche Einordnung fachlich hilft; sonst gib ein leeres Array zurück.",
+        "7. Ergänze 'comparisonTables' immer dann, wenn Inhalte verglichen werden oder leicht verwechselt werden können; sonst gib ein leeres Array zurück.",
+      ].join("\n");
+      const promptConstraints = [
+        "Schreibe nur auf Deutsch.",
+        "Keine Markdown-Syntax, keine Emojis, keine Motivationssätze.",
+        "Jeder Abschnitt braucht einen präzisen Titel und eine genaue, verständliche Beschreibung.",
+        "Jeder Abschnitt braucht mindestens ein Unterthema.",
+        "Unterthemen sollen den Stoff vollständig, aber kompakt abdecken.",
+        "Jedes Unterthema braucht mindestens zwei relevante Stichpunkte.",
+        "Beispiele müssen den Inhalt konkret machen und dürfen nicht bloß Wiederholungen sein.",
+        "Jedes Unterthema braucht mindestens ein Beispiel.",
+        "Die wichtigsten Fachbegriffe müssen als Definitionen erklärt werden.",
+        "Sobald zwei Dinge verglichen, abgegrenzt oder verwechselt werden könnten, ist eine Tabelle Pflicht.",
+        "Tabellen sollen kurze Spaltenüberschriften und prägnante Zellen haben.",
+        "Wenn es eine geschichtliche, chronologische oder entwicklungsbezogene Einordnung gibt, nutze 'timeline'.",
+        "Alle sichtbaren Inhalte müssen fachlich relevant sein.",
+        "Wenn ein Thema keine sinnvolle Definition, Zeitachse oder Tabelle braucht, lasse den jeweiligen Bereich leer statt etwas zu erfinden.",
+      ].join("\n");
+      const fewShotExample = [
+        "Beispiel 1 (Geschichte, MIT Zeitachse und Vergleichstabelle):",
+        '{"title":"Französische Revolution","overview":"Die Übersicht ordnet Ursachen, Verlauf und Folgen der Französischen Revolution ein.","themeOverview":["Krise des Ancien Régime","Verlauf ab 1789","Folgen in Europa"],"timeline":[{"label":"1789","period":"Beginn","description":"Generalstände, Nationalversammlung und Sturm auf die Bastille markieren den revolutionären Auftakt."}],"keyTakeaways":["Die Revolution entstand aus einer politischen, sozialen und finanziellen Krise."],"sections":[{"title":"Ursachen","summary":"Mehrere Krisen verschärften sich gleichzeitig und machten Reformen unausweichlich.","definitions":[{"term":"Ancien Régime","definition":"Bezeichnung für die vorrevolutionäre Gesellschafts- und Herrschaftsordnung in Frankreich."}],"subtopics":[{"title":"Soziale Ungleichheit","description":"Die Ständegesellschaft verteilte Rechte und Lasten sehr ungleich.","keyPoints":["Der dritte Stand trug den Großteil der Steuerlast.","Adel und Klerus besaßen Privilegien."],"examples":[{"title":"Beispiel Steuerlast","details":"Bauern und Bürger zahlten Abgaben, während privilegierte Stände weitgehend entlastet waren."}]}],"comparisonTables":[{"title":"Stände im Vergleich","headers":["Aspekt","Klerus","Adel","Dritter Stand"],"rows":[["Privilegien","hoch","hoch","gering"],["Steuerlast","niedrig","niedrig","hoch"]]}]}]}',
+        "Beispiel 2 (Biologie, OHNE Zeitachse):",
+        '{"title":"Zellatmung","overview":"Die Übersicht erklärt Zweck, Ablauf und Bedeutung der Zellatmung.","themeOverview":["Grundidee","Teilprozesse","Bedeutung für den Organismus"],"timeline":[],"keyTakeaways":["Zellatmung wandelt chemische Energie schrittweise in ATP um."],"sections":[{"title":"Grundprinzip","summary":"Die Zellatmung zerlegt energiereiche Stoffe kontrolliert und nutzt die frei werdende Energie.","definitions":[{"term":"ATP","definition":"Adenosintriphosphat ist der wichtigste kurzfristige Energieträger der Zelle."}],"subtopics":[{"title":"Bedeutung von Sauerstoff","description":"Sauerstoff dient am Ende der Atmungskette als Elektronenakzeptor.","keyPoints":["Ohne Sauerstoff sinkt die ATP-Ausbeute stark.","Die Endprodukte ändern sich bei anaeroben Prozessen."],"examples":[{"title":"Beispiel Muskelbelastung","details":"Bei hoher Belastung reicht Sauerstoff kurzfristig nicht aus, deshalb steigt die Milchsäuregärung."}]}],"comparisonTables":[]}]}',
+      ].join("\n");
       const userContent: Array<
         | { type: "text"; text: string }
         | { type: "file"; data: Buffer; mediaType: string; filename: string }
       > = [
         {
           type: "text",
-          text: "Erstelle eine strukturierte Lernzusammenfassung basierend auf den bereitgestellten Inhalten. Unterteile sie in logische Abschnitte. Für jeden Abschnitt gib einen aussagekräftigen Titel, eine detaillierte Zusammenfassung (ca. 3-5 Sätze) und einen präzisen Google-Suchbegriff für ein passendes Bild oder Diagramm an (z.B. 'Schema Aufbau Pflanzenzelle' oder 'Diagramm Photosynthese Kreislauf').",
+          text: `${promptBlueprint}\n\n${promptConstraints}\n\n${fewShotExample}`,
         },
       ];
 
@@ -2868,48 +3170,89 @@ export const generatePdfSummary = action({
       }
       userContent.push(...fileParts);
 
-      const result = await generateText({
-        model: model(analyticsModelId),
-        temperature: 0.3,
-        maxOutputTokens: 2500,
-        tools: { google_search: vertex.tools.googleSearch({}) },
-        providerOptions: {
-          google: {
-            ...vertexProviderOptions.google,
-            useSearchGrounding: true,
+      let finalSummary: NormalizedPdfSummaryResult | null = null;
+      let latestQualityIssues: string[] = [];
+
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const qualityReminder =
+          attempt === 0 || latestQualityIssues.length === 0
+            ? ""
+            : `\n\nWICHTIGER KORREKTURHINWEIS AUS DEM VORHERIGEN VERSUCH:\n${latestQualityIssues
+                .map((issue, index) => `${index + 1}. ${issue}`)
+                .join("\n")}\nBehebe jeden Punkt vollständig.`;
+
+        const result = await generateText({
+          model: model(analyticsModelId),
+          temperature: attempt === 0 ? 0.2 : 0.1,
+          maxOutputTokens: 4500,
+          tools: { google_search: vertex.tools.googleSearch({}) },
+          providerOptions: {
+            google: {
+              ...vertexProviderOptions.google,
+              useSearchGrounding: true,
+            },
           },
-        },
-        output: Output.object({
-          schema: pdfSummarySchema,
-        }),
-        experimental_telemetry: buildAiSdkTelemetry(
-          "generatePdfSummary.primary",
-          args.sessionId,
-          trace.traceId,
-          { appScope: "generatePdfSummary" },
-        ),
-        system:
-          "Du bist ein Experte für Lernmaterialien und Faktenchecker. Deine Aufgabe ist es, extrem übersichtliche Lernzusammenfassungen zu erstellen. \n\nREGELN FÜR DEN INHALT:\n- Nutze konsequent STICHKUNKTE für das Feld 'content'. Gib pro Abschnitt 4-7 prägnante Stichpunkte zurück.\n- Vermeide lange Sätze.\n- Verifiziere alle Fakten mit der Google-Suche.",
-        messages: [{ role: "user", content: userContent }],
-      });
+          output: Output.object({
+            schema: pdfSummarySchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "generatePdfSummary.primary",
+            args.sessionId,
+            trace.traceId,
+            { appScope: "generatePdfSummary", attempt: attempt + 1 },
+          ),
+          system: [
+            "Du bist ein Experte für Lernmaterialien, Didaktik und Faktenprüfung.",
+            "Erzeuge eine sachliche, inhaltlich relevante Lernübersicht für eine schlichte App-Ansicht.",
+            "Achte streng auf die vorgegebene Feldstruktur.",
+            "Bevorzuge präzise Fachsprache mit kurzen, verständlichen Sätzen.",
+            "Nutze Google-Suche nur zum Verifizieren von Fakten, nicht für dekorative Zusätze.",
+            "Wenn Vergleiche vorkommen, liefere Tabellen; wenn zeitliche Entwicklung vorkommt, liefere eine Timeline.",
+          ].join("\n"),
+          messages: [
+            {
+              role: "user",
+              content: userContent.map((item) =>
+                item.type === "text"
+                  ? { ...item, text: `${item.text}${qualityReminder}` }
+                  : item,
+              ),
+            },
+          ],
+        });
 
-      const resultLog = extractGenerationResultForLog(result);
-      trace.addUsage(resultLog.usage);
-      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+        const resultLog = extractGenerationResultForLog(result);
+        trace.addUsage(resultLog.usage);
+        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
 
-      const summary = result.output;
+        const candidateSummary = normalizePdfSummaryResult(result.output);
+        const qualityIssues = collectPdfSummaryQualityIssues(
+          candidateSummary,
+          sourceContext,
+        );
 
-      const sectionsForDb = summary.sections.map((section) => {
-        return {
-          title: section.title,
-          content: section.content.join("\n"),
-        };
-      });
+        if (qualityIssues.length === 0) {
+          finalSummary = candidateSummary;
+          break;
+        }
 
-      const finalSummary = {
-        title: summary.title,
-        sections: sectionsForDb,
-      };
+        latestQualityIssues = qualityIssues;
+        finalSummary = candidateSummary;
+      }
+
+      if (!finalSummary) {
+        throw new Error("Die Lernübersicht konnte nicht erstellt werden.");
+      }
+
+      const finalQualityIssues = collectPdfSummaryQualityIssues(
+        finalSummary,
+        sourceContext,
+      );
+      if (finalQualityIssues.length > 0) {
+        throw new Error(
+          `Die Lernübersicht erfüllt die Qualitätsanforderungen noch nicht: ${finalQualityIssues.join(" ")}`,
+        );
+      }
 
       await ctx.runMutation(internal.study.storePdfSummary, {
         sessionId: args.sessionId,

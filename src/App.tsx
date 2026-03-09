@@ -124,6 +124,11 @@ function StudyApp() {
     await uploadFlow.generatePdfSummaryQuestions();
   };
 
+  const handleReturnToGenerationDecision = async () => {
+    await uploadFlow.reopenUploadSelection();
+    setShowGenerationDecision(true);
+  };
+
   if (!grantToken) {
     return (
       <AuthScreen
@@ -215,7 +220,7 @@ function StudyApp() {
       {session.stage === "pdf_summary" && (
         <PdfSummaryStage
           data={session.pdfSummary}
-          onBack={() => setShowGenerationDecision(true)}
+          onBack={handleReturnToGenerationDecision}
           onContinueToQuiz={uploadFlow.startQuizStudySession}
           isStartingQuiz={uploadFlow.isGeneratingQuiz}
           quizError={uploadFlow.uploadError}

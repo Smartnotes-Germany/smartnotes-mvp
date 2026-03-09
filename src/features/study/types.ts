@@ -38,24 +38,59 @@ export type SessionAnalysis = {
   topics: SessionAnalysisTopic[];
 };
 
+export type SummaryDefinition = {
+  term: string;
+  definition: string;
+};
+
+export type SummaryExample = {
+  title: string;
+  details: string;
+};
+
+export type SummaryTimelineEvent = {
+  label: string;
+  period: string;
+  description: string;
+};
+
+export type SummaryComparisonTable = {
+  title: string;
+  headers: string[];
+  rows: string[][];
+};
+
+export type SummarySubtopic = {
+  title: string;
+  description: string;
+  keyPoints: string[];
+  examples: SummaryExample[];
+};
+
 export type SummarySection = {
   title: string;
-  content: string;
-  keyPoints: string[];
-  table?: {
-    headers: string[];
-    rows: string[][];
-  };
-  chart?: {
-    type: "bar" | "percentage";
-    data: { label: string; value: number }[];
-  };
+  content?: string;
+  summary?: string;
+  definitions?: SummaryDefinition[];
+  subtopics?: SummarySubtopic[];
+  comparisonTables?: SummaryComparisonTable[];
+  keyPoints?: string[];
+  table?: SummaryComparisonTable;
   imageQuery?: string;
 };
 
 export type StudySummary = {
   title: string;
   overview: string;
+  sections: SummarySection[];
+};
+
+export type StudyPdfSummary = {
+  title: string;
+  overview?: string;
+  themeOverview?: string[];
+  timeline?: SummaryTimelineEvent[];
+  keyTakeaways?: string[];
   sections: SummarySection[];
 };
 
@@ -68,14 +103,7 @@ export type StudySession = {
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;
   summary?: StudySummary;
-  pdfSummary?: {
-    title: string;
-    sections: Array<{
-      title: string;
-      content: string;
-      imageUrl?: string;
-    }>;
-  };
+  pdfSummary?: StudyPdfSummary;
 };
 
 export type StudyDocument = {

@@ -1,7 +1,9 @@
+import { useState } from "react";
 import {
   ArrowLeft,
   BookOpenText,
   Clock3,
+  Download,
   Lightbulb,
   ListTree,
   Loader2,
@@ -132,6 +134,18 @@ const normalizeSummary = (data: StudyPdfSummary): NormalizedSummary => {
   };
 };
 
+const buildPdfFileName = (title: string) => {
+  const sanitized = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
+  return `${sanitized || "lernuebersicht"}.pdf`;
+};
+
 type PdfSummaryStageProps = {
   data: StudyPdfSummary | undefined;
   onBack: () => Promise<void> | void;
@@ -147,6 +161,9 @@ export function PdfSummaryStage({
   isStartingQuiz = false,
   quizError,
 }: PdfSummaryStageProps) {
+  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
   if (!data) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 text-center">
@@ -171,6 +188,20 @@ export function PdfSummaryStage({
   }
 
   const summary = normalizeSummary(data);
+
+  const handleDownloadPdf = async () => {
+    setIsPreparingPdf(true);
+    setPdfError(null);
+
+    try {
+      const { downloadSummaryPdf } = await import("./summaryPdf");
+      await downloadSummaryPdf(summary, buildPdfFileName(summary.title));
+    } catch {
+      setPdfError("Das PDF konnte nicht erstellt werden.");
+    } finally {
+      setIsPreparingPdf(false);
+    }
+  };
 
   return (
     <div className="animate-in fade-in space-y-6 duration-500">
@@ -209,6 +240,29 @@ export function PdfSummaryStage({
                   {quizError}
                 </p>
               ) : null}
+              {pdfError ? (
+                <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                  {pdfError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleDownloadPdf()}
+                disabled={isPreparingPdf}
+                className="border-cream-border bg-surface-white text-ink hover:bg-cream-light inline-flex items-center justify-center gap-2 rounded-full border px-6 py-3 text-sm font-bold transition hover:-translate-y-0.5 active:scale-95 disabled:translate-y-0 disabled:opacity-60"
+              >
+                {isPreparingPdf ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    PDF wird vorbereitet
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} />
+                    PDF herunterladen
+                  </>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => void onContinueToQuiz()}
@@ -240,9 +294,9 @@ export function PdfSummaryStage({
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {summary.themeOverview.map((topic) => (
+                {summary.themeOverview.map((topic, topicIndex) => (
                   <span
-                    key={topic}
+                    key={`${topic}-${topicIndex}`}
                     className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-sky-900 shadow-sm dark:bg-slate-900 dark:text-sky-100"
                   >
                     {topic}
@@ -294,9 +348,9 @@ export function PdfSummaryStage({
                 </p>
               </div>
               <div className="space-y-3">
-                {summary.keyTakeaways.map((item) => (
+                {summary.keyTakeaways.map((item, itemIndex) => (
                   <div
-                    key={item}
+                    key={`${item}-${itemIndex}`}
                     className="rounded-2xl bg-white px-4 py-3 text-sm leading-relaxed text-emerald-950 shadow-sm dark:bg-slate-900 dark:text-emerald-100"
                   >
                     {item}
@@ -436,9 +490,9 @@ export function PdfSummaryStage({
                       <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
                         <thead>
                           <tr>
-                            {table.headers.map((header) => (
+                            {table.headers.map((header, headerIndex) => (
                               <th
-                                key={`${table.title}-${header}`}
+                                key={`${table.title}-${header}-${headerIndex}`}
                                 className="border-b border-violet-200 px-3 py-2 font-bold text-violet-900 dark:border-violet-900 dark:text-violet-100"
                               >
                                 {header}
@@ -447,11 +501,11 @@ export function PdfSummaryStage({
                           </tr>
                         </thead>
                         <tbody>
-                          {table.rows.map((row, index) => (
-                            <tr key={`${table.title}-${index}`}>
+                          {table.rows.map((row, rowIndex) => (
+                            <tr key={`${table.title}-${rowIndex}`}>
                               {row.map((cell, cellIndex) => (
                                 <td
-                                  key={`${table.title}-${index}-${cellIndex}`}
+                                  key={`${table.title}-${rowIndex}-${cellIndex}`}
                                   className="border-b border-violet-100 px-3 py-2 align-top text-stone-700 dark:border-violet-950 dark:text-stone-200"
                                 >
                                   {cell}
@@ -474,9 +528,9 @@ export function PdfSummaryStage({
                   Kernpunkte
                 </p>
                 <div className="mt-3 grid gap-2">
-                  {section.legacyPoints.map((point) => (
+                  {section.legacyPoints.map((point, pointIndex) => (
                     <div
-                      key={`${section.title}-${point}`}
+                      key={`${section.title}-${point}-${pointIndex}`}
                       className="flex gap-3 rounded-2xl bg-stone-50 px-4 py-3 text-sm leading-relaxed text-stone-800 dark:bg-stone-900/30 dark:text-stone-100"
                     >
                       <span className="text-accent mt-0.5 font-black">•</span>

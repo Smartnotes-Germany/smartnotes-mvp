@@ -349,22 +349,86 @@ const containsComparisonSignals = (value: string) => {
   ].some((signal) => normalized.includes(signal));
 };
 
-const containsTimelineSignals = (value: string) => {
+const containsHistoricalTimelineSignals = (value: string) => {
   const normalized = value.toLocaleLowerCase("de-DE");
   return [
-    "jahr",
-    "jahre",
     "jahrhundert",
     "epoche",
     "chronolog",
-    "zeitlich",
-    "entwicklung",
-    "verlauf",
     "geschichte",
     "histor",
     "revolution",
-    "phase",
+    "datum",
+    "zeitleiste",
+    "zuerst",
+    "danach",
+    "anschließend",
+    "später",
+    "früher",
+    "vorher",
+    "seit",
+    "bis",
   ].some((signal) => normalized.includes(signal));
+};
+
+const containsExplicitYearSignals = (value: string) =>
+  /\b(?:1[0-9]{3}|20[0-9]{2})\b/.test(value);
+
+const containsCycleSignals = (value: string) => {
+  const normalized = value.toLocaleLowerCase("de-DE");
+  return [
+    "zyklus",
+    "kreislauf",
+    "aufschwung",
+    "hochkonjunktur",
+    "boom",
+    "abschwung",
+    "rezession",
+    "konjunkturtief",
+    "depression",
+    "phase",
+    "phasen",
+    "stufe",
+    "stufen",
+  ].some((signal) => normalized.includes(signal));
+};
+
+const shouldRequireTimeline = (value: string) =>
+  containsExplicitYearSignals(value) ||
+  containsHistoricalTimelineSignals(value);
+
+const timelineLooksLikeCycleModel = (
+  timeline: NormalizedPdfSummaryResult["timeline"],
+) => {
+  const flattened = timeline
+    .map((event) => `${event.label} ${event.period} ${event.description}`)
+    .join(" ");
+
+  return (
+    containsCycleSignals(flattened) && !containsExplicitYearSignals(flattened)
+  );
+};
+
+const extractRequiredEconomicComparisonTerms = (value: string) => {
+  const normalized = value.toLocaleLowerCase("de-DE");
+  const candidates = [
+    "freie marktwirtschaft",
+    "soziale marktwirtschaft",
+    "planwirtschaft",
+  ];
+
+  return candidates.filter((term) => normalized.includes(term));
+};
+
+const tableContainsTerm = (
+  table: NormalizedPdfSummaryResult["sections"][number]["comparisonTables"][number],
+  term: string,
+) => {
+  const searchable = [table.title, ...table.headers, ...table.rows.flat()]
+    .join(" ")
+    .toLocaleLowerCase("de-DE");
+
+  return searchable.includes(term.toLocaleLowerCase("de-DE"));
 };
 
 const collectPdfSummaryQualityIssues = (
@@ -413,7 +477,7 @@ const collectPdfSummaryQualityIssues = (
   }
 
   if (
-    containsTimelineSignals(normalizedContext) &&
+    shouldRequireTimeline(normalizedContext) &&
     summary.timeline.length === 0
   ) {
     issues.push(
@@ -421,9 +485,53 @@ const collectPdfSummaryQualityIssues = (
     );
   }
 
+  if (
+    summary.timeline.length > 0 &&
+    !shouldRequireTimeline(normalizedContext) &&
+    (containsCycleSignals(normalizedContext) ||
+      timelineLooksLikeCycleModel(summary.timeline))
+  ) {
+    issues.push(
+      "Die Timeline wirkt wie ein Phasen- oder Zyklusmodell statt wie eine echte zeitliche Einordnung.",
+    );
+  }
+
   for (const section of summary.sections) {
+    const sectionContext = [
+      section.title,
+      section.summary,
+      ...section.definitions.map((definition) => definition.term),
+      ...section.subtopics.map((subtopic) => subtopic.title),
+      ...section.subtopics.map((subtopic) => subtopic.description),
+      ...section.comparisonTables.map((table) => table.title),
+    ].join(" ");
+    const sectionLooksLikeEconomicSystemComparison =
+      /wirtschaftsord|marktwirtschaft|planwirtschaft/i.test(sectionContext);
+    const requiredEconomicTerms = sectionLooksLikeEconomicSystemComparison
+      ? extractRequiredEconomicComparisonTerms(
+          `${normalizedContext} ${sectionContext}`,
+        )
+      : [];
+
     if (section.subtopics.length === 0) {
       issues.push(`Abschnitt '${section.title}' hat keine Unterthemen.`);
+    }
+
+    if (
+      requiredEconomicTerms.length > 0 &&
+      section.comparisonTables.length > 0
+    ) {
+      for (const term of requiredEconomicTerms) {
+        const termCovered = section.comparisonTables.some((table) =>
+          tableContainsTerm(table, term),
+        );
+
+        if (!termCovered) {
+          issues.push(
+            `Im Vergleichsteil von '${section.title}' fehlt der Begriff '${term}'.`,
+          );
+        }
+      }
     }
 
     for (const subtopic of section.subtopics) {
@@ -3130,7 +3238,7 @@ export const generatePdfSummary = action({
         "3. Gliedere alle relevanten Inhalte in 'sections' und darin in 'subtopics'.",
         "4. Ergänze Begriffsdefinitionen nur für wirklich relevante Fachbegriffe.",
         "5. Ergänze pro Unterthema mindestens ein konkretes Beispiel.",
-        "6. Ergänze 'timeline' nur dann, wenn eine zeitliche Einordnung fachlich hilft; sonst gib ein leeres Array zurück.",
+        "6. Ergänze 'timeline' nur bei echter zeitlicher Einordnung mit historischen Zeitpunkten, Epochen oder chronologischer Abfolge; sonst gib ein leeres Array zurück.",
         "7. Ergänze 'comparisonTables' immer dann, wenn Inhalte verglichen werden oder leicht verwechselt werden können; sonst gib ein leeres Array zurück.",
       ].join("\n");
       const promptConstraints = [
@@ -3144,8 +3252,9 @@ export const generatePdfSummary = action({
         "Jedes Unterthema braucht mindestens ein Beispiel.",
         "Die wichtigsten Fachbegriffe müssen als Definitionen erklärt werden.",
         "Sobald zwei Dinge verglichen, abgegrenzt oder verwechselt werden könnten, ist eine Tabelle Pflicht.",
+        "Wenn die Quelle schon eine Vergleichstabelle enthält, übernimm alle verglichenen Systeme, Gruppen, Spalten oder Kategorien vollständig. Lass keine mittlere oder offensichtliche Spalte weg.",
         "Tabellen sollen kurze Spaltenüberschriften und prägnante Zellen haben.",
-        "Wenn es eine geschichtliche, chronologische oder entwicklungsbezogene Einordnung gibt, nutze 'timeline'.",
+        "Nutze 'timeline' nur für echte Chronologie. Verwende KEINE Timeline für Zyklen, Modelle, Phasenbilder, Kreisläufe, Prozessschritte oder systematische Einteilungen wie den Konjunkturzyklus.",
         "Alle sichtbaren Inhalte müssen fachlich relevant sein.",
         "Wenn ein Thema keine sinnvolle Definition, Zeitachse oder Tabelle braucht, lasse den jeweiligen Bereich leer statt etwas zu erfinden.",
       ].join("\n");
@@ -3154,6 +3263,8 @@ export const generatePdfSummary = action({
         '{"title":"Französische Revolution","overview":"Die Übersicht ordnet Ursachen, Verlauf und Folgen der Französischen Revolution ein.","themeOverview":["Krise des Ancien Régime","Verlauf ab 1789","Folgen in Europa"],"timeline":[{"label":"1789","period":"Beginn","description":"Generalstände, Nationalversammlung und Sturm auf die Bastille markieren den revolutionären Auftakt."}],"keyTakeaways":["Die Revolution entstand aus einer politischen, sozialen und finanziellen Krise."],"sections":[{"title":"Ursachen","summary":"Mehrere Krisen verschärften sich gleichzeitig und machten Reformen unausweichlich.","definitions":[{"term":"Ancien Régime","definition":"Bezeichnung für die vorrevolutionäre Gesellschafts- und Herrschaftsordnung in Frankreich."}],"subtopics":[{"title":"Soziale Ungleichheit","description":"Die Ständegesellschaft verteilte Rechte und Lasten sehr ungleich.","keyPoints":["Der dritte Stand trug den Großteil der Steuerlast.","Adel und Klerus besaßen Privilegien."],"examples":[{"title":"Beispiel Steuerlast","details":"Bauern und Bürger zahlten Abgaben, während privilegierte Stände weitgehend entlastet waren."}]}],"comparisonTables":[{"title":"Stände im Vergleich","headers":["Aspekt","Klerus","Adel","Dritter Stand"],"rows":[["Privilegien","hoch","hoch","gering"],["Steuerlast","niedrig","niedrig","hoch"]]}]}]}',
         "Beispiel 2 (Biologie, OHNE Zeitachse):",
         '{"title":"Zellatmung","overview":"Die Übersicht erklärt Zweck, Ablauf und Bedeutung der Zellatmung.","themeOverview":["Grundidee","Teilprozesse","Bedeutung für den Organismus"],"timeline":[],"keyTakeaways":["Zellatmung wandelt chemische Energie schrittweise in ATP um."],"sections":[{"title":"Grundprinzip","summary":"Die Zellatmung zerlegt energiereiche Stoffe kontrolliert und nutzt die frei werdende Energie.","definitions":[{"term":"ATP","definition":"Adenosintriphosphat ist der wichtigste kurzfristige Energieträger der Zelle."}],"subtopics":[{"title":"Bedeutung von Sauerstoff","description":"Sauerstoff dient am Ende der Atmungskette als Elektronenakzeptor.","keyPoints":["Ohne Sauerstoff sinkt die ATP-Ausbeute stark.","Die Endprodukte ändern sich bei anaeroben Prozessen."],"examples":[{"title":"Beispiel Muskelbelastung","details":"Bei hoher Belastung reicht Sauerstoff kurzfristig nicht aus, deshalb steigt die Milchsäuregärung."}]}],"comparisonTables":[]}]}',
+        "Beispiel 3 (Wirtschaft, Vergleich MIT Tabelle aber OHNE Zeitachse):",
+        '{"title":"Wirtschaftsordnungen im Vergleich","overview":"Die Übersicht vergleicht zentrale Merkmale verschiedener Wirtschaftsordnungen und grenzt ihre Rolle des Staates voneinander ab.","themeOverview":["Freie Marktwirtschaft","Soziale Marktwirtschaft","Planwirtschaft"],"timeline":[],"keyTakeaways":["Nicht jede Abfolge von Phasen ist eine zeitliche Einordnung.","Bei Quellen mit Vergleichstabellen müssen alle verglichenen Systeme vollständig übernommen werden."],"sections":[{"title":"Systemvergleich","summary":"Die drei Wirtschaftsordnungen unterscheiden sich vor allem bei Eigentum, staatlichem Eingriff und Preisbildung.","definitions":[{"term":"Soziale Marktwirtschaft","definition":"Wirtschaftsordnung mit freiem Markt, die durch staatliche Regeln und sozialen Ausgleich ergänzt wird."}],"subtopics":[{"title":"Rolle des Staates","description":"Der Staat greift je nach Wirtschaftsordnung unterschiedlich stark ein.","keyPoints":["In der freien Marktwirtschaft beschränkt sich der Staat stärker auf Ordnungsrahmen.","In der sozialen Marktwirtschaft verbindet der Staat Wettbewerb mit sozialem Ausgleich.","In der Planwirtschaft lenkt der Staat Produktion und Verteilung umfassend."],"examples":[{"title":"Beispiel Deutschland","details":"Deutschland gilt als Beispiel für eine soziale Marktwirtschaft mit Wettbewerb, Sozialstaat und Regulierung."}]}],"comparisonTables":[{"title":"Wirtschaftsordnungen im Überblick","headers":["Merkmal","Freie Marktwirtschaft","Soziale Marktwirtschaft","Planwirtschaft"],"rows":[["Eigentum","Privateigentum","Privateigentum mit Regeln und sozialer Absicherung","Staatseigentum"],["Preisbildung","Angebot und Nachfrage","Angebot und Nachfrage mit staatlichen Regeln","Staatliche Festlegung"],["Rolle des Staates","Ordnungsrahmen","Schutz, Regulierung und sozialer Ausgleich","Lenkung und Planung"]]}]}]}',
       ].join("\n");
       const userContent: Array<
         | { type: "text"; text: string }
@@ -3207,7 +3318,8 @@ export const generatePdfSummary = action({
             "Achte streng auf die vorgegebene Feldstruktur.",
             "Bevorzuge präzise Fachsprache mit kurzen, verständlichen Sätzen.",
             "Nutze Google-Suche nur zum Verifizieren von Fakten, nicht für dekorative Zusätze.",
-            "Wenn Vergleiche vorkommen, liefere Tabellen; wenn zeitliche Entwicklung vorkommt, liefere eine Timeline.",
+            "Wenn Vergleiche vorkommen, liefere vollständige Tabellen mit allen verglichenen Begriffen aus der Quelle.",
+            "Verwende eine Timeline nur für echte historische oder chronologische Einordnung, niemals für Zyklen oder Phasenmodelle.",
           ].join("\n"),
           messages: [
             {

@@ -61,7 +61,7 @@ export type StudySummary = {
 export type StudySession = {
   title: string;
   stage: StudyStage;
-  round: number;
+  round: number; // Aktiver Quiz-Batch innerhalb derselben Lernsitzung.
   currentFocusTopic?: string;
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;

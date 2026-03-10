@@ -20,6 +20,11 @@ import {
   topicsMatchForFocusMode,
 } from "../shared/topicMatching";
 import {
+  clampPercentage,
+  normalizePercentageValue,
+  shouldScaleFractionalPercentages,
+} from "../shared/percentageNormalization";
+import {
   buildTelemetryConfig,
   flushTelemetry,
   getObservabilityMode,
@@ -567,8 +572,45 @@ const buildModelInputFromDocuments = async (
   };
 };
 
-const toComfortScore = (value: number) =>
-  Math.round(Math.max(0, Math.min(100, value)));
+const toComfortScore = clampPercentage;
+
+const normalizeAnalysisScores = (analysis: AnalysisResult): AnalysisResult => {
+  const shouldScaleFractions = shouldScaleFractionalPercentages([
+    analysis.overallReadiness,
+    ...analysis.topics.map((topic) => topic.comfortScore),
+  ]);
+
+  return {
+    ...analysis,
+    overallReadiness: normalizePercentageValue(
+      analysis.overallReadiness,
+      shouldScaleFractions,
+    ),
+    topics: analysis.topics.map((topic) => ({
+      ...topic,
+      comfortScore: normalizePercentageValue(
+        topic.comfortScore,
+        shouldScaleFractions,
+      ),
+    })),
+  };
+};
+
+const normalizeFocusTopicScore = (
+  analysis: FocusTopicAnalysisResult,
+): FocusTopicAnalysisResult => {
+  const shouldScaleFractions = shouldScaleFractionalPercentages([
+    analysis.comfortScore,
+  ]);
+
+  return {
+    ...analysis,
+    comfortScore: normalizePercentageValue(
+      analysis.comfortScore,
+      shouldScaleFractions,
+    ),
+  };
+};
 
 const buildTopicInsightFromScore = (
   topic: string,
@@ -2642,7 +2684,7 @@ export const analyzePerformance = action({
                 },
               ),
               system:
-                "Du bist ein Lerncoach. Bewerte in dieser Auswertung ausschließlich ein einzelnes Thema auf Deutsch.",
+                "Du bist ein Lerncoach. Bewerte in dieser Auswertung ausschließlich ein einzelnes Thema auf Deutsch. Gib den comfortScore immer als ganze Prozentzahl von 0 bis 100 zurück, niemals als Dezimalzahl zwischen 0 und 1.",
               prompt: `Analysiere ausschließlich das Thema "${resolvedFocusTopic}" anhand der Antworten.
 
 Vorherige Themenbewertung (falls vorhanden):
@@ -2651,7 +2693,8 @@ ${JSON.stringify(focusTopicInsight, null, 2)}
 Antworten nur zu diesem Thema:
 ${JSON.stringify(topicResponses, null, 2)}
 
-Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
+Erstelle eine aktualisierte Bewertung für genau dieses Thema.
+Wichtig: comfortScore muss eine ganze Zahl im Bereich 0 bis 100 sein.`,
             });
 
             const resultLog = extractGenerationResultForLog(result);
@@ -2667,11 +2710,11 @@ Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
               },
             });
 
-            const generated: FocusTopicAnalysisResult = result.output;
+            const generated = normalizeFocusTopicScore(result.output);
 
             const mergedTopics = mergeTopicInsight(session.analysis.topics, {
               topic: resolvedFocusTopic,
-              comfortScore: toComfortScore(generated.comfortScore),
+              comfortScore: generated.comfortScore,
               rationale: generated.rationale,
               recommendation: generated.recommendation,
             });
@@ -2744,7 +2787,7 @@ Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
               },
             ),
             system:
-              "Du bist ein Lerncoach. Analysiere Wissenslücken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
+              "Du bist ein Lerncoach. Analysiere Wissenslücken aus den Antworten und gib konkrete Empfehlungen auf Deutsch. Gib overallReadiness und alle comfortScore-Werte immer als ganze Prozentzahlen von 0 bis 100 zurück, niemals als Dezimalzahlen zwischen 0 und 1.",
             prompt: `Analysiere diese Übungssitzung und erstelle einen themenbasierten Lernstandsbericht.
 
 Die Antworten enthalten mehrere Runden. Beziehe den gesamten Verlauf ein.
@@ -2755,7 +2798,8 @@ Alle behandelten Themen: ${coveredTopics.join(", ") || "keine"}
 Antwortkontext (kompakt, neueste Antworten + Themenstatistik):
 ${fullModePromptContext.serializedContext}
 
-Sei streng, aber konstruktiv.`,
+Sei streng, aber konstruktiv.
+Wichtig: overallReadiness und jeder comfortScore müssen ganze Zahlen im Bereich 0 bis 100 sein.`,
           });
 
           const resultLog = extractGenerationResultForLog(result);
@@ -2773,20 +2817,9 @@ Sei streng, aber konstruktiv.`,
             },
           });
 
-          const generated: AnalysisResult = result.output;
+          const generated = normalizeAnalysisScores(result.output);
 
-          analysis = {
-            overallReadiness: toComfortScore(generated.overallReadiness),
-            strongestTopics: generated.strongestTopics,
-            weakestTopics: generated.weakestTopics,
-            topics: generated.topics.map((topic) => ({
-              topic: topic.topic,
-              comfortScore: toComfortScore(topic.comfortScore),
-              rationale: topic.rationale,
-              recommendation: topic.recommendation,
-            })),
-            recommendedNextStep: generated.recommendedNextStep,
-          };
+          analysis = generated;
         } catch (error) {
           trace.addUsage(extractUsageFromError(error));
           usedFallback = true;

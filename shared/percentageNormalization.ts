@@ -7,8 +7,9 @@ export const shouldScaleFractionalPercentages = (values: number[]) => {
     return false;
   }
 
-  const maxValue = Math.max(...finiteValues);
-  return maxValue > 0 && maxValue <= 1;
+  return finiteValues.some(
+    (value) => value > 0 && value < 1 && !Number.isInteger(value),
+  );
 };
 
 export const normalizePercentageValue = (

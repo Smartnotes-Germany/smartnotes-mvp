@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { evaluateAnswerRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
@@ -20,15 +20,39 @@ export function useQuizFlow({
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [quizError, setQuizError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const latestSessionContextRef = useRef({
+    grantToken,
+    sessionId,
+  });
 
   const evaluateAnswer = useAction(evaluateAnswerRef);
+
+  useEffect(() => {
+    latestSessionContextRef.current = {
+      grantToken,
+      sessionId,
+    };
+  }, [grantToken, sessionId]);
 
   useEffect(() => {
     setAnswerInput("");
     setFeedback(null);
     setQuizError(null);
+    setIsSubmittingAnswer(false);
     setQuestionStartedAt(Date.now());
-  }, [currentQuestion?.id]);
+  }, [grantToken, sessionId]);
+
+  useEffect(() => {
+    setQuizError(null);
+    // Convex can advance to the next unanswered question before the action
+    // result reaches the client. Keep existing feedback visible in that case.
+    if (feedback) {
+      return;
+    }
+
+    setAnswerInput("");
+    setQuestionStartedAt(Date.now());
+  }, [currentQuestion?.id, feedback]);
 
   const submitAnswer = useCallback(
     async (dontKnowSubmission: boolean = false) => {
@@ -40,6 +64,10 @@ export function useQuizFlow({
       }
 
       const clientRequestId = createClientRequestId("evaluateAnswer");
+      const submissionContext = {
+        grantToken,
+        sessionId,
+      };
       setIsSubmittingAnswer(true);
       setQuizError(null);
 
@@ -58,8 +86,24 @@ export function useQuizFlow({
           clientRequestId,
         });
 
+        const latestContext = latestSessionContextRef.current;
+        if (
+          latestContext.grantToken !== submissionContext.grantToken ||
+          latestContext.sessionId !== submissionContext.sessionId
+        ) {
+          return;
+        }
+
         setFeedback(result);
       } catch (error: unknown) {
+        const latestContext = latestSessionContextRef.current;
+        if (
+          latestContext.grantToken !== submissionContext.grantToken ||
+          latestContext.sessionId !== submissionContext.sessionId
+        ) {
+          return;
+        }
+
         setQuizError(
           formatError(error, {
             fallback:
@@ -68,7 +112,13 @@ export function useQuizFlow({
           }),
         );
       } finally {
-        setIsSubmittingAnswer(false);
+        const latestContext = latestSessionContextRef.current;
+        const isStaleSubmission =
+          latestContext.grantToken !== submissionContext.grantToken ||
+          latestContext.sessionId !== submissionContext.sessionId;
+        if (!isStaleSubmission) {
+          setIsSubmittingAnswer(false);
+        }
       }
     },
     [
@@ -84,6 +134,8 @@ export function useQuizFlow({
   const continueAfterFeedback = useCallback(() => {
     setFeedback(null);
     setAnswerInput("");
+    setQuizError(null);
+    setQuestionStartedAt(Date.now());
   }, []);
 
   return {

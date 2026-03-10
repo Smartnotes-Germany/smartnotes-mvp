@@ -1,8 +1,5 @@
 import { Brain, Loader2, Sparkles } from "lucide-react";
-import {
-  normalizePercentageValue,
-  shouldScaleFractionalPercentages,
-} from "../../../../shared/percentageNormalization";
+import { normalizePercentageValue } from "../../../../shared/percentageNormalization";
 import { KpiCard } from "./KpiCard";
 import type { SessionAnalysis } from "../types";
 
@@ -16,23 +13,12 @@ type AnalysisStageProps = {
 };
 
 const normalizeAnalysis = (analysis: SessionAnalysis) => {
-  const shouldScaleFractions = shouldScaleFractionalPercentages([
-    analysis.overallReadiness,
-    ...analysis.topics.map((topic) => topic.comfortScore),
-  ]);
-
   return {
     ...analysis,
-    overallReadiness: normalizePercentageValue(
-      analysis.overallReadiness,
-      shouldScaleFractions,
-    ),
+    overallReadiness: normalizePercentageValue(analysis.overallReadiness),
     topics: analysis.topics.map((topic) => ({
       ...topic,
-      comfortScore: normalizePercentageValue(
-        topic.comfortScore,
-        shouldScaleFractions,
-      ),
+      comfortScore: normalizePercentageValue(topic.comfortScore),
     })),
   };
 };

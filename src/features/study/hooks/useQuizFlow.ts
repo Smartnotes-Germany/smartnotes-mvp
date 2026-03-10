@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { evaluateAnswerRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
@@ -20,8 +20,27 @@ export function useQuizFlow({
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [quizError, setQuizError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const latestSessionContextRef = useRef({
+    grantToken,
+    sessionId,
+  });
 
   const evaluateAnswer = useAction(evaluateAnswerRef);
+
+  useEffect(() => {
+    latestSessionContextRef.current = {
+      grantToken,
+      sessionId,
+    };
+  }, [grantToken, sessionId]);
+
+  useEffect(() => {
+    setAnswerInput("");
+    setFeedback(null);
+    setQuizError(null);
+    setIsSubmittingAnswer(false);
+    setQuestionStartedAt(Date.now());
+  }, [grantToken, sessionId]);
 
   useEffect(() => {
     setQuizError(null);
@@ -45,6 +64,10 @@ export function useQuizFlow({
       }
 
       const clientRequestId = createClientRequestId("evaluateAnswer");
+      const submissionContext = {
+        grantToken,
+        sessionId,
+      };
       setIsSubmittingAnswer(true);
       setQuizError(null);
 
@@ -63,8 +86,24 @@ export function useQuizFlow({
           clientRequestId,
         });
 
+        const latestContext = latestSessionContextRef.current;
+        if (
+          latestContext.grantToken !== submissionContext.grantToken ||
+          latestContext.sessionId !== submissionContext.sessionId
+        ) {
+          return;
+        }
+
         setFeedback(result);
       } catch (error: unknown) {
+        const latestContext = latestSessionContextRef.current;
+        if (
+          latestContext.grantToken !== submissionContext.grantToken ||
+          latestContext.sessionId !== submissionContext.sessionId
+        ) {
+          return;
+        }
+
         setQuizError(
           formatError(error, {
             fallback:
@@ -73,7 +112,13 @@ export function useQuizFlow({
           }),
         );
       } finally {
-        setIsSubmittingAnswer(false);
+        const latestContext = latestSessionContextRef.current;
+        const isStaleSubmission =
+          latestContext.grantToken !== submissionContext.grantToken ||
+          latestContext.sessionId !== submissionContext.sessionId;
+        if (!isStaleSubmission) {
+          setIsSubmittingAnswer(false);
+        }
       }
     },
     [

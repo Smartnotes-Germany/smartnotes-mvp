@@ -133,9 +133,6 @@ export function useQuizFlow({
 
   const continueAfterFeedback = useCallback(() => {
     setFeedback(null);
-    setAnswerInput("");
-    setQuizError(null);
-    setQuestionStartedAt(Date.now());
   }, []);
 
   return {

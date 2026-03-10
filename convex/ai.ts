@@ -503,7 +503,62 @@ const buildModelInputFromDocuments = async (
         fileName: document.fileName,
         extractedText: document.extractedText,
       });
+      continue;
     }
+
+    const textLoadStartedAt = Date.now();
+    trace?.log("info", "model_input_text_fallback_started", {
+      fileName: document.fileName,
+      fileType: document.fileType,
+      fileSizeBytes: document.fileSizeBytes,
+    });
+
+    const { fileUrl, source, status, grantErrorDetail } =
+      await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
+    if (!fileUrl) {
+      throw new Error(
+        `Datei konnte nicht gelesen werden: ${document.fileName}`,
+      );
+    }
+
+    trace?.log("info", "model_input_text_fallback_url_loaded", {
+      fileName: document.fileName,
+      source,
+      status,
+      grantErrorDetail,
+      elapsedMs: Date.now() - textLoadStartedAt,
+    });
+
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Datei-Download fehlgeschlagen (${response.status}) für ${document.fileName}`,
+      );
+    }
+
+    const documentBuffer = Buffer.from(await response.arrayBuffer());
+    const extractedText = await extractTextFromBytes(
+      document.fileName,
+      document.fileType,
+      documentBuffer,
+    );
+
+    if (!extractedText) {
+      throw new Error(
+        `Aus dieser Datei konnte kein Text extrahiert werden: ${document.fileName}`,
+      );
+    }
+
+    textOnlyDocuments.push({
+      fileName: document.fileName,
+      extractedText,
+    });
+
+    trace?.log("info", "model_input_text_fallback_extracted", {
+      fileName: document.fileName,
+      extractedLength: extractedText.length,
+      elapsedMs: Date.now() - textLoadStartedAt,
+    });
   }
 
   return {
@@ -1648,8 +1703,8 @@ export const extractDocumentContent = action({
     });
 
     // Hybrid approach:
-    // - Native Vertex file path for PDF/Slides/Word/Image formats.
-    // - officeparser/text extraction fallback for all other formats.
+    // - Native Vertex file path for PDF/image formats supported by Gemini.
+    // - officeparser/text extraction fallback for Office/text formats.
     if (isVertexNativeCandidate(document.fileType, document.fileName)) {
       trace.log("info", "skip_text_extraction_vertex_native", {
         fileName: document.fileName,

@@ -24,11 +24,16 @@ export function useQuizFlow({
   const evaluateAnswer = useAction(evaluateAnswerRef);
 
   useEffect(() => {
-    setAnswerInput("");
-    setFeedback(null);
     setQuizError(null);
+    // Convex can advance to the next unanswered question before the action
+    // result reaches the client. Keep existing feedback visible in that case.
+    if (feedback) {
+      return;
+    }
+
+    setAnswerInput("");
     setQuestionStartedAt(Date.now());
-  }, [currentQuestion?.id]);
+  }, [currentQuestion?.id, feedback]);
 
   const submitAnswer = useCallback(
     async (dontKnowSubmission: boolean = false) => {
@@ -84,6 +89,8 @@ export function useQuizFlow({
   const continueAfterFeedback = useCallback(() => {
     setFeedback(null);
     setAnswerInput("");
+    setQuizError(null);
+    setQuestionStartedAt(Date.now());
   }, []);
 
   return {

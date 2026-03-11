@@ -95,6 +95,15 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `pnpm observability:debug-window:start -- --minutes 45` - activate sensitive debug capture for a bounded window
 - `pnpm observability:debug-window:stop` - disable sensitive debug capture immediately
 
+## Session And Round Model
+
+- A `studySession` is the top-level container for one learner's material, quiz state, responses, and analysis.
+- `studySessions.round` is the active quiz batch inside that session, not a cosmetic counter.
+- Initial quiz generation keeps the current round.
+- A focused deep dive writes a fresh question batch and increments the round so the app can treat those questions as a new active set.
+- `quizResponses.round` links each stored answer to the quiz batch it belongs to.
+- The UI uses the current round to decide which questions are still unanswered, while analysis can still inspect responses across multiple rounds in the same session.
+
 ## Balanced Observability
 
 - AI calls are traced with Langfuse telemetry in `balanced` mode.

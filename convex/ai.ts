@@ -20,6 +20,12 @@ import {
   topicsMatchForFocusMode,
 } from "../shared/topicMatching";
 import {
+  clampPercentage,
+  inspectPercentageValues,
+  normalizePercentageValueForScale,
+  type PercentageScale,
+} from "../shared/percentageNormalization";
+import {
   buildTelemetryConfig,
   flushTelemetry,
   getObservabilityMode,
@@ -92,23 +98,48 @@ const answerEvaluationSchema = z.object({
   idealAnswer: z.string(),
 });
 
-const analysisTopicSchema = z.object({
+const percentageScoreSchema = z.number().int().min(0).max(100);
+const percentageScaleSchema = z.enum(["percent", "fraction"]);
+const analysisTopicOutputSchema = z.object({
   topic: z.string(),
   comfortScore: z.number().min(0).max(100),
   rationale: z.string(),
   recommendation: z.string(),
 });
 
-const analysisSchema = z.object({
+const analysisTopicSchema = z.object({
+  topic: z.string(),
+  comfortScore: percentageScoreSchema,
+  rationale: z.string(),
+  recommendation: z.string(),
+});
+
+const analysisOutputSchema = z.object({
+  scoreUnit: percentageScaleSchema,
   overallReadiness: z.number().min(0).max(100),
+  strongestTopics: z.array(z.string()).min(1).max(3),
+  weakestTopics: z.array(z.string()).min(1).max(3),
+  topics: z.array(analysisTopicOutputSchema),
+  recommendedNextStep: z.string(),
+});
+
+const analysisSchema = z.object({
+  overallReadiness: percentageScoreSchema,
   strongestTopics: z.array(z.string()).min(1).max(3),
   weakestTopics: z.array(z.string()).min(1).max(3),
   topics: z.array(analysisTopicSchema),
   recommendedNextStep: z.string(),
 });
 
-const focusTopicAnalysisSchema = z.object({
+const focusTopicAnalysisOutputSchema = z.object({
+  scoreUnit: percentageScaleSchema,
   comfortScore: z.number().min(0).max(100),
+  rationale: z.string(),
+  recommendation: z.string(),
+});
+
+const focusTopicAnalysisSchema = z.object({
+  comfortScore: percentageScoreSchema,
   rationale: z.string(),
   recommendation: z.string(),
 });
@@ -145,8 +176,12 @@ type QuestionForEvaluation = {
 
 type QuizGenerationResult = z.infer<typeof quizGenerationSchema>;
 type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
+type AnalysisOutputResult = z.infer<typeof analysisOutputSchema>;
 type AnalysisResult = z.infer<typeof analysisSchema>;
 type AnalysisTopicInsight = z.infer<typeof analysisTopicSchema>;
+type FocusTopicAnalysisOutputResult = z.infer<
+  typeof focusTopicAnalysisOutputSchema
+>;
 type FocusTopicAnalysisResult = z.infer<typeof focusTopicAnalysisSchema>;
 type DeepDiveGenerationResult = z.infer<typeof deepDiveSchema>;
 type AnalysisMode = "full" | "focus";
@@ -567,8 +602,143 @@ const buildModelInputFromDocuments = async (
   };
 };
 
-const toComfortScore = (value: number) =>
-  Math.round(Math.max(0, Math.min(100, value)));
+const toComfortScore = clampPercentage;
+
+type InvalidAnalysisScoreFormatError = Error & {
+  details: Record<string, unknown>;
+};
+
+const createInvalidAnalysisScoreFormatError = (
+  message: string,
+  details: Record<string, unknown>,
+): InvalidAnalysisScoreFormatError => {
+  const error = new Error(message) as InvalidAnalysisScoreFormatError;
+  error.name = "InvalidAnalysisScoreFormatError";
+  error.details = details;
+  return error;
+};
+
+const isInvalidAnalysisScoreFormatError = (
+  error: unknown,
+): error is InvalidAnalysisScoreFormatError =>
+  error instanceof Error &&
+  error.name === "InvalidAnalysisScoreFormatError" &&
+  "details" in error;
+
+const validatePercentageValuesForScale = (
+  values: number[],
+  scoreUnit: PercentageScale,
+  label: string,
+) => {
+  const inspected = inspectPercentageValues(values);
+
+  if (scoreUnit === "fraction") {
+    const invalidValues = inspected.finiteValues.filter(
+      (value) => value < 0 || value > 1,
+    );
+    if (invalidValues.length > 0) {
+      throw createInvalidAnalysisScoreFormatError(
+        `${label} mischt Prozent- und Bruchwerte trotz scoreUnit="fraction".`,
+        {
+          label,
+          scoreUnit,
+          invalidValues,
+          inspected,
+        },
+      );
+    }
+    return;
+  }
+
+  const nonIntegerValues = inspected.finiteValues.filter(
+    (value) => !Number.isInteger(value),
+  );
+  if (nonIntegerValues.length > 0) {
+    throw createInvalidAnalysisScoreFormatError(
+      `${label} enthält keine ganzen Prozentwerte trotz scoreUnit="percent".`,
+      {
+        label,
+        scoreUnit,
+        nonIntegerValues,
+        inspected,
+      },
+    );
+  }
+};
+
+const normalizeAnalysisScores = (
+  analysis: AnalysisOutputResult,
+): AnalysisResult => {
+  const values = [
+    analysis.overallReadiness,
+    ...analysis.topics.map((topic) => topic.comfortScore),
+  ];
+  validatePercentageValuesForScale(values, analysis.scoreUnit, "full_analysis");
+
+  return analysisSchema.parse({
+    overallReadiness: normalizePercentageValueForScale(
+      analysis.overallReadiness,
+      analysis.scoreUnit,
+    ),
+    strongestTopics: analysis.strongestTopics,
+    weakestTopics: analysis.weakestTopics,
+    topics: analysis.topics.map((topic) => ({
+      topic: topic.topic,
+      comfortScore: normalizePercentageValueForScale(
+        topic.comfortScore,
+        analysis.scoreUnit,
+      ),
+      rationale: topic.rationale,
+      recommendation: topic.recommendation,
+    })),
+    recommendedNextStep: analysis.recommendedNextStep,
+  });
+};
+
+const normalizeFocusTopicScore = (
+  analysis: FocusTopicAnalysisOutputResult,
+): FocusTopicAnalysisResult => {
+  validatePercentageValuesForScale(
+    [analysis.comfortScore],
+    analysis.scoreUnit,
+    "focus_analysis",
+  );
+
+  return focusTopicAnalysisSchema.parse({
+    comfortScore: normalizePercentageValueForScale(
+      analysis.comfortScore,
+      analysis.scoreUnit,
+    ),
+    rationale: analysis.rationale,
+    recommendation: analysis.recommendation,
+  });
+};
+
+const analysisScoreFormatRules = [
+  'Füge ein Feld "scoreUnit" hinzu. Erlaubte Werte sind nur "percent" oder "fraction".',
+  'Wenn "scoreUnit" = "percent", müssen overallReadiness und alle comfortScore-Werte ganze Zahlen zwischen 0 und 100 sein.',
+  'Wenn "scoreUnit" = "fraction", müssen overallReadiness und alle comfortScore-Werte Zahlen zwischen 0 und 1 sein.',
+  "Mische niemals Prozentwerte und Bruchwerte in derselben Antwort.",
+];
+
+const buildAnalysisFormatCorrectionPrompt = (
+  basePrompt: string,
+  error: unknown,
+  invalidOutput?: unknown,
+) => {
+  const errorMessage =
+    error instanceof Error ? error.message : "Das Ausgabeformat war ungültig.";
+
+  return `${basePrompt}
+
+Deine letzte Antwort war ungültig und muss korrigiert werden.
+Grund: ${errorMessage}
+
+${invalidOutput ? `Ungültige Antwort:\n${JSON.stringify(invalidOutput, null, 2)}\n\n` : ""}Pflichtregeln:
+- ${analysisScoreFormatRules.join("\n- ")}
+
+Antworte jetzt erneut und halte dich exakt an diese Regeln.`;
+};
 
 const buildTopicInsightFromScore = (
   topic: string,
@@ -2608,42 +2778,9 @@ export const analyzePerformance = action({
           analysis = focusFallbackAnalysis;
 
           try {
-            trace.log("info", "llm_request", {
-              modelId: "gemini-3-flash-preview",
-              mode: "focus",
-              focusTopic: resolvedFocusTopic,
-              responseCount: topicResponses.length,
-              temperature: 0.2,
-              maxOutputTokens: 600,
-              thinkingBudget: 0,
-            });
-
-            llmAttempts += 1;
-
-            const result = await generateText({
-              model: model("gemini-3-flash-preview"),
-              temperature: 0.2,
-              maxOutputTokens: 600,
-              providerOptions: vertexProviderOptions,
-              output: Output.object({
-                schema: focusTopicAnalysisSchema,
-              }),
-              experimental_telemetry: buildAiSdkTelemetry(
-                "analyzePerformance",
-                args.sessionId,
-                trace.traceId,
-                {
-                  appScope: "analyzePerformance",
-                  analysisMode,
-                  round: session.round,
-                  responseCount: topicResponses.length,
-                  currentFocusTopic: resolvedFocusTopic,
-                  topic: resolvedFocusTopic,
-                },
-              ),
-              system:
-                "Du bist ein Lerncoach. Bewerte in dieser Auswertung ausschließlich ein einzelnes Thema auf Deutsch.",
-              prompt: `Analysiere ausschließlich das Thema "${resolvedFocusTopic}" anhand der Antworten.
+            const focusSystemPrompt =
+              'Du bist ein Lerncoach. Bewerte in dieser Auswertung ausschließlich ein einzelnes Thema auf Deutsch. Gib immer ein Feld scoreUnit mit entweder "percent" oder "fraction" zurück. Bevorzuge "percent". Wenn du "percent" verwendest, müssen alle Scores ganze Zahlen von 0 bis 100 sein.';
+            const focusBasePrompt = `Analysiere ausschließlich das Thema "${resolvedFocusTopic}" anhand der Antworten.
 
 Vorherige Themenbewertung (falls vorhanden):
 ${JSON.stringify(focusTopicInsight, null, 2)}
@@ -2651,27 +2788,119 @@ ${JSON.stringify(focusTopicInsight, null, 2)}
 Antworten nur zu diesem Thema:
 ${JSON.stringify(topicResponses, null, 2)}
 
-Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
-            });
+Erstelle eine aktualisierte Bewertung für genau dieses Thema.
+Pflichtregeln:
+- ${analysisScoreFormatRules.join("\n- ")}`;
 
-            const resultLog = extractGenerationResultForLog(result);
-            trace.addUsage(resultLog.usage);
-            finishReason = resultLog.details.finishReason;
-            mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-            trace.log("info", "llm_response", {
-              ...resultLog.details,
-              mode: "focus",
-              outputPreview: {
+            let generated: FocusTopicAnalysisResult | null = null;
+            let invalidOutput: unknown;
+            let retrySourceError: unknown = null;
+
+            for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+              trace.log("info", "llm_request", {
+                modelId: "gemini-3-flash-preview",
+                mode: "focus",
+                stage: attemptIndex === 0 ? "primary" : "format_retry",
                 focusTopic: resolvedFocusTopic,
-                comfortScore: result.output.comfortScore,
-              },
-            });
+                responseCount: topicResponses.length,
+                temperature: 0.2,
+                maxOutputTokens: 600,
+                thinkingBudget: 0,
+              });
 
-            const generated: FocusTopicAnalysisResult = result.output;
+              llmAttempts += 1;
+
+              try {
+                const prompt =
+                  attemptIndex === 0
+                    ? focusBasePrompt
+                    : buildAnalysisFormatCorrectionPrompt(
+                        focusBasePrompt,
+                        retrySourceError,
+                        invalidOutput,
+                      );
+
+                const result = await generateText({
+                  model: model("gemini-3-flash-preview"),
+                  temperature: 0.2,
+                  maxOutputTokens: 600,
+                  providerOptions: vertexProviderOptions,
+                  output: Output.object({
+                    schema: focusTopicAnalysisOutputSchema,
+                  }),
+                  experimental_telemetry: buildAiSdkTelemetry(
+                    "analyzePerformance",
+                    args.sessionId,
+                    trace.traceId,
+                    {
+                      appScope: "analyzePerformance",
+                      analysisMode,
+                      round: session.round,
+                      responseCount: topicResponses.length,
+                      currentFocusTopic: resolvedFocusTopic,
+                      topic: resolvedFocusTopic,
+                      stage:
+                        attemptIndex === 0 ? "focus_primary" : "focus_retry",
+                    },
+                  ),
+                  system: focusSystemPrompt,
+                  prompt,
+                });
+
+                const resultLog = extractGenerationResultForLog(result);
+                trace.addUsage(resultLog.usage);
+                finishReason = resultLog.details.finishReason;
+                mergeVertexUsage(
+                  vertexUsageTotals,
+                  resultLog.details.vertexUsage,
+                );
+                trace.log("info", "llm_response", {
+                  ...resultLog.details,
+                  mode: "focus",
+                  stage: attemptIndex === 0 ? "primary" : "format_retry",
+                  outputPreview: {
+                    focusTopic: resolvedFocusTopic,
+                    scoreUnit: result.output.scoreUnit,
+                    comfortScore: result.output.comfortScore,
+                  },
+                });
+
+                invalidOutput = result.output;
+                generated = normalizeFocusTopicScore(result.output);
+                break;
+              } catch (error) {
+                if (
+                  attemptIndex === 0 &&
+                  (isNoOutputGeneratedError(error) ||
+                    isInvalidAnalysisScoreFormatError(error))
+                ) {
+                  retrySourceError = error;
+                  trace.addUsage(extractUsageFromError(error));
+                  trace.log("warn", "llm_response_invalid_retrying", {
+                    error: extractErrorForLog(error),
+                    mode: "focus",
+                    stage: "primary",
+                    invalidOutput: isInvalidAnalysisScoreFormatError(error)
+                      ? error.details
+                      : invalidOutput,
+                  });
+                  continue;
+                }
+
+                throw error;
+              }
+            }
+
+            if (!generated) {
+              throw (
+                retrySourceError ??
+                new Error("Die Fokus-Analyse blieb ungültig.")
+              );
+            }
 
             const mergedTopics = mergeTopicInsight(session.analysis.topics, {
               topic: resolvedFocusTopic,
-              comfortScore: toComfortScore(generated.comfortScore),
+              comfortScore: generated.comfortScore,
               rationale: generated.rationale,
               recommendation: generated.recommendation,
             });
@@ -2708,44 +2937,9 @@ Erstelle eine aktualisierte Bewertung für genau dieses Thema.`,
           ];
           const fullModePromptContext =
             buildFullModePromptResponseContext(responses);
-
-          trace.log("info", "llm_request", {
-            modelId: "gemini-3-flash-preview",
-            mode: "full",
-            responseCount: responses.length,
-            promptResponseCount: fullModePromptContext.includedRecentResponses,
-            omittedResponseCount: fullModePromptContext.omittedResponses,
-            topicSummaryCount: fullModePromptContext.topicSummaryCount,
-            temperature: 0.2,
-            maxOutputTokens: 1_500,
-            thinkingBudget: 0,
-          });
-
-          llmAttempts += 1;
-
-          const result = await generateText({
-            model: model("gemini-3-flash-preview"),
-            temperature: 0.2,
-            maxOutputTokens: 1_500,
-            providerOptions: vertexProviderOptions,
-            output: Output.object({
-              schema: analysisSchema,
-            }),
-            experimental_telemetry: buildAiSdkTelemetry(
-              "analyzePerformance",
-              args.sessionId,
-              trace.traceId,
-              {
-                appScope: "analyzePerformance",
-                analysisMode,
-                round: session.round,
-                responseCount: responses.length,
-                currentFocusTopic: session.currentFocusTopic ?? "",
-              },
-            ),
-            system:
-              "Du bist ein Lerncoach. Analysiere Wissenslücken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
-            prompt: `Analysiere diese Übungssitzung und erstelle einen themenbasierten Lernstandsbericht.
+          const fullSystemPrompt =
+            'Du bist ein Lerncoach. Analysiere Wissenslücken aus den Antworten und gib konkrete Empfehlungen auf Deutsch. Gib immer ein Feld scoreUnit mit entweder "percent" oder "fraction" zurück. Bevorzuge "percent". Wenn du "percent" verwendest, müssen overallReadiness und alle comfortScore-Werte ganze Zahlen von 0 bis 100 sein.';
+          const fullBasePrompt = `Analysiere diese Übungssitzung und erstelle einen themenbasierten Lernstandsbericht.
 
 Die Antworten enthalten mehrere Runden. Beziehe den gesamten Verlauf ein.
 Bewerte alle behandelten Themen ausgewogen und vermeide eine reine Fokussierung auf das aktuelle Fokus-Thema.
@@ -2755,38 +2949,119 @@ Alle behandelten Themen: ${coveredTopics.join(", ") || "keine"}
 Antwortkontext (kompakt, neueste Antworten + Themenstatistik):
 ${fullModePromptContext.serializedContext}
 
-Sei streng, aber konstruktiv.`,
-          });
+Sei streng, aber konstruktiv.
+Pflichtregeln:
+- ${analysisScoreFormatRules.join("\n- ")}`;
 
-          const resultLog = extractGenerationResultForLog(result);
-          trace.addUsage(resultLog.usage);
-          finishReason = resultLog.details.finishReason;
-          mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-          trace.log("info", "llm_response", {
-            ...resultLog.details,
-            mode: "full",
-            outputPreview: {
-              overallReadiness: result.output.overallReadiness,
-              strongestTopics: result.output.strongestTopics,
-              weakestTopics: result.output.weakestTopics,
-              topicCount: result.output.topics.length,
-            },
-          });
+          let generated: AnalysisResult | null = null;
+          let invalidOutput: unknown;
+          let retrySourceError: unknown = null;
 
-          const generated: AnalysisResult = result.output;
+          for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+            trace.log("info", "llm_request", {
+              modelId: "gemini-3-flash-preview",
+              mode: "full",
+              stage: attemptIndex === 0 ? "primary" : "format_retry",
+              responseCount: responses.length,
+              promptResponseCount:
+                fullModePromptContext.includedRecentResponses,
+              omittedResponseCount: fullModePromptContext.omittedResponses,
+              topicSummaryCount: fullModePromptContext.topicSummaryCount,
+              temperature: 0.2,
+              maxOutputTokens: 1_500,
+              thinkingBudget: 0,
+            });
 
-          analysis = {
-            overallReadiness: toComfortScore(generated.overallReadiness),
-            strongestTopics: generated.strongestTopics,
-            weakestTopics: generated.weakestTopics,
-            topics: generated.topics.map((topic) => ({
-              topic: topic.topic,
-              comfortScore: toComfortScore(topic.comfortScore),
-              rationale: topic.rationale,
-              recommendation: topic.recommendation,
-            })),
-            recommendedNextStep: generated.recommendedNextStep,
-          };
+            llmAttempts += 1;
+
+            try {
+              const prompt =
+                attemptIndex === 0
+                  ? fullBasePrompt
+                  : buildAnalysisFormatCorrectionPrompt(
+                      fullBasePrompt,
+                      retrySourceError,
+                      invalidOutput,
+                    );
+
+              const result = await generateText({
+                model: model("gemini-3-flash-preview"),
+                temperature: 0.2,
+                maxOutputTokens: 1_500,
+                providerOptions: vertexProviderOptions,
+                output: Output.object({
+                  schema: analysisOutputSchema,
+                }),
+                experimental_telemetry: buildAiSdkTelemetry(
+                  "analyzePerformance",
+                  args.sessionId,
+                  trace.traceId,
+                  {
+                    appScope: "analyzePerformance",
+                    analysisMode,
+                    round: session.round,
+                    responseCount: responses.length,
+                    currentFocusTopic: session.currentFocusTopic ?? "",
+                    stage: attemptIndex === 0 ? "full_primary" : "full_retry",
+                  },
+                ),
+                system: fullSystemPrompt,
+                prompt,
+              });
+
+              const resultLog = extractGenerationResultForLog(result);
+              trace.addUsage(resultLog.usage);
+              finishReason = resultLog.details.finishReason;
+              mergeVertexUsage(
+                vertexUsageTotals,
+                resultLog.details.vertexUsage,
+              );
+              trace.log("info", "llm_response", {
+                ...resultLog.details,
+                mode: "full",
+                stage: attemptIndex === 0 ? "primary" : "format_retry",
+                outputPreview: {
+                  scoreUnit: result.output.scoreUnit,
+                  overallReadiness: result.output.overallReadiness,
+                  strongestTopics: result.output.strongestTopics,
+                  weakestTopics: result.output.weakestTopics,
+                  topicCount: result.output.topics.length,
+                },
+              });
+
+              invalidOutput = result.output;
+              generated = normalizeAnalysisScores(result.output);
+              break;
+            } catch (error) {
+              if (
+                attemptIndex === 0 &&
+                (isNoOutputGeneratedError(error) ||
+                  isInvalidAnalysisScoreFormatError(error))
+              ) {
+                retrySourceError = error;
+                trace.addUsage(extractUsageFromError(error));
+                trace.log("warn", "llm_response_invalid_retrying", {
+                  error: extractErrorForLog(error),
+                  mode: "full",
+                  stage: "primary",
+                  invalidOutput: isInvalidAnalysisScoreFormatError(error)
+                    ? error.details
+                    : invalidOutput,
+                });
+                continue;
+              }
+
+              throw error;
+            }
+          }
+
+          if (!generated) {
+            throw (
+              retrySourceError ?? new Error("Die Gesamtanalyse blieb ungültig.")
+            );
+          }
+
+          analysis = generated;
         } catch (error) {
           trace.addUsage(extractUsageFromError(error));
           usedFallback = true;

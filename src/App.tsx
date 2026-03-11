@@ -165,7 +165,7 @@ function StudyApp() {
 
       {session.stage === "quiz" && (
         <QuizStage
-          currentQuestion={currentQuestion}
+          currentQuestion={quizFlow.displayQuestion}
           stats={stats}
           feedback={quizFlow.feedback}
           answerInput={quizFlow.answerInput}

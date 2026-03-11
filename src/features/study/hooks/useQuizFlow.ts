@@ -16,6 +16,9 @@ export function useQuizFlow({
   currentQuestion,
 }: UseQuizFlowArgs) {
   const [answerInput, setAnswerInput] = useState("");
+  const [displayQuestion, setDisplayQuestion] = useState<QuizQuestion | null>(
+    currentQuestion,
+  );
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const [quizError, setQuizError] = useState<string | null>(null);
@@ -24,6 +27,7 @@ export function useQuizFlow({
     grantToken,
     sessionId,
   });
+  const latestQuestionRef = useRef(currentQuestion);
 
   const evaluateAnswer = useAction(evaluateAnswerRef);
 
@@ -35,7 +39,12 @@ export function useQuizFlow({
   }, [grantToken, sessionId]);
 
   useEffect(() => {
+    latestQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+
+  useEffect(() => {
     setAnswerInput("");
+    setDisplayQuestion(null);
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);
@@ -44,15 +53,16 @@ export function useQuizFlow({
 
   useEffect(() => {
     setQuizError(null);
-    // Convex can advance to the next unanswered question before the action
-    // result reaches the client. Keep existing feedback visible in that case.
-    if (feedback) {
+    // Keep the submitted question visible while the answer is still being
+    // evaluated or while its feedback is on screen.
+    if (feedback || isSubmittingAnswer) {
       return;
     }
 
+    setDisplayQuestion(currentQuestion);
     setAnswerInput("");
     setQuestionStartedAt(Date.now());
-  }, [currentQuestion?.id, feedback]);
+  }, [currentQuestion, feedback, isSubmittingAnswer]);
 
   const submitAnswer = useCallback(
     async (dontKnowSubmission: boolean = false) => {
@@ -68,6 +78,10 @@ export function useQuizFlow({
         grantToken,
         sessionId,
       };
+      const submittedQuestion = currentQuestion;
+      const submittedAnswer = dontKnowSubmission ? "" : answerInput;
+
+      setDisplayQuestion(submittedQuestion);
       setIsSubmittingAnswer(true);
       setQuizError(null);
 
@@ -80,8 +94,8 @@ export function useQuizFlow({
         const result = await evaluateAnswer({
           grantToken,
           sessionId,
-          questionId: currentQuestion.id,
-          userAnswer: dontKnowSubmission ? "" : answerInput,
+          questionId: submittedQuestion.id,
+          userAnswer: submittedAnswer,
           timeSpentSeconds,
           clientRequestId,
         });
@@ -111,6 +125,7 @@ export function useQuizFlow({
             clientRequestId,
           }),
         );
+        setDisplayQuestion(latestQuestionRef.current);
       } finally {
         const latestContext = latestSessionContextRef.current;
         const isStaleSubmission =
@@ -133,10 +148,12 @@ export function useQuizFlow({
 
   const continueAfterFeedback = useCallback(() => {
     setFeedback(null);
+    setDisplayQuestion(latestQuestionRef.current);
   }, []);
 
   return {
     answerInput,
+    displayQuestion,
     isSubmittingAnswer,
     quizError,
     feedback,

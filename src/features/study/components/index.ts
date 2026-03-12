@@ -1,10 +1,13 @@
 export { AnalysisStage } from "./AnalysisStage";
 export { AuthScreen } from "./AuthScreen";
+export { GenerationDecisionStage } from "./GenerationDecisionStage";
 export { KpiCard } from "./KpiCard";
 export { LoadingScreen } from "./LoadingScreen";
 export { NavigationShell } from "./NavigationShell";
+export { PdfSummaryStage } from "./PdfSummaryStage";
 export { QuizStage } from "./QuizStage";
 export { PrivacyScreen } from "./PrivacyScreen";
 export { StageBadge } from "./StageBadge";
+export { SummaryStage } from "./SummaryStage";
 export { ThemeToggle } from "./ThemeToggle";
 export { UploadStage } from "./UploadStage";

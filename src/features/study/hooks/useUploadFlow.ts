@@ -3,10 +3,13 @@ import type { ChangeEvent } from "react";
 import { useAction, useMutation } from "convex/react";
 import {
   extractDocumentContentRef,
+  generatePdfSummaryRef,
   generateQuizRef,
   generateUploadUrlRef,
   registerUploadedDocumentRef,
   removeDocumentRef,
+  returnToUploadRef,
+  startQuizRef,
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import { uploadFileToConvexStorage } from "../upload";
@@ -22,12 +25,14 @@ type UseUploadFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
   documents: StudyDocument[];
+  quizQuestionsCount: number;
 };
 
 export function useUploadFlow({
   grantToken,
   sessionId,
   documents,
+  quizQuestionsCount,
 }: UseUploadFlowArgs) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -39,8 +44,115 @@ export function useUploadFlow({
   const generateUploadUrl = useMutation(generateUploadUrlRef);
   const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
+  const returnToUpload = useMutation(returnToUploadRef);
+  const startQuiz = useMutation(startQuizRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
+  const generatePdfSummary = useAction(generatePdfSummaryRef);
+
+  const getOversizedDocumentsError = useCallback(() => {
+    const oversizedReadyDocuments = documents.filter(
+      (document) =>
+        document.extractionStatus === "ready" &&
+        isVertexNativeCandidate(document.fileType, document.fileName) &&
+        document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
+    );
+
+    if (oversizedReadyDocuments.length === 0) {
+      return null;
+    }
+
+    const names = oversizedReadyDocuments
+      .slice(0, 3)
+      .map((document) => document.fileName)
+      .join(", ");
+    const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
+
+    return `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`;
+  }, [documents]);
+
+  const generatePdfSummaryQuestions = useCallback(async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    const oversizedDocumentsError = getOversizedDocumentsError();
+    if (oversizedDocumentsError) {
+      setUploadError(oversizedDocumentsError);
+      return;
+    }
+
+    const clientRequestId = createClientRequestId("generatePdfSummary");
+    setIsGeneratingQuiz(true);
+    setUploadError(null);
+
+    try {
+      await generatePdfSummary({
+        grantToken,
+        sessionId,
+        clientRequestId,
+      });
+    } catch (error: unknown) {
+      setUploadError(
+        formatError(error, {
+          fallback: "Die Lernübersicht konnte nicht erstellt werden.",
+          clientRequestId,
+        }),
+      );
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  }, [generatePdfSummary, getOversizedDocumentsError, grantToken, sessionId]);
+
+  const startQuizStudySession = useCallback(async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    const clientRequestId = createClientRequestId("startQuiz");
+    setIsGeneratingQuiz(true);
+    setUploadError(null);
+
+    try {
+      if (quizQuestionsCount > 0) {
+        await startQuiz({ grantToken, sessionId });
+      } else {
+        await generateQuiz({
+          grantToken,
+          sessionId,
+          questionCount: 30,
+          clientRequestId,
+        });
+      }
+    } catch (error: unknown) {
+      setUploadError(
+        formatError(error, {
+          fallback: "Das Quiz konnte nicht gestartet werden.",
+          clientRequestId,
+        }),
+      );
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  }, [generateQuiz, grantToken, quizQuestionsCount, sessionId, startQuiz]);
+
+  const reopenUploadSelection = useCallback(async () => {
+    if (!grantToken || !sessionId) {
+      return;
+    }
+
+    setUploadError(null);
+
+    try {
+      await returnToUpload({ grantToken, sessionId });
+    } catch (error: unknown) {
+      setUploadError(
+        formatError(error, {
+          fallback: "Die Lernübersicht konnte nicht geschlossen werden.",
+        }),
+      );
+    }
+  }, [grantToken, returnToUpload, sessionId]);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
@@ -135,23 +247,9 @@ export function useUploadFlow({
       return;
     }
 
-    const oversizedReadyDocuments = documents.filter(
-      (document) =>
-        document.extractionStatus === "ready" &&
-        isVertexNativeCandidate(document.fileType, document.fileName) &&
-        document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
-    );
-
-    if (oversizedReadyDocuments.length > 0) {
-      const names = oversizedReadyDocuments
-        .slice(0, 3)
-        .map((document) => document.fileName)
-        .join(", ");
-      const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
-
-      setUploadError(
-        `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`,
-      );
+    const oversizedDocumentsError = getOversizedDocumentsError();
+    if (oversizedDocumentsError) {
+      setUploadError(oversizedDocumentsError);
       return;
     }
 
@@ -176,7 +274,7 @@ export function useUploadFlow({
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [documents, generateQuiz, grantToken, sessionId]);
+  }, [generateQuiz, getOversizedDocumentsError, grantToken, sessionId]);
 
   const removeDocumentById = useCallback(
     async (documentId: string) => {
@@ -208,6 +306,9 @@ export function useUploadFlow({
     setUploadError,
     onFileInputChange,
     generateQuizQuestions,
+    generatePdfSummaryQuestions,
     removeDocumentById,
+    reopenUploadSelection,
+    startQuizStudySession,
   };
 }

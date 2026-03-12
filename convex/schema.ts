@@ -41,6 +41,54 @@ const analysisValidator = v.object({
   recommendedNextStep: v.string(),
 });
 
+const summaryDefinitionValidator = v.object({
+  term: v.string(),
+  definition: v.string(),
+});
+
+const summaryExampleValidator = v.object({
+  title: v.string(),
+  details: v.string(),
+});
+
+const summaryTimelineEventValidator = v.object({
+  label: v.string(),
+  period: v.string(),
+  description: v.string(),
+});
+
+const summaryComparisonTableValidator = v.object({
+  title: v.string(),
+  headers: v.array(v.string()),
+  rows: v.array(v.array(v.string())),
+});
+
+const summarySubtopicValidator = v.object({
+  title: v.string(),
+  description: v.string(),
+  keyPoints: v.array(v.string()),
+  examples: v.array(summaryExampleValidator),
+});
+
+const pdfSummarySectionValidator = v.object({
+  title: v.string(),
+  content: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  definitions: v.optional(v.array(summaryDefinitionValidator)),
+  subtopics: v.optional(v.array(summarySubtopicValidator)),
+  comparisonTables: v.optional(v.array(summaryComparisonTableValidator)),
+  imageUrl: v.optional(v.string()),
+});
+
+const pdfSummaryValidator = v.object({
+  title: v.string(),
+  overview: v.optional(v.string()),
+  themeOverview: v.optional(v.array(v.string())),
+  timeline: v.optional(v.array(summaryTimelineEventValidator)),
+  keyTakeaways: v.optional(v.array(v.string())),
+  sections: v.array(pdfSummarySectionValidator),
+});
+
 export default defineSchema({
   /** Einmal-Zugangscodes (z.B. für Demos oder zeitlich begrenzten Zugriff) */
   accessCodes: defineTable({
@@ -65,6 +113,7 @@ export default defineSchema({
     title: v.string(),
     stage: v.union(
       v.literal("upload"),
+      v.literal("pdf_summary"),
       v.literal("quiz"),
       v.literal("analysis"),
     ),
@@ -74,6 +123,7 @@ export default defineSchema({
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),
     analysis: v.optional(analysisValidator), // KI-Analyse des Lernfortschritts
+    pdfSummary: v.optional(pdfSummaryValidator),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_grantId", ["grantId"]),

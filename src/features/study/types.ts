@@ -5,7 +5,8 @@ export type StudyStage =
   | "mode_selection"
   | "quiz"
   | "analysis"
-  | "summary";
+  | "summary"
+  | "pdf_summary";
 
 export type ExtractionStatus = "pending" | "processing" | "ready" | "failed";
 
@@ -37,18 +38,44 @@ export type SessionAnalysis = {
   topics: SessionAnalysisTopic[];
 };
 
+export type SummaryDefinition = {
+  term: string;
+  definition: string;
+};
+
+export type SummaryExample = {
+  title: string;
+  details: string;
+};
+
+export type SummaryTimelineEvent = {
+  label: string;
+  period: string;
+  description: string;
+};
+
+export type SummaryComparisonTable = {
+  title: string;
+  headers: string[];
+  rows: string[][];
+};
+
+export type SummarySubtopic = {
+  title: string;
+  description: string;
+  keyPoints: string[];
+  examples: SummaryExample[];
+};
+
 export type SummarySection = {
   title: string;
-  content: string;
-  keyPoints: string[];
-  table?: {
-    headers: string[];
-    rows: string[][];
-  };
-  chart?: {
-    type: "bar" | "percentage";
-    data: { label: string; value: number }[];
-  };
+  content?: string;
+  summary?: string;
+  definitions?: SummaryDefinition[];
+  subtopics?: SummarySubtopic[];
+  comparisonTables?: SummaryComparisonTable[];
+  keyPoints?: string[];
+  table?: SummaryComparisonTable;
   imageQuery?: string;
 };
 
@@ -58,14 +85,25 @@ export type StudySummary = {
   sections: SummarySection[];
 };
 
+export type StudyPdfSummary = {
+  title: string;
+  overview?: string;
+  themeOverview?: string[];
+  timeline?: SummaryTimelineEvent[];
+  keyTakeaways?: string[];
+  sections: SummarySection[];
+};
+
 export type StudySession = {
   title: string;
   stage: StudyStage;
   round: number; // Aktiver Quiz-Batch innerhalb derselben Lernsitzung.
   currentFocusTopic?: string;
+  sourceSummary?: string;
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;
   summary?: StudySummary;
+  pdfSummary?: StudyPdfSummary;
 };
 
 export type StudyDocument = {

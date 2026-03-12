@@ -177,10 +177,14 @@ type QuestionForEvaluation = {
 type QuizGenerationResult = z.infer<typeof quizGenerationSchema>;
 type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
 
-function normalizeDontKnowExplanation(explanation: string): string {
+function normalizeDontKnowExplanation(
+  explanation: string,
+  fallbackExplanation: string,
+): string {
   const trimmedExplanation = explanation.trim();
+  const trimmedFallbackExplanation = fallbackExplanation.trim();
   if (!trimmedExplanation) {
-    return "Die ideale Antwort enthält die relevanten Punkte.";
+    return trimmedFallbackExplanation || "Die ideale Antwort enthält die relevanten Punkte.";
   }
 
   const sanitizedExplanation = trimmedExplanation
@@ -198,6 +202,11 @@ function normalizeDontKnowExplanation(explanation: string): string {
     .replace(/^Es wurde keine Antwort gegeben\.?\s*/i, "")
     .replace(/^Du hast die Frage nicht beantwortet\.?\s*/i, "")
     .replace(/^Die Frage wurde nicht beantwortet\.?\s*/i, "")
+    .replace(/^Die Antwort enthält keine fachlichen Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Die Antwort enthält keine inhaltlichen Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Die Antwort nennt keine relevanten Punkte[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Es fehlen fachliche Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Es fehlen die relevanten Punkte[^.!?]*[.!?]\s*/i, "")
     .replace(/^Das ist völlig in Ordnung,?[^.!?]*[.!?]\s*/i, "")
     .replace(/^Das ist in Ordnung,?[^.!?]*[.!?]\s*/i, "")
     .replace(/^Das ist gar kein Problem,?[^.!?]*[.!?]\s*/i, "")
@@ -208,7 +217,7 @@ function normalizeDontKnowExplanation(explanation: string): string {
     .trim();
 
   if (!sanitizedExplanation) {
-    return "Die ideale Antwort enthält die relevanten Punkte.";
+    return trimmedFallbackExplanation || "Die ideale Antwort enthält die relevanten Punkte.";
   }
 
   return sanitizedExplanation;
@@ -2576,6 +2585,7 @@ Antwortmodus: ${
               ? 'Die lernende Person hat bewusst "Ich weiß es gerade nicht" gewählt.'
               : "Die lernende Person hat eine eigene Antwort eingereicht."
           }
+${args.answeredWithDontKnow ? "Wenn \"Ich weiß es gerade nicht\" gewählt wurde, erkläre direkt den fachlichen Kern in 1 bis 2 Sätzen. Erwähne nicht, dass keine Antwort vorlag oder was in der Antwort fehlt." : ""}
 
 Antwort der lernenden Person:
 ${args.userAnswer}
@@ -2620,7 +2630,10 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
         Math.max(0, Math.min(100, generated.score)),
       );
       const explanation = args.answeredWithDontKnow
-        ? normalizeDontKnowExplanation(generated.explanation)
+        ? normalizeDontKnowExplanation(
+            generated.explanation,
+            question.explanationHint,
+          )
         : generated.explanation;
 
       await ctx.runMutation(internal.study.storeQuizResponse, {

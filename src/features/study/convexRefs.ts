@@ -98,6 +98,7 @@ export const evaluateAnswerRef = makeFunctionReference<
     sessionId: string;
     questionId: string;
     userAnswer: string;
+    answeredWithDontKnow: boolean;
     timeSpentSeconds: number;
     clientRequestId?: string;
   },

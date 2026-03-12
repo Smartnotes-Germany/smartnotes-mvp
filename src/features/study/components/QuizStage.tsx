@@ -219,7 +219,7 @@ export function QuizStage({
                   type="button"
                   onClick={() => void onAnalyzeSession()}
                   disabled={isAnalyzing}
-                  className="hover:text-cream mt-8 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
+                  className="hover:text-cream mb-7 mt-10 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
                 >
                   {isAnalyzing ? (
                     <Loader2 size={14} className="animate-spin" />

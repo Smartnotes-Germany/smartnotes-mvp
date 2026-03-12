@@ -142,7 +142,7 @@ export function QuizStage({
                 <button
                   type="button"
                   onClick={onContinueAfterFeedback}
-                  className="bg-accent shadow-accent/30 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
+                  className="bg-accent mb-5 shadow-accent/30 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
                 >
                   Nächste Frage
                   <ArrowRight size={20} className="md:h-[22px] md:w-[22px]" />

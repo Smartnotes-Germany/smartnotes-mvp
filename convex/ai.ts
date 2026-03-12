@@ -180,29 +180,36 @@ type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
 function normalizeDontKnowExplanation(explanation: string): string {
   const trimmedExplanation = explanation.trim();
   if (!trimmedExplanation) {
-    return "Du wusstest die Antwort in diesem Moment noch nicht. Schau dir die ideale Antwort an, um den Inhalt gezielt nachzuvollziehen.";
-  }
-
-  if (
-    /ich weiß es gerade nicht|ich weiss es gerade nicht|noch nicht gewusst|noch nicht abrufbar|wusstest .*noch nicht/i.test(
-      trimmedExplanation,
-    )
-  ) {
-    return trimmedExplanation;
+    return 'Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben.';
   }
 
   const sanitizedExplanation = trimmedExplanation
+    .replace(/^Du wusstest die Antwort in diesem Moment noch nicht\.?\s*/i, "")
+    .replace(
+      /^Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben\.?\s*/i,
+      "",
+    )
+    .replace(
+      /^Die Antwort wurde mit "Ich weiss es gerade nicht" abgegeben\.?\s*/i,
+      "",
+    )
     .replace(/^Die Antwort fehlt leider komplett\.?\s*/i, "")
     .replace(/^Die Antwort fehlt komplett\.?\s*/i, "")
     .replace(/^Es wurde keine Antwort gegeben\.?\s*/i, "")
     .replace(/^Du hast die Frage nicht beantwortet\.?\s*/i, "")
-    .replace(/^Die Frage wurde nicht beantwortet\.?\s*/i, "");
+    .replace(/^Die Frage wurde nicht beantwortet\.?\s*/i, "")
+    .replace(/^Das ist völlig in Ordnung,?[^.]*\.?\s*/i, "")
+    .replace(/^Das ist in Ordnung,?[^.]*\.?\s*/i, "")
+    .replace(/^Jeder hat mal[^.]*\.?\s*/i, "")
+    .replace(/^Schau dir als Nächstes[^.]*\.?\s*/i, "")
+    .replace(/^Schau dir am besten[^.]*\.?\s*/i, "")
+    .trim();
 
   if (!sanitizedExplanation) {
-    return "Du wusstest die Antwort in diesem Moment noch nicht. Schau dir die ideale Antwort an, um den Inhalt gezielt nachzuvollziehen.";
+    return 'Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben.';
   }
 
-  return `Du wusstest die Antwort in diesem Moment noch nicht. ${sanitizedExplanation}`;
+  return `Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben. ${sanitizedExplanation}`;
 }
 type AnalysisOutputResult = z.infer<typeof analysisOutputSchema>;
 type AnalysisResult = z.infer<typeof analysisSchema>;
@@ -2570,12 +2577,7 @@ Antwortmodus: ${
 Antwort der lernenden Person:
 ${args.userAnswer}
 
-Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.
-${
-  args.answeredWithDontKnow
-    ? 'Wichtig: Wenn "Ich weiß es gerade nicht" gewählt wurde, formuliere die Erklärung wertschätzend und lernorientiert. Schreibe nicht, dass die Antwort falsch ist, fehlt oder nicht gegeben wurde. Formuliere stattdessen, dass die Antwort in diesem Moment noch nicht gewusst wurde, und erkläre dann kurz den relevanten Inhalt.'
-    : ""
-}`,
+Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`,
         });
 
         const resultLog = extractGenerationResultForLog(result);

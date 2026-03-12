@@ -2564,12 +2564,13 @@ export const evaluateAnswer = action({
             },
           ),
           system:
-            "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder was die lernende Person als Nächstes verstehen sollte.",
+            "Du bist ein sachlicher Prüfungs-Korrektor. Antworte auf Deutsch. Formuliere nüchtern und direkt. Verwende keine schmeichelnden, beschwichtigenden oder motivierenden Sätze. Erkläre kurz, was fachlich richtig ist oder was inhaltlich fehlt.",
           prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
+Vermeide jede Form von Lob, Trost, Beschwichtigung oder persönlicher Zusprache.
 Antwortmodus: ${
             args.answeredWithDontKnow
               ? 'Die lernende Person hat bewusst "Ich weiß es gerade nicht" gewählt.'

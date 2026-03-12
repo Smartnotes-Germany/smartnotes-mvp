@@ -180,7 +180,7 @@ type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
 function normalizeDontKnowExplanation(explanation: string): string {
   const trimmedExplanation = explanation.trim();
   if (!trimmedExplanation) {
-    return 'Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben.';
+    return "Die ideale Antwort enthält die relevanten Punkte.";
   }
 
   const sanitizedExplanation = trimmedExplanation
@@ -198,18 +198,20 @@ function normalizeDontKnowExplanation(explanation: string): string {
     .replace(/^Es wurde keine Antwort gegeben\.?\s*/i, "")
     .replace(/^Du hast die Frage nicht beantwortet\.?\s*/i, "")
     .replace(/^Die Frage wurde nicht beantwortet\.?\s*/i, "")
-    .replace(/^Das ist völlig in Ordnung,?[^.]*\.?\s*/i, "")
-    .replace(/^Das ist in Ordnung,?[^.]*\.?\s*/i, "")
-    .replace(/^Jeder hat mal[^.]*\.?\s*/i, "")
-    .replace(/^Schau dir als Nächstes[^.]*\.?\s*/i, "")
-    .replace(/^Schau dir am besten[^.]*\.?\s*/i, "")
+    .replace(/^Das ist völlig in Ordnung,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Das ist in Ordnung,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Das ist gar kein Problem,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Kein Problem,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Jeder hat mal[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Schau dir als Nächstes[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Schau dir am besten[^.!?]*[.!?]\s*/i, "")
     .trim();
 
   if (!sanitizedExplanation) {
-    return 'Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben.';
+    return "Die ideale Antwort enthält die relevanten Punkte.";
   }
 
-  return `Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben. ${sanitizedExplanation}`;
+  return sanitizedExplanation;
 }
 type AnalysisOutputResult = z.infer<typeof analysisOutputSchema>;
 type AnalysisResult = z.infer<typeof analysisSchema>;

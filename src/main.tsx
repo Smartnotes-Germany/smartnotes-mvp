@@ -6,6 +6,7 @@
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { PostHogErrorBoundary, PostHogProvider } from "@posthog/react";
 import "./index.css";
@@ -41,7 +42,9 @@ createRoot(document.getElementById("root")!).render(
     <PostHogProvider client={posthogClient}>
       <ConvexProvider client={convex}>
         <PostHogErrorBoundary fallback={analyticsErrorFallback}>
-          <App />
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
         </PostHogErrorBoundary>
       </ConvexProvider>
     </PostHogProvider>

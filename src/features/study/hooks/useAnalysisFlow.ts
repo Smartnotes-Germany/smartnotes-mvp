@@ -7,7 +7,8 @@ import {
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
 } from "../../../../shared/uploadPolicy";
-import type { StudyDocument } from "../types";
+import { topicsMatchForFocusMode } from "../../../../shared/topicMatching";
+import type { QuizQuestion, StudyDocument } from "../types";
 import {
   trackAnalysisFailed,
   trackAnalysisRequested,
@@ -21,6 +22,9 @@ type UseAnalysisFlowArgs = {
   grantToken: string | null;
   sessionId: string | null;
   documents: StudyDocument[];
+  quizQuestions: QuizQuestion[];
+  currentFocusTopic?: string | null;
+  hasExistingAnalysis: boolean;
   answeredQuestions?: number;
   totalQuestions?: number;
 };
@@ -29,6 +33,9 @@ export function useAnalysisFlow({
   grantToken,
   sessionId,
   documents,
+  quizQuestions,
+  currentFocusTopic,
+  hasExistingAnalysis,
   answeredQuestions,
   totalQuestions,
 }: UseAnalysisFlowArgs) {
@@ -45,13 +52,33 @@ export function useAnalysisFlow({
     }
 
     const startedAt = Date.now();
+    const normalizedFocusTopic = currentFocusTopic?.trim() ?? "";
+    const hasFocusTopic = normalizedFocusTopic.length > 0;
+    const matchingQuestionCount = hasFocusTopic
+      ? quizQuestions.filter((question) => {
+          return topicsMatchForFocusMode(question.topic, normalizedFocusTopic);
+        }).length
+      : 0;
+    const focusedQuizRatio =
+      quizQuestions.length > 0
+        ? matchingQuestionCount / quizQuestions.length
+        : 0;
+    const shouldRunFocusAnalysis =
+      hasExistingAnalysis && hasFocusTopic && focusedQuizRatio >= 0.6;
+
     const clientRequestId = createClientRequestId("analyzePerformance");
     setIsAnalyzing(true);
     setAnalysisError(null);
     trackAnalysisRequested({ answeredQuestions, totalQuestions });
 
     try {
-      await analyzePerformance({ grantToken, sessionId, clientRequestId });
+      await analyzePerformance({
+        grantToken,
+        sessionId,
+        mode: shouldRunFocusAnalysis ? "focus" : "full",
+        ...(shouldRunFocusAnalysis ? { focusTopic: normalizedFocusTopic } : {}),
+        clientRequestId,
+      });
       trackAnalysisSucceeded(Date.now() - startedAt, {
         answeredQuestions,
         totalQuestions,
@@ -73,8 +100,11 @@ export function useAnalysisFlow({
     }
   }, [
     analyzePerformance,
+    currentFocusTopic,
     answeredQuestions,
     grantToken,
+    hasExistingAnalysis,
+    quizQuestions,
     sessionId,
     totalQuestions,
   ]);

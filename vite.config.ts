@@ -15,9 +15,7 @@ const resolveBuildEnv = (mode: string) => {
     server: {
       POSTHOG_SOURCEMAPS_API_KEY: z.string().min(1).optional(),
       POSTHOG_SOURCEMAPS_PROJECT_ID: z.string().min(1).optional(),
-      POSTHOG_SOURCEMAPS_HOST: z
-        .url()
-        .default("https://eu.i.posthog.com"),
+      POSTHOG_SOURCEMAPS_HOST: z.url().default("https://eu.i.posthog.com"),
       POSTHOG_SOURCEMAPS_RELEASE_NAME: z.string().min(1).optional(),
       POSTHOG_SOURCEMAPS_RELEASE_VERSION: z.string().min(1).optional(),
 

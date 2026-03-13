@@ -20,10 +20,6 @@ export const ACCEPTED_UPLOAD_EXTENSIONS = [
 
 export const VERTEX_NATIVE_UPLOAD_EXTENSIONS = [
   "pdf",
-  "ppt",
-  "pptx",
-  "doc",
-  "docx",
   "jpg",
   "jpeg",
   "png",
@@ -32,10 +28,6 @@ export const VERTEX_NATIVE_UPLOAD_EXTENSIONS = [
 
 export const VERTEX_NATIVE_UPLOAD_MEDIA_TYPES = [
   "application/pdf",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/jpeg",
   "image/png",
   "image/webp",

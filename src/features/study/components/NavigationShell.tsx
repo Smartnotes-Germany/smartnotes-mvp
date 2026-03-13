@@ -52,7 +52,7 @@ export function NavigationShell({
   };
 
   return (
-    <div className="bg-cream text-ink flex h-screen min-h-screen flex-col overflow-hidden md:flex-row">
+    <div className="bg-cream text-ink flex min-h-dvh flex-col overflow-hidden md:h-screen md:min-h-screen md:flex-row">
       <header className="bg-surface-white border-cream-border z-50 flex items-center justify-between border-b px-5 py-4 md:hidden">
         <div className="flex items-center gap-2">
           <img
@@ -199,8 +199,8 @@ export function NavigationShell({
         </div>
       </aside>
 
-      <main className="bg-cream flex-1 overflow-y-auto p-5 md:p-8 lg:p-12">
-        <div className="mx-auto h-full max-w-5xl">{children}</div>
+      <main className="bg-cream flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:p-8 md:pb-8 lg:p-12 lg:pb-12">
+        <div className="mx-auto h-full min-h-full max-w-5xl">{children}</div>
       </main>
     </div>
   );

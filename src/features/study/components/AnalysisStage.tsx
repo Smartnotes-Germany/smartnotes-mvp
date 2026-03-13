@@ -1,4 +1,5 @@
 import { Brain, Loader2, Sparkles } from "lucide-react";
+import { normalizePercentageValue } from "../../../../shared/percentageNormalization";
 import { KpiCard } from "./KpiCard";
 import type { SessionAnalysis } from "../types";
 
@@ -11,6 +12,17 @@ type AnalysisStageProps = {
   onDeepDive: (topic: string) => Promise<void>;
 };
 
+const normalizeAnalysis = (analysis: SessionAnalysis) => {
+  return {
+    ...analysis,
+    overallReadiness: normalizePercentageValue(analysis.overallReadiness),
+    topics: analysis.topics.map((topic) => ({
+      ...topic,
+      comfortScore: normalizePercentageValue(topic.comfortScore),
+    })),
+  };
+};
+
 export function AnalysisStage({
   analysis,
   isAnalyzing,
@@ -19,6 +31,8 @@ export function AnalysisStage({
   onAnalyzeSession,
   onDeepDive,
 }: AnalysisStageProps) {
+  const displayAnalysis = analysis ? normalizeAnalysis(analysis) : undefined;
+
   return (
     <section className="pb-10">
       <header className="mb-8 md:mb-12">
@@ -39,7 +53,7 @@ export function AnalysisStage({
         </p>
       )}
 
-      {!analysis ? (
+      {!displayAnalysis ? (
         <div className="flex flex-col items-center py-12">
           {isAnalyzing ? (
             <>
@@ -64,15 +78,15 @@ export function AnalysisStage({
           <div className="mb-8 grid gap-4 md:grid-cols-3">
             <KpiCard
               label="Lernstand"
-              value={`${analysis.overallReadiness}%`}
+              value={`${displayAnalysis.overallReadiness}%`}
             />
             <KpiCard
               label="Stärken"
-              value={analysis.strongestTopics.join(", ") || "Noch offen"}
+              value={displayAnalysis.strongestTopics.join(", ") || "Noch offen"}
             />
             <KpiCard
               label="Lücken"
-              value={analysis.weakestTopics.join(", ") || "Keine"}
+              value={displayAnalysis.weakestTopics.join(", ") || "Keine"}
             />
           </div>
 
@@ -84,12 +98,12 @@ export function AnalysisStage({
               Empfehlung
             </p>
             <p className="text-ink-secondary text-base leading-relaxed font-medium md:text-xl">
-              {analysis.recommendedNextStep}
+              {displayAnalysis.recommendedNextStep}
             </p>
           </div>
 
           <div className="space-y-4">
-            {analysis.topics.map((topic) => (
+            {displayAnalysis.topics.map((topic) => (
               <div
                 key={topic.topic}
                 className="border-cream-border bg-surface-white hover:border-accent/30 flex flex-col justify-between gap-6 rounded-[1.5rem] border p-5 shadow-sm transition md:flex-row md:items-center md:rounded-[2rem] md:p-8"

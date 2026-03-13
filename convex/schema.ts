@@ -59,7 +59,7 @@ export default defineSchema({
     revokedAt: v.optional(v.number()),
   }).index("by_token", ["token"]),
 
-  /** Eine Lern-Sitzung, die mehrere Dokumente und Quiz-Runden umfasst */
+  /** Eine Lern-Sitzung, die mehrere Dokumente und mehrere Quiz-Batches umfasst. */
   studySessions: defineTable({
     grantId: v.id("accessGrants"),
     title: v.string(),
@@ -68,7 +68,7 @@ export default defineSchema({
       v.literal("quiz"),
       v.literal("analysis"),
     ),
-    round: v.number(), // Zähler für die aktuelle Übungsrunde
+    round: v.number(), // Aktiver Quiz-Batch der Sitzung; Deep Dives erhöhen diesen Wert.
     currentFocusTopic: v.optional(v.string()),
     sourceSummary: v.optional(v.string()), // KI-Zusammenfassung aller Quellen
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
@@ -102,21 +102,21 @@ export default defineSchema({
   /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({
     sessionId: v.id("studySessions"),
-    round: v.number(),
+    round: v.number(), // Quiz-Batch, zu dem diese Antwort gehört.
     questionId: v.string(),
     topic: v.string(),
     prompt: v.string(),
     userAnswer: v.string(),
     isCorrect: v.boolean(),
-    score: v.number(), // Feinere Bewertung (0.0 bis 1.0)
+    score: v.number(), // Feinere Bewertung (0 bis 100)
     explanation: v.string(),
     idealAnswer: v.string(),
     timeSpentSeconds: v.number(), // Benötigte Zeit für die Beantwortung
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_session_round", ["sessionId", "round"])
-    .index("by_session_round_question", ["sessionId", "round", "questionId"])
+    .index("by_session_round", ["sessionId", "round"]) // Aktive Antworten eines Quiz-Batches.
+    .index("by_session_round_question", ["sessionId", "round", "questionId"]) // Idempotente Bewertung pro Batch + Frage.
     .index("by_createdAt", ["createdAt"]),
 
   /** Observability-Daten für KI-Operationen (Tracing, Token-Usage, Latenz) */

@@ -14,7 +14,7 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 - Frontend: React 19, Vite, Tailwind CSS
 - Backend: Convex (database, file storage, server functions)
 - AI: `ai` + `@ai-sdk/google-vertex`
-- Document processing: Vertex file input (PDF/PPT/PPTX/DOC/DOCX/JPG/JPEG/PNG/WEBP) + `officeparser` fallback
+- Document processing: native Vertex file input for PDF/JPG/JPEG/PNG/WEBP, plus `officeparser` extraction for PPT/PPTX/DOC/DOCX and text-based formats
 
 ## Prerequisites
 
@@ -127,6 +127,15 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `pnpm format:check` - check code formatting
 - `pnpm observability:debug-window:start -- --minutes 45` - activate sensitive debug capture for a bounded window
 - `pnpm observability:debug-window:stop` - disable sensitive debug capture immediately
+
+## Session And Round Model
+
+- A `studySession` is the top-level container for one learner's material, quiz state, responses, and analysis.
+- `studySessions.round` is the active quiz batch inside that session, not a cosmetic counter.
+- Initial quiz generation keeps the current round.
+- A focused deep dive writes a fresh question batch and increments the round so the app can treat those questions as a new active set.
+- `quizResponses.round` links each stored answer to the quiz batch it belongs to.
+- The UI uses the current round to decide which questions are still unanswered, while analysis can still inspect responses across multiple rounds in the same session.
 
 ## Balanced Observability
 

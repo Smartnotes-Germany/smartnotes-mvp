@@ -6,7 +6,7 @@ import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
 import { action, type ActionCtx } from "./errorTracking";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
   MAX_UPLOAD_FILE_BYTES,
@@ -15,6 +15,16 @@ import {
   VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
   formatFileSizeMiB,
 } from "../shared/uploadPolicy";
+import {
+  normalizeTopicKey,
+  topicsMatchForFocusMode,
+} from "../shared/topicMatching";
+import {
+  clampPercentage,
+  inspectPercentageValues,
+  normalizePercentageValueForScale,
+  type PercentageScale,
+} from "../shared/percentageNormalization";
 import {
   buildTelemetryConfig,
   flushTelemetry,
@@ -32,6 +42,7 @@ const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
 const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
+const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
 const vertexProviderOptions = {
   google: {
@@ -89,19 +100,50 @@ const answerEvaluationSchema = z.object({
   idealAnswer: z.string(),
 });
 
-const analysisSchema = z.object({
+const percentageScoreSchema = z.number().int().min(0).max(100);
+const percentageScaleSchema = z.enum(["percent", "fraction"]);
+const analysisTopicOutputSchema = z.object({
+  topic: z.string(),
+  comfortScore: z.number().min(0).max(100),
+  rationale: z.string(),
+  recommendation: z.string(),
+});
+
+const analysisTopicSchema = z.object({
+  topic: z.string(),
+  comfortScore: percentageScoreSchema,
+  rationale: z.string(),
+  recommendation: z.string(),
+});
+
+const analysisOutputSchema = z.object({
+  scoreUnit: percentageScaleSchema,
   overallReadiness: z.number().min(0).max(100),
   strongestTopics: z.array(z.string()).min(1).max(3),
   weakestTopics: z.array(z.string()).min(1).max(3),
-  topics: z.array(
-    z.object({
-      topic: z.string(),
-      comfortScore: z.number().min(0).max(100),
-      rationale: z.string(),
-      recommendation: z.string(),
-    }),
-  ),
+  topics: z.array(analysisTopicOutputSchema),
   recommendedNextStep: z.string(),
+});
+
+const analysisSchema = z.object({
+  overallReadiness: percentageScoreSchema,
+  strongestTopics: z.array(z.string()).min(1).max(3),
+  weakestTopics: z.array(z.string()).min(1).max(3),
+  topics: z.array(analysisTopicSchema),
+  recommendedNextStep: z.string(),
+});
+
+const focusTopicAnalysisOutputSchema = z.object({
+  scoreUnit: percentageScaleSchema,
+  comfortScore: z.number().min(0).max(100),
+  rationale: z.string(),
+  recommendation: z.string(),
+});
+
+const focusTopicAnalysisSchema = z.object({
+  comfortScore: percentageScoreSchema,
+  rationale: z.string(),
+  recommendation: z.string(),
 });
 
 const deepDiveSchema = z.object({
@@ -137,8 +179,15 @@ type QuestionForEvaluation = {
 
 type QuizGenerationResult = z.infer<typeof quizGenerationSchema>;
 type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
+type AnalysisOutputResult = z.infer<typeof analysisOutputSchema>;
 type AnalysisResult = z.infer<typeof analysisSchema>;
+type AnalysisTopicInsight = z.infer<typeof analysisTopicSchema>;
+type FocusTopicAnalysisOutputResult = z.infer<
+  typeof focusTopicAnalysisOutputSchema
+>;
+type FocusTopicAnalysisResult = z.infer<typeof focusTopicAnalysisSchema>;
 type DeepDiveGenerationResult = z.infer<typeof deepDiveSchema>;
+type AnalysisMode = "full" | "focus";
 
 const compactText = (value: string, maxChars: number) => {
   const normalized = value
@@ -203,6 +252,85 @@ const resolveMediaType = (fileType: string, fileName: string) => {
   return extensionToMediaType[extension] ?? "application/octet-stream";
 };
 
+const createDocumentReadUrl = async (
+  ctx: {
+    runMutation: ActionCtx["runMutation"];
+    storage: { getUrl: (storageId: string) => Promise<string | null> };
+  },
+  storageId: string,
+  accessKey?: string,
+  trace?: {
+    log: (
+      level: "info" | "warn" | "error",
+      event: string,
+      details?: Record<string, unknown>,
+    ) => void;
+  },
+) => {
+  if (accessKey) {
+    try {
+      const downloadGrant = await ctx.runMutation(
+        components.convexFilesControl.download.createDownloadGrant,
+        {
+          storageId,
+          maxUses: 1,
+          expiresAt: Date.now() + DOWNLOAD_GRANT_TTL_MS,
+        },
+      );
+
+      const consumeResult = await ctx.runMutation(
+        components.convexFilesControl.download.consumeDownloadGrantForUrl,
+        {
+          downloadToken: downloadGrant.downloadToken,
+          accessKey,
+        },
+      );
+
+      if (consumeResult.status === "ok" && consumeResult.downloadUrl) {
+        return {
+          fileUrl: consumeResult.downloadUrl,
+          source: "download_grant" as const,
+          status: consumeResult.status,
+        };
+      }
+
+      return {
+        fileUrl: await ctx.storage.getUrl(storageId),
+        source: "storage" as const,
+        status: consumeResult.status,
+      };
+    } catch (error) {
+      const grantErrorDetail =
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+            }
+          : {
+              type: typeof error,
+            };
+
+      trace?.log("warn", "document_download_grant_url_failed", {
+        storageId,
+        grantErrorDetail,
+      });
+
+      return {
+        fileUrl: await ctx.storage.getUrl(storageId),
+        source: "storage" as const,
+        status: "grant_error",
+        grantErrorDetail,
+      };
+    }
+  }
+
+  return {
+    fileUrl: await ctx.storage.getUrl(storageId),
+    source: "storage" as const,
+    status: "direct",
+  };
+};
+
 const createVertexModel = () => {
   const apiKey = readOptionalEnv("GOOGLE_VERTEX_API_KEY");
   if (apiKey) {
@@ -254,17 +382,19 @@ const buildSourceContext = (
   return compactText(sections.join("\n\n---\n\n"), MAX_PROMPT_CONTEXT_CHARS);
 };
 
-const buildModelInputFromDocuments = async <TStorageId>(
+const buildModelInputFromDocuments = async (
   ctx: {
-    storage: { getUrl: (storageId: TStorageId) => Promise<string | null> };
+    runMutation: ActionCtx["runMutation"];
+    storage: { getUrl: (storageId: string) => Promise<string | null> };
   },
   documents: Array<{
-    storageId: TStorageId;
+    storageId: string;
     fileName: string;
     fileType: string;
     fileSizeBytes?: number;
     extractedText?: string;
   }>,
+  accessKey?: string,
   trace?: {
     log: (
       level: "info" | "warn" | "error",
@@ -306,7 +436,8 @@ const buildModelInputFromDocuments = async <TStorageId>(
         );
       }
 
-      const fileUrl = await ctx.storage.getUrl(document.storageId);
+      const { fileUrl, source, status, grantErrorDetail } =
+        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
       if (!fileUrl) {
         if (document.extractedText) {
           textOnlyDocuments.push({
@@ -322,6 +453,9 @@ const buildModelInputFromDocuments = async <TStorageId>(
 
       trace?.log("info", "model_input_document_url_loaded", {
         fileName: document.fileName,
+        source,
+        status,
+        grantErrorDetail,
         elapsedMs: Date.now() - fileLoadStartedAt,
       });
 
@@ -405,13 +539,308 @@ const buildModelInputFromDocuments = async <TStorageId>(
         fileName: document.fileName,
         extractedText: document.extractedText,
       });
+      continue;
     }
+
+    const textLoadStartedAt = Date.now();
+    trace?.log("info", "model_input_text_fallback_started", {
+      fileName: document.fileName,
+      fileType: document.fileType,
+      fileSizeBytes: document.fileSizeBytes,
+    });
+
+    const { fileUrl, source, status, grantErrorDetail } =
+      await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
+    if (!fileUrl) {
+      throw new Error(
+        `Datei konnte nicht gelesen werden: ${document.fileName}`,
+      );
+    }
+
+    trace?.log("info", "model_input_text_fallback_url_loaded", {
+      fileName: document.fileName,
+      source,
+      status,
+      grantErrorDetail,
+      elapsedMs: Date.now() - textLoadStartedAt,
+    });
+
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Datei-Download fehlgeschlagen (${response.status}) für ${document.fileName}`,
+      );
+    }
+
+    const documentBuffer = Buffer.from(await response.arrayBuffer());
+    const extractedText = await extractTextFromBytes(
+      document.fileName,
+      document.fileType,
+      documentBuffer,
+    );
+
+    if (!extractedText) {
+      throw new Error(
+        `Aus dieser Datei konnte kein Text extrahiert werden: ${document.fileName}`,
+      );
+    }
+
+    textOnlyDocuments.push({
+      fileName: document.fileName,
+      extractedText,
+    });
+
+    trace?.log("info", "model_input_text_fallback_extracted", {
+      fileName: document.fileName,
+      extractedLength: extractedText.length,
+      elapsedMs: Date.now() - textLoadStartedAt,
+    });
   }
 
   return {
     fileParts,
     sourceContext: buildSourceContext(textOnlyDocuments),
   };
+};
+
+const toComfortScore = clampPercentage;
+
+type InvalidAnalysisScoreFormatError = Error & {
+  details: Record<string, unknown>;
+};
+
+const createInvalidAnalysisScoreFormatError = (
+  message: string,
+  details: Record<string, unknown>,
+): InvalidAnalysisScoreFormatError => {
+  const error = new Error(message) as InvalidAnalysisScoreFormatError;
+  error.name = "InvalidAnalysisScoreFormatError";
+  error.details = details;
+  return error;
+};
+
+const isInvalidAnalysisScoreFormatError = (
+  error: unknown,
+): error is InvalidAnalysisScoreFormatError =>
+  error instanceof Error &&
+  error.name === "InvalidAnalysisScoreFormatError" &&
+  "details" in error;
+
+const validatePercentageValuesForScale = (
+  values: number[],
+  scoreUnit: PercentageScale,
+  label: string,
+) => {
+  const inspected = inspectPercentageValues(values);
+
+  if (scoreUnit === "fraction") {
+    const invalidValues = inspected.finiteValues.filter(
+      (value) => value < 0 || value > 1,
+    );
+    if (invalidValues.length > 0) {
+      throw createInvalidAnalysisScoreFormatError(
+        `${label} mischt Prozent- und Bruchwerte trotz scoreUnit="fraction".`,
+        {
+          label,
+          scoreUnit,
+          invalidValues,
+          inspected,
+        },
+      );
+    }
+    return;
+  }
+
+  const nonIntegerValues = inspected.finiteValues.filter(
+    (value) => !Number.isInteger(value),
+  );
+  if (nonIntegerValues.length > 0) {
+    throw createInvalidAnalysisScoreFormatError(
+      `${label} enthält keine ganzen Prozentwerte trotz scoreUnit="percent".`,
+      {
+        label,
+        scoreUnit,
+        nonIntegerValues,
+        inspected,
+      },
+    );
+  }
+};
+
+const normalizeAnalysisScores = (
+  analysis: AnalysisOutputResult,
+): AnalysisResult => {
+  const values = [
+    analysis.overallReadiness,
+    ...analysis.topics.map((topic) => topic.comfortScore),
+  ];
+  validatePercentageValuesForScale(values, analysis.scoreUnit, "full_analysis");
+
+  return analysisSchema.parse({
+    overallReadiness: normalizePercentageValueForScale(
+      analysis.overallReadiness,
+      analysis.scoreUnit,
+    ),
+    strongestTopics: analysis.strongestTopics,
+    weakestTopics: analysis.weakestTopics,
+    topics: analysis.topics.map((topic) => ({
+      topic: topic.topic,
+      comfortScore: normalizePercentageValueForScale(
+        topic.comfortScore,
+        analysis.scoreUnit,
+      ),
+      rationale: topic.rationale,
+      recommendation: topic.recommendation,
+    })),
+    recommendedNextStep: analysis.recommendedNextStep,
+  });
+};
+
+const normalizeFocusTopicScore = (
+  analysis: FocusTopicAnalysisOutputResult,
+): FocusTopicAnalysisResult => {
+  validatePercentageValuesForScale(
+    [analysis.comfortScore],
+    analysis.scoreUnit,
+    "focus_analysis",
+  );
+
+  return focusTopicAnalysisSchema.parse({
+    comfortScore: normalizePercentageValueForScale(
+      analysis.comfortScore,
+      analysis.scoreUnit,
+    ),
+    rationale: analysis.rationale,
+    recommendation: analysis.recommendation,
+  });
+};
+
+const analysisScoreFormatRules = [
+  'Füge ein Feld "scoreUnit" hinzu. Erlaubte Werte sind nur "percent" oder "fraction".',
+  'Wenn "scoreUnit" = "percent", müssen overallReadiness und alle comfortScore-Werte ganze Zahlen zwischen 0 und 100 sein.',
+  'Wenn "scoreUnit" = "fraction", müssen overallReadiness und alle comfortScore-Werte Zahlen zwischen 0 und 1 sein.',
+  "Mische niemals Prozentwerte und Bruchwerte in derselben Antwort.",
+];
+
+const buildAnalysisFormatCorrectionPrompt = (
+  basePrompt: string,
+  error: unknown,
+  invalidOutput?: unknown,
+) => {
+  const errorMessage =
+    error instanceof Error ? error.message : "Das Ausgabeformat war ungültig.";
+
+  return `${basePrompt}
+
+Deine letzte Antwort war ungültig und muss korrigiert werden.
+Grund: ${errorMessage}
+
+${invalidOutput ? `Ungültige Antwort:\n${JSON.stringify(invalidOutput, null, 2)}\n\n` : ""}Pflichtregeln:
+- ${analysisScoreFormatRules.join("\n- ")}
+
+Antworte jetzt erneut und halte dich exakt an diese Regeln.`;
+};
+
+const buildTopicInsightFromScore = (
+  topic: string,
+  comfortScore: number,
+): AnalysisTopicInsight => {
+  const roundedScore = toComfortScore(comfortScore);
+  const rationale =
+    roundedScore >= 75
+      ? "Sehr sichere Wissensabfrage mit präzisen Antworten."
+      : roundedScore >= 50
+        ? "Gemischte Leistung. Teile des Themas sitzen, aber es braucht mehr Wiederholung."
+        : "Hier besteht deutlicher Lernbedarf. Konzentriere dich auf Grundkonzepte und kurze Active-Recall-Runden.";
+
+  return {
+    topic,
+    comfortScore: roundedScore,
+    rationale,
+    recommendation:
+      roundedScore >= 75
+        ? "Mit kurzer Spaced Repetition stabil halten."
+        : roundedScore >= 50
+          ? "Mache eine gezielte Vertiefung mit 5-10 Abruffragen."
+          : "Starte eine geführte Vertiefung und wiederhole zuerst die Grundlagen.",
+  };
+};
+
+const sortTopicsByComfort = (topics: AnalysisTopicInsight[]) =>
+  [...topics].sort((a, b) => a.comfortScore - b.comfortScore);
+
+const buildRecommendedNextStep = (
+  weakestTopics: string[],
+  focusTopic?: string,
+) => {
+  const primaryWeakTopic = weakestTopics[0];
+  const secondaryWeakTopic = weakestTopics[1];
+
+  if (!primaryWeakTopic) {
+    return "Wähle dein schwächstes Thema und beginne eine fokussierte Vertiefung.";
+  }
+
+  if (
+    focusTopic &&
+    normalizeTopicKey(primaryWeakTopic) === normalizeTopicKey(focusTopic)
+  ) {
+    return secondaryWeakTopic
+      ? `Du hast ${focusTopic} bereits vertieft. Wechsle jetzt zu ${secondaryWeakTopic}, damit du alle Themen abdeckst.`
+      : `Du hast ${focusTopic} bereits vertieft. Wechsle jetzt zu einem anderen Thema, damit du breiter lernst.`;
+  }
+
+  return `Starte als Nächstes eine Vertiefung zu ${primaryWeakTopic}.`;
+};
+
+const summarizeAnalysisTopics = (
+  topics: AnalysisTopicInsight[],
+  focusTopic?: string,
+) => {
+  const sortedTopics = sortTopicsByComfort(topics);
+  const overallReadiness = sortedTopics.length
+    ? Math.round(
+        sortedTopics.reduce((total, topic) => total + topic.comfortScore, 0) /
+          sortedTopics.length,
+      )
+    : 0;
+  const weakestTopics = sortedTopics.slice(0, 3).map((topic) => topic.topic);
+  const strongestTopics = sortedTopics
+    .slice(-3)
+    .reverse()
+    .map((topic) => topic.topic);
+
+  return {
+    overallReadiness,
+    strongestTopics,
+    weakestTopics,
+    recommendedNextStep: buildRecommendedNextStep(weakestTopics, focusTopic),
+  };
+};
+
+const mergeTopicInsight = (
+  topics: AnalysisTopicInsight[],
+  updatedTopic: AnalysisTopicInsight,
+) => {
+  const updatedTopicKey = normalizeTopicKey(updatedTopic.topic);
+  let replaced = false;
+
+  const merged = topics.map((topic) => {
+    if (normalizeTopicKey(topic.topic) !== updatedTopicKey) {
+      return topic;
+    }
+
+    replaced = true;
+    return {
+      ...updatedTopic,
+      topic: topic.topic,
+    };
+  });
+
+  if (!replaced) {
+    merged.push(updatedTopic);
+  }
+
+  return sortTopicsByComfort(merged);
 };
 
 const buildFallbackAnalysis = (
@@ -429,47 +858,156 @@ const buildFallbackAnalysis = (
     const average =
       scores.reduce((total, value) => total + value, 0) /
       Math.max(scores.length, 1);
-    const comfortScore = Math.round(Math.max(0, Math.min(100, average)));
-    const rationale =
-      comfortScore >= 75
-        ? "Sehr sichere Wissensabfrage mit praezisen Antworten."
-        : comfortScore >= 50
-          ? "Gemischte Leistung. Teile des Themas sitzen, aber es braucht mehr Wiederholung."
-          : "Hier besteht deutlicher Lernbedarf. Konzentriere dich auf Grundkonzepte und kurze Active-Recall-Runden.";
-
-    return {
-      topic,
-      comfortScore,
-      rationale,
-      recommendation:
-        comfortScore >= 75
-          ? "Mit kurzer Spaced Repetition stabil halten."
-          : comfortScore >= 50
-            ? "Mache eine gezielte Vertiefung mit 5-10 Abruffragen."
-            : "Starte eine gefuehrte Vertiefung und wiederhole zuerst die Grundlagen.",
-    };
+    return buildTopicInsightFromScore(topic, average);
   });
 
-  topics.sort((a, b) => a.comfortScore - b.comfortScore);
-
-  const overallReadiness = topics.length
-    ? Math.round(
-        topics.reduce((total, topic) => total + topic.comfortScore, 0) /
-          topics.length,
-      )
-    : 0;
+  const summary = summarizeAnalysisTopics(topics, focusTopic);
 
   return {
-    overallReadiness,
-    strongestTopics: topics
-      .slice(-3)
-      .reverse()
-      .map((topic) => topic.topic),
-    weakestTopics: topics.slice(0, 3).map((topic) => topic.topic),
-    topics,
-    recommendedNextStep: focusTopic
-      ? `Starte eine Vertiefung zu ${focusTopic} mit gezielten Uebungsfragen.`
-      : "Wähle dein schwächstes Thema und beginne eine fokussierte Vertiefung.",
+    ...summary,
+    topics: sortTopicsByComfort(topics),
+  };
+};
+
+const MAX_FULL_MODE_RECENT_RESPONSES = 90;
+const MAX_FULL_MODE_TOPIC_SUMMARIES = 20;
+const MAX_FULL_MODE_PROMPT_CONTEXT_CHARS = 24_000;
+const MAX_FULL_MODE_FIELD_PREVIEW_CHARS = 220;
+
+type FullModeResponseContextInput = {
+  round: number;
+  topic: string;
+  score: number;
+  isCorrect: boolean;
+  prompt: string;
+  userAnswer: string;
+  explanation: string;
+  timeSpentSeconds: number;
+};
+
+const toSingleLinePreview = (value: string, maxChars: number) => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxChars)}…`;
+};
+
+const buildFullModePromptResponseContext = (
+  responses: FullModeResponseContextInput[],
+) => {
+  const roundsCovered = new Set<number>();
+  const topicAggregates = new Map<
+    string,
+    {
+      topic: string;
+      attempts: number;
+      totalScore: number;
+      correctAnswers: number;
+      totalTimeSeconds: number;
+      latestRound: number;
+      latestScore: number;
+    }
+  >();
+
+  for (const response of responses) {
+    roundsCovered.add(response.round);
+
+    const topicKey = normalizeTopicKey(response.topic);
+    const current = topicAggregates.get(topicKey) ?? {
+      topic: response.topic,
+      attempts: 0,
+      totalScore: 0,
+      correctAnswers: 0,
+      totalTimeSeconds: 0,
+      latestRound: response.round,
+      latestScore: response.score,
+    };
+
+    current.attempts += 1;
+    current.totalScore += response.score;
+    current.correctAnswers += response.isCorrect ? 1 : 0;
+    current.totalTimeSeconds += response.timeSpentSeconds;
+
+    if (response.round >= current.latestRound) {
+      current.topic = response.topic;
+      current.latestRound = response.round;
+      current.latestScore = response.score;
+    }
+
+    topicAggregates.set(topicKey, current);
+  }
+
+  const topicSummaries = [...topicAggregates.values()]
+    .map((topic) => {
+      const attempts = Math.max(1, topic.attempts);
+      return {
+        topic: topic.topic,
+        attempts: topic.attempts,
+        averageScore: Math.round(topic.totalScore / attempts),
+        correctnessRate: Math.round((topic.correctAnswers / attempts) * 100),
+        averageTimeSeconds: Math.round(topic.totalTimeSeconds / attempts),
+        latestRound: topic.latestRound,
+        latestScore: Math.round(topic.latestScore),
+      };
+    })
+    .sort((a, b) => {
+      if (a.averageScore !== b.averageScore) {
+        return a.averageScore - b.averageScore;
+      }
+      return b.attempts - a.attempts;
+    })
+    .slice(0, MAX_FULL_MODE_TOPIC_SUMMARIES);
+
+  const recentResponses = responses.slice(-MAX_FULL_MODE_RECENT_RESPONSES);
+  const responsePayload = recentResponses.map((response) => ({
+    round: response.round,
+    topic: response.topic,
+    score: response.score,
+    isCorrect: response.isCorrect,
+    timeSpentSeconds: response.timeSpentSeconds,
+    prompt: toSingleLinePreview(
+      response.prompt,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+    userAnswer: toSingleLinePreview(
+      response.userAnswer,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+    explanation: toSingleLinePreview(
+      response.explanation,
+      MAX_FULL_MODE_FIELD_PREVIEW_CHARS,
+    ),
+  }));
+
+  const serializedContext = compactText(
+    JSON.stringify(
+      {
+        overview: {
+          totalResponses: responses.length,
+          includedRecentResponses: responsePayload.length,
+          omittedResponses: Math.max(
+            0,
+            responses.length - responsePayload.length,
+          ),
+          roundsCovered: roundsCovered.size,
+          totalTopics: topicAggregates.size,
+        },
+        topicSummaries,
+        recentResponses: responsePayload,
+      },
+      null,
+      2,
+    ),
+    MAX_FULL_MODE_PROMPT_CONTEXT_CHARS,
+  );
+
+  return {
+    serializedContext,
+    includedRecentResponses: responsePayload.length,
+    omittedResponses: Math.max(0, responses.length - responsePayload.length),
+    topicSummaryCount: topicSummaries.length,
   };
 };
 
@@ -566,6 +1104,7 @@ const analyticsMetadataAllowlist = new Set([
   "fallbackStrategy",
   "finishReason",
   "currentFocusTopic",
+  "analysisMode",
 ]);
 
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
@@ -1363,14 +1902,16 @@ export const extractDocumentContent = action({
       extractionStatus: "processing",
     });
 
-    const { document } = await ctx.runQuery(
-      internal.study.getDocumentExtractionContext,
-      {
-        grantToken: args.grantToken,
-        sessionId: args.sessionId,
-        documentId: args.documentId,
-      },
-    );
+    const extractionContext: {
+      document: SessionDocumentInput;
+      accessKey?: string;
+    } = await ctx.runQuery(internal.study.getDocumentExtractionContext, {
+      grantToken: args.grantToken,
+      sessionId: args.sessionId,
+      documentId: args.documentId,
+    });
+    const document = extractionContext.document;
+    const accessKey = extractionContext.accessKey;
 
     trace.log("info", "context_loaded", {
       fileName: document.fileName,
@@ -1382,8 +1923,8 @@ export const extractDocumentContent = action({
     });
 
     // Hybrid approach:
-    // - Native Vertex file path for PDF/Slides/Word/Image formats.
-    // - officeparser/text extraction fallback for all other formats.
+    // - Native Vertex file path for PDF/image formats supported by Gemini.
+    // - officeparser/text extraction fallback for Office/text formats.
     if (isVertexNativeCandidate(document.fileType, document.fileName)) {
       trace.log("info", "skip_text_extraction_vertex_native", {
         fileName: document.fileName,
@@ -1402,16 +1943,20 @@ export const extractDocumentContent = action({
     }
 
     try {
-      const fileUrl = await ctx.storage.getUrl(document.storageId);
+      const { fileUrl, source, status, grantErrorDetail } =
+        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
       if (!fileUrl) {
         throw new Error(
           "Auf das hochgeladene Dokument kann nicht zugegriffen werden.",
         );
       }
 
-      trace.log("info", "storage_url_loaded", {
+      trace.log("info", "document_url_loaded", {
         fileName: document.fileName,
         hasUrl: true,
+        source,
+        status,
+        grantErrorDetail,
       });
 
       const response = await fetch(fileUrl);
@@ -1524,13 +2069,16 @@ Anforderungen:
         instructionLength: quizInstruction.length,
       });
 
-      const quizContext: { documents: SessionDocumentInput[] } =
-        await ctx.runQuery(internal.study.getQuizGenerationContext, {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        });
+      const quizContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
 
       const documents = quizContext.documents;
+      const accessKey = quizContext.accessKey;
       totalDocuments = documents.length;
 
       const readyDocuments = documents.filter(
@@ -1610,6 +2158,7 @@ Anforderungen:
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
+          accessKey,
           trace,
         );
         fileParts = modelInput.fileParts;
@@ -2154,6 +2703,8 @@ export const analyzePerformance = action({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
+    mode: v.optional(v.union(v.literal("full"), v.literal("focus"))),
+    focusTopic: v.optional(v.string()),
     clientRequestId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -2168,26 +2719,34 @@ export const analyzePerformance = action({
     let finishReason: string | undefined;
     let responseCount = 0;
     let usedFallback = false;
+    let analysisMode: AnalysisMode = args.mode ?? "full";
+    let resolvedFocusTopic = toTrimmedString(args.focusTopic);
     let documentIds: string[] = [];
     let readyDocumentIds: string[] = [];
     let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
     let analyticsError: unknown;
 
     try {
-      trace.log("info", "start");
+      trace.log("info", "start", {
+        requestedMode: args.mode ?? "full",
+        requestedFocusTopic: args.focusTopic ?? null,
+      });
 
-      const { session, responses, documents } = await ctx.runQuery(
-        internal.study.getAnalysisContext,
-        {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        },
-      );
+      const result = await ctx.runQuery(internal.study.getAnalysisContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+        mode: analysisMode,
+        focusTopic: resolvedFocusTopic || undefined,
+      });
+
+      let { session, responses } = result;
+      const { documents } = result;
 
       trace.log("info", "context_loaded", {
         responseCount: responses.length,
         currentFocusTopic: session.currentFocusTopic ?? null,
         round: session.round,
+        requestedMode: args.mode ?? "full",
         totalDocuments: documents.length,
         readyDocuments: documents.filter(
           (document) => document.extractionStatus === "ready",
@@ -2202,6 +2761,50 @@ export const analyzePerformance = action({
         documentIds,
         readyDocumentIds,
       );
+      if (!resolvedFocusTopic) {
+        resolvedFocusTopic = toTrimmedString(session.currentFocusTopic);
+      }
+
+      let focusTopicInsight =
+        analysisMode === "focus" && session.analysis && resolvedFocusTopic
+          ? (session.analysis.topics.find((topic) =>
+              topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
+            ) ?? null)
+          : null;
+
+      const reloadContextForFullMode = async (reason: string) => {
+        const fullContext = await ctx.runQuery(
+          internal.study.getAnalysisContext,
+          {
+            grantToken: args.grantToken,
+            sessionId: args.sessionId,
+            mode: "full",
+          },
+        );
+
+        session = fullContext.session;
+        responses = fullContext.responses;
+        responseCount = responses.length;
+
+        trace.log("info", "context_reloaded_for_full_mode", {
+          responseCount: responses.length,
+          round: session.round,
+          reason,
+        });
+      };
+
+      if (analysisMode === "focus") {
+        if (!session.analysis || !resolvedFocusTopic || !focusTopicInsight) {
+          trace.log("warn", "focus_mode_downgraded_to_full", {
+            hasExistingAnalysis: Boolean(session.analysis),
+            focusTopic: resolvedFocusTopic || null,
+            hasFocusTopicInsight: Boolean(focusTopicInsight),
+          });
+          analysisMode = "full";
+          await reloadContextForFullMode("focus_mode_missing_prerequisites");
+          focusTopicInsight = null;
+        }
+      }
 
       if (responses.length === 0) {
         trace.log("warn", "no_responses_available");
@@ -2211,90 +2814,344 @@ export const analyzePerformance = action({
       }
 
       const model = createVertexModel();
-      const fallback = buildFallbackAnalysis(
+      let analysis = buildFallbackAnalysis(
         responses,
-        session.currentFocusTopic,
+        analysisMode === "focus" ? resolvedFocusTopic || undefined : undefined,
       );
 
-      let analysis = fallback;
+      if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
+        const topicResponses = responses.filter((response) =>
+          topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
+        );
 
-      try {
-        trace.log("info", "llm_request", {
-          modelId: "gemini-3-flash-preview",
-          temperature: 0.2,
-          maxOutputTokens: 1_500,
-          thinkingBudget: 0,
-        });
+        if (topicResponses.length === 0) {
+          trace.log("warn", "focus_mode_missing_topic_responses", {
+            focusTopic: resolvedFocusTopic,
+          });
+          analysisMode = "full";
+          await reloadContextForFullMode("focus_mode_missing_topic_responses");
+          analysis = buildFallbackAnalysis(responses);
+        } else {
+          const fallbackAverage =
+            topicResponses.reduce(
+              (total, response) => total + response.score,
+              0,
+            ) / topicResponses.length;
+          const fallbackTopicInsight = buildTopicInsightFromScore(
+            resolvedFocusTopic,
+            fallbackAverage,
+          );
+          const fallbackMergedTopics = mergeTopicInsight(
+            session.analysis.topics,
+            fallbackTopicInsight,
+          );
+          const fallbackSummary = summarizeAnalysisTopics(
+            fallbackMergedTopics,
+            resolvedFocusTopic,
+          );
+          const focusFallbackAnalysis = {
+            ...fallbackSummary,
+            topics: fallbackMergedTopics,
+          };
 
-        llmAttempts += 1;
+          analysis = focusFallbackAnalysis;
 
-        const result = await generateText({
-          model: model("gemini-3-flash-preview"),
-          temperature: 0.2,
-          maxOutputTokens: 1_500,
-          providerOptions: vertexProviderOptions,
-          output: Output.object({
-            schema: analysisSchema,
-          }),
-          experimental_telemetry: buildAiSdkTelemetry(
-            "analyzePerformance",
-            args.sessionId,
-            trace.traceId,
-            {
-              appScope: "analyzePerformance",
-              round: session.round,
-              responseCount: responses.length,
-              currentFocusTopic: session.currentFocusTopic ?? "",
-            },
-          ),
-          system:
-            "Du bist ein Lerncoach. Analysiere Wissensluecken aus den Antworten und gib konkrete Empfehlungen auf Deutsch.",
-          prompt: `Analysiere diese Uebungssitzung und erstelle einen themenbasierten Lernstandsbericht.
+          try {
+            const focusSystemPrompt =
+              'Du bist ein Lerncoach. Bewerte in dieser Auswertung ausschließlich ein einzelnes Thema auf Deutsch. Gib immer ein Feld scoreUnit mit entweder "percent" oder "fraction" zurück. Bevorzuge "percent". Wenn du "percent" verwendest, müssen alle Scores ganze Zahlen von 0 bis 100 sein.';
+            const focusBasePrompt = `Analysiere ausschließlich das Thema "${resolvedFocusTopic}" anhand der Antworten.
+
+Vorherige Themenbewertung (falls vorhanden):
+${JSON.stringify(focusTopicInsight, null, 2)}
+
+Antworten nur zu diesem Thema:
+${JSON.stringify(topicResponses, null, 2)}
+
+Erstelle eine aktualisierte Bewertung für genau dieses Thema.
+Pflichtregeln:
+- ${analysisScoreFormatRules.join("\n- ")}`;
+
+            let generated: FocusTopicAnalysisResult | null = null;
+            let invalidOutput: unknown;
+            let retrySourceError: unknown = null;
+
+            for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+              trace.log("info", "llm_request", {
+                modelId: "gemini-3-flash-preview",
+                mode: "focus",
+                stage: attemptIndex === 0 ? "primary" : "format_retry",
+                focusTopic: resolvedFocusTopic,
+                responseCount: topicResponses.length,
+                temperature: 0.2,
+                maxOutputTokens: 600,
+                thinkingBudget: 0,
+              });
+
+              llmAttempts += 1;
+
+              try {
+                const prompt =
+                  attemptIndex === 0
+                    ? focusBasePrompt
+                    : buildAnalysisFormatCorrectionPrompt(
+                        focusBasePrompt,
+                        retrySourceError,
+                        invalidOutput,
+                      );
+
+                const result = await generateText({
+                  model: model("gemini-3-flash-preview"),
+                  temperature: 0.2,
+                  maxOutputTokens: 600,
+                  providerOptions: vertexProviderOptions,
+                  output: Output.object({
+                    schema: focusTopicAnalysisOutputSchema,
+                  }),
+                  experimental_telemetry: buildAiSdkTelemetry(
+                    "analyzePerformance",
+                    args.sessionId,
+                    trace.traceId,
+                    {
+                      appScope: "analyzePerformance",
+                      analysisMode,
+                      round: session.round,
+                      responseCount: topicResponses.length,
+                      currentFocusTopic: resolvedFocusTopic,
+                      topic: resolvedFocusTopic,
+                      stage:
+                        attemptIndex === 0 ? "focus_primary" : "focus_retry",
+                    },
+                  ),
+                  system: focusSystemPrompt,
+                  prompt,
+                });
+
+                const resultLog = extractGenerationResultForLog(result);
+                trace.addUsage(resultLog.usage);
+                finishReason = resultLog.details.finishReason;
+                mergeVertexUsage(
+                  vertexUsageTotals,
+                  resultLog.details.vertexUsage,
+                );
+                trace.log("info", "llm_response", {
+                  ...resultLog.details,
+                  mode: "focus",
+                  stage: attemptIndex === 0 ? "primary" : "format_retry",
+                  outputPreview: {
+                    focusTopic: resolvedFocusTopic,
+                    scoreUnit: result.output.scoreUnit,
+                    comfortScore: result.output.comfortScore,
+                  },
+                });
+
+                invalidOutput = result.output;
+                generated = normalizeFocusTopicScore(result.output);
+                break;
+              } catch (error) {
+                if (
+                  attemptIndex === 0 &&
+                  (isNoOutputGeneratedError(error) ||
+                    isInvalidAnalysisScoreFormatError(error))
+                ) {
+                  retrySourceError = error;
+                  trace.addUsage(extractUsageFromError(error));
+                  trace.log("warn", "llm_response_invalid_retrying", {
+                    error: extractErrorForLog(error),
+                    mode: "focus",
+                    stage: "primary",
+                    invalidOutput: isInvalidAnalysisScoreFormatError(error)
+                      ? error.details
+                      : invalidOutput,
+                  });
+                  continue;
+                }
+
+                throw error;
+              }
+            }
+
+            if (!generated) {
+              throw (
+                retrySourceError ??
+                new Error("Die Fokus-Analyse blieb ungültig.")
+              );
+            }
+
+            const mergedTopics = mergeTopicInsight(session.analysis.topics, {
+              topic: resolvedFocusTopic,
+              comfortScore: generated.comfortScore,
+              rationale: generated.rationale,
+              recommendation: generated.recommendation,
+            });
+            const summary = summarizeAnalysisTopics(
+              mergedTopics,
+              resolvedFocusTopic,
+            );
+
+            analysis = {
+              ...summary,
+              topics: mergedTopics,
+            };
+          } catch (error) {
+            trace.addUsage(extractUsageFromError(error));
+            usedFallback = true;
+            trace.log("warn", "llm_failed_using_fallback", {
+              error: extractErrorForLog(error),
+              mode: "focus",
+              fallbackOverallReadiness: focusFallbackAnalysis.overallReadiness,
+              fallbackTopicCount: focusFallbackAnalysis.topics.length,
+            });
+            // Keep deterministic fallback analysis when the LLM call fails.
+          }
+        }
+      }
+
+      if (analysisMode === "full") {
+        const fullModeFallback = buildFallbackAnalysis(responses);
+        analysis = fullModeFallback;
+
+        try {
+          const coveredTopics = [
+            ...new Set(responses.map((response) => response.topic)),
+          ];
+          const fullModePromptContext =
+            buildFullModePromptResponseContext(responses);
+          const fullSystemPrompt =
+            'Du bist ein Lerncoach. Analysiere Wissenslücken aus den Antworten und gib konkrete Empfehlungen auf Deutsch. Gib immer ein Feld scoreUnit mit entweder "percent" oder "fraction" zurück. Bevorzuge "percent". Wenn du "percent" verwendest, müssen overallReadiness und alle comfortScore-Werte ganze Zahlen von 0 bis 100 sein.';
+          const fullBasePrompt = `Analysiere diese Übungssitzung und erstelle einen themenbasierten Lernstandsbericht.
+
+Die Antworten enthalten mehrere Runden. Beziehe den gesamten Verlauf ein.
+Bewerte alle behandelten Themen ausgewogen und vermeide eine reine Fokussierung auf das aktuelle Fokus-Thema.
 
 Fokus-Thema der Sitzung: ${session.currentFocusTopic ?? "kein spezielles Fokus-Thema"}
-Antworten:
-${JSON.stringify(responses, null, 2)}
+Alle behandelten Themen: ${coveredTopics.join(", ") || "keine"}
+Antwortkontext (kompakt, neueste Antworten + Themenstatistik):
+${fullModePromptContext.serializedContext}
 
-Sei streng, aber konstruktiv.`,
-        });
+Sei streng, aber konstruktiv.
+Pflichtregeln:
+- ${analysisScoreFormatRules.join("\n- ")}`;
 
-        const resultLog = extractGenerationResultForLog(result);
-        trace.addUsage(resultLog.usage);
-        finishReason = resultLog.details.finishReason;
-        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
-        trace.log("info", "llm_response", {
-          ...resultLog.details,
-          outputPreview: {
-            overallReadiness: result.output.overallReadiness,
-            strongestTopics: result.output.strongestTopics,
-            weakestTopics: result.output.weakestTopics,
-            topicCount: result.output.topics.length,
-          },
-        });
+          let generated: AnalysisResult | null = null;
+          let invalidOutput: unknown;
+          let retrySourceError: unknown = null;
 
-        const generated: AnalysisResult = result.output;
+          for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+            trace.log("info", "llm_request", {
+              modelId: "gemini-3-flash-preview",
+              mode: "full",
+              stage: attemptIndex === 0 ? "primary" : "format_retry",
+              responseCount: responses.length,
+              promptResponseCount:
+                fullModePromptContext.includedRecentResponses,
+              omittedResponseCount: fullModePromptContext.omittedResponses,
+              topicSummaryCount: fullModePromptContext.topicSummaryCount,
+              temperature: 0.2,
+              maxOutputTokens: 1_500,
+              thinkingBudget: 0,
+            });
 
-        analysis = {
-          overallReadiness: Math.round(generated.overallReadiness),
-          strongestTopics: generated.strongestTopics,
-          weakestTopics: generated.weakestTopics,
-          topics: generated.topics.map((topic) => ({
-            topic: topic.topic,
-            comfortScore: Math.round(topic.comfortScore),
-            rationale: topic.rationale,
-            recommendation: topic.recommendation,
-          })),
-          recommendedNextStep: generated.recommendedNextStep,
-        };
-      } catch (error) {
-        trace.addUsage(extractUsageFromError(error));
-        usedFallback = true;
-        trace.log("warn", "llm_failed_using_fallback", {
-          error: extractErrorForLog(error),
-          fallbackOverallReadiness: fallback.overallReadiness,
-          fallbackTopicCount: fallback.topics.length,
-        });
-        // Keep deterministic fallback analysis when the LLM call fails.
+            llmAttempts += 1;
+
+            try {
+              const prompt =
+                attemptIndex === 0
+                  ? fullBasePrompt
+                  : buildAnalysisFormatCorrectionPrompt(
+                      fullBasePrompt,
+                      retrySourceError,
+                      invalidOutput,
+                    );
+
+              const result = await generateText({
+                model: model("gemini-3-flash-preview"),
+                temperature: 0.2,
+                maxOutputTokens: 1_500,
+                providerOptions: vertexProviderOptions,
+                output: Output.object({
+                  schema: analysisOutputSchema,
+                }),
+                experimental_telemetry: buildAiSdkTelemetry(
+                  "analyzePerformance",
+                  args.sessionId,
+                  trace.traceId,
+                  {
+                    appScope: "analyzePerformance",
+                    analysisMode,
+                    round: session.round,
+                    responseCount: responses.length,
+                    currentFocusTopic: session.currentFocusTopic ?? "",
+                    stage: attemptIndex === 0 ? "full_primary" : "full_retry",
+                  },
+                ),
+                system: fullSystemPrompt,
+                prompt,
+              });
+
+              const resultLog = extractGenerationResultForLog(result);
+              trace.addUsage(resultLog.usage);
+              finishReason = resultLog.details.finishReason;
+              mergeVertexUsage(
+                vertexUsageTotals,
+                resultLog.details.vertexUsage,
+              );
+              trace.log("info", "llm_response", {
+                ...resultLog.details,
+                mode: "full",
+                stage: attemptIndex === 0 ? "primary" : "format_retry",
+                outputPreview: {
+                  scoreUnit: result.output.scoreUnit,
+                  overallReadiness: result.output.overallReadiness,
+                  strongestTopics: result.output.strongestTopics,
+                  weakestTopics: result.output.weakestTopics,
+                  topicCount: result.output.topics.length,
+                },
+              });
+
+              invalidOutput = result.output;
+              generated = normalizeAnalysisScores(result.output);
+              break;
+            } catch (error) {
+              if (
+                attemptIndex === 0 &&
+                (isNoOutputGeneratedError(error) ||
+                  isInvalidAnalysisScoreFormatError(error))
+              ) {
+                retrySourceError = error;
+                trace.addUsage(extractUsageFromError(error));
+                trace.log("warn", "llm_response_invalid_retrying", {
+                  error: extractErrorForLog(error),
+                  mode: "full",
+                  stage: "primary",
+                  invalidOutput: isInvalidAnalysisScoreFormatError(error)
+                    ? error.details
+                    : invalidOutput,
+                });
+                continue;
+              }
+
+              throw error;
+            }
+          }
+
+          if (!generated) {
+            throw (
+              retrySourceError ?? new Error("Die Gesamtanalyse blieb ungültig.")
+            );
+          }
+
+          analysis = generated;
+        } catch (error) {
+          trace.addUsage(extractUsageFromError(error));
+          usedFallback = true;
+          trace.log("warn", "llm_failed_using_fallback", {
+            error: extractErrorForLog(error),
+            mode: "full",
+            fallbackOverallReadiness: fullModeFallback.overallReadiness,
+            fallbackTopicCount: fullModeFallback.topics.length,
+          });
+          // Keep deterministic fallback analysis when the LLM call fails.
+        }
       }
 
       await ctx.runMutation(internal.study.storeSessionAnalysis, {
@@ -2303,13 +3160,12 @@ Sei streng, aber konstruktiv.`,
       });
 
       trace.log("info", "completed", {
-        usedFallback: analysis === fallback,
+        usedFallback,
+        analysisMode,
         overallReadiness: analysis.overallReadiness,
         topicCount: analysis.topics.length,
         usageTotals: trace.getUsageTotals(),
       });
-
-      usedFallback = analysis === fallback;
 
       return analysis;
     } catch (error) {
@@ -2336,6 +3192,8 @@ Sei streng, aber konstruktiv.`,
           clientRequestId: args.clientRequestId,
           responseCount,
           usedFallback,
+          analysisMode,
+          topic: resolvedFocusTopic || undefined,
           ...documentCorrelationMetadata,
         },
       });
@@ -2379,13 +3237,16 @@ export const generateTopicDeepDive = action({
         topic: args.topic,
       });
 
-      const deepDiveContext: { documents: SessionDocumentInput[] } =
-        await ctx.runQuery(internal.study.getQuizGenerationContext, {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-        });
+      const deepDiveContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
 
       const documents = deepDiveContext.documents;
+      const accessKey = deepDiveContext.accessKey;
       totalDocuments = documents.length;
 
       const readyDocuments = documents.filter(
@@ -2460,6 +3321,7 @@ export const generateTopicDeepDive = action({
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
           })),
+          accessKey,
           trace,
         );
 

@@ -9,6 +9,7 @@ import {
 import { readRequiredEnv } from "./env";
 import { v } from "convex/values";
 
+// Access token
 const getConfiguredAdminSecret = () => {
   return readRequiredEnv(
     "ACCESS_CODE_ADMIN_SECRET",
@@ -216,5 +217,41 @@ export const deleteData = mutation({
       deletedStorageFiles,
       revokedGrant: Boolean(target.grant),
     };
+  },
+});
+
+export const verifySecret = query({
+  args: {
+    adminSecret: v.string(),
+  },
+  handler: async (_, args) => {
+    try {
+      assertAdminSecret(args.adminSecret);
+      return { valid: true };
+    } catch {
+      return { valid: false };
+    }
+  },
+});
+
+export const generateMagicLink = mutation({
+  args: {
+    adminSecret: v.string(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    assertAdminSecret(args.adminSecret);
+
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const now = Date.now();
+
+    await ctx.db.insert("accessCodes", {
+      code,
+      normalizedCode: "SMARTNOTES-" + code,
+      note: args.note,
+      createdAt: now,
+    });
+
+    return { code };
   },
 });

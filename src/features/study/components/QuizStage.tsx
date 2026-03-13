@@ -49,8 +49,8 @@ export function QuizStage({
   const useCompactAnalysisCopy = analysisCtaVariant === "kompakt";
 
   return (
-    <section className="flex h-full flex-col items-center justify-center">
-      <div className="w-full max-w-3xl text-center">
+    <section className="flex h-full min-h-full flex-col items-center py-4">
+      <div className="my-auto w-full max-w-3xl text-center">
         {!currentQuestion && stats.totalQuestions > 0 && !feedback ? (
           <div className="border-cream-border bg-cream-light animate-in zoom-in-95 rounded-[2.5rem] border p-8 text-center duration-500 md:p-16">
             <h2 className="mb-4 text-3xl font-black tracking-tighter md:text-5xl">
@@ -153,7 +153,7 @@ export function QuizStage({
                 <button
                   type="button"
                   onClick={onContinueAfterFeedback}
-                  className="bg-accent shadow-accent/30 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
+                  className="bg-accent shadow-accent/30 mb-5 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
                 >
                   Nächste Frage
                   <ArrowRight size={20} className="md:h-[22px] md:w-[22px]" />
@@ -231,7 +231,7 @@ export function QuizStage({
                   type="button"
                   onClick={() => void onAnalyzeSession()}
                   disabled={isAnalyzing}
-                  className="hover:text-cream mt-8 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
+                  className="hover:text-cream mt-10 mb-7 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
                 >
                   {isAnalyzing ? (
                     <Loader2 size={14} className="animate-spin" />

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
+import { Routes, Route } from "react-router-dom";
 import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
   AuthScreen,
   LoadingScreen,
   NavigationShell,
+  PrivacyScreen,
   QuizStage,
   UploadStage,
 } from "./features/study/components";
@@ -17,15 +19,24 @@ import {
   useQuizFlow,
   useUploadFlow,
 } from "./features/study/hooks";
+import Page from "./admin/page.tsx";
 import {
   trackConsentUpdated,
   trackStudyStageViewed,
   trackThemeChanged,
   type AnalyticsStage,
 } from "./features/study/analytics";
-import type { ThemePreference } from "./features/study/types";
+import type { StudyStage, ThemePreference } from "./features/study/types";
 
-function App() {
+const analyticsStageByStudyStage: Record<StudyStage, AnalyticsStage> = {
+  upload: "upload",
+  mode_selection: "quiz",
+  quiz: "quiz",
+  analysis: "analysis",
+  summary: "analysis",
+};
+
+function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
     useTheme();
   const {
@@ -39,9 +50,12 @@ function App() {
     isCreatingSession,
     isSigningOut,
     isConsumingMagicLink,
+    hasAcceptedPrivacy,
+    isAcceptingPrivacy,
     setAccessCodeInput,
     redeemCode,
     startFreshSession,
+    acceptPrivacy,
     signOut,
   } = useAuthSession();
 
@@ -100,6 +114,9 @@ function App() {
     documents,
     answeredQuestions: stats?.answeredQuestions,
     totalQuestions: stats?.totalQuestions,
+    quizQuestions: session?.quizQuestions ?? [],
+    currentFocusTopic: session?.currentFocusTopic ?? null,
+    hasExistingAnalysis: Boolean(session?.analysis),
   });
   const quizFlow = useQuizFlow({
     grantToken,
@@ -128,7 +145,7 @@ function App() {
       return "loading";
     }
 
-    return session.stage;
+    return analyticsStageByStudyStage[session.stage];
   }, [grantStatus, grantToken, session, sessionId, stats]);
 
   const handleThemePreferenceChange = useCallback(
@@ -213,6 +230,18 @@ function App() {
     );
   }
 
+  if (!hasAcceptedPrivacy) {
+    return (
+      <PrivacyScreen
+        onAcceptPrivacy={acceptPrivacy}
+        isAcceptingPrivacy={isAcceptingPrivacy}
+        logoImage={logoImage}
+        preference={themePreference}
+        setPreference={setThemePreference}
+      />
+    );
+  }
+
   if (!grantStatus || !grantStatus.valid || !sessionId || !session || !stats) {
     return <LoadingScreen />;
   }
@@ -249,7 +278,7 @@ function App() {
 
       {session.stage === "quiz" && (
         <QuizStage
-          currentQuestion={currentQuestion}
+          currentQuestion={quizFlow.displayQuestion}
           stats={stats}
           feedback={quizFlow.feedback}
           answerInput={quizFlow.answerInput}
@@ -276,6 +305,15 @@ function App() {
         />
       )}
     </NavigationShell>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/admin" element={<Page />} />
+      <Route path="*" element={<StudyApp />} />
+    </Routes>
   );
 }
 

@@ -41,6 +41,16 @@ export function QuizStage({
   isGeneratingQuiz,
   onContinueAfterFeedback,
 }: QuizStageProps) {
+  const feedbackTone = !feedback
+    ? null
+    : feedback.isCorrect
+      ? "correct"
+      : feedback.answeredWithDontKnow
+        ? "dontKnow"
+        : feedback.score > 0
+          ? "partial"
+          : "incorrect";
+
   return (
     <section className="flex h-full min-h-full flex-col items-center py-4">
       <div className="my-auto w-full max-w-3xl text-center">
@@ -87,16 +97,17 @@ export function QuizStage({
             <div className="mb-8 flex flex-col items-center gap-4 md:mb-12">
               <div
                 className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg md:h-16 md:w-16 ${
-                  feedback.isCorrect
+                  feedbackTone === "correct"
                     ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400"
-                    : feedback.score > 0
+                    : feedbackTone === "partial" || feedbackTone === "dontKnow"
                       ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
                       : "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
                 }`}
               >
-                {feedback.isCorrect ? (
+                {feedbackTone === "correct" ? (
                   <CheckCircle2 size={28} className="md:h-8 md:w-8" />
-                ) : feedback.score > 0 ? (
+                ) : feedbackTone === "partial" ||
+                  feedbackTone === "dontKnow" ? (
                   <Lightbulb size={28} className="md:h-8 md:w-8" />
                 ) : (
                   <XCircle size={28} className="md:h-8 md:w-8" />
@@ -104,18 +115,20 @@ export function QuizStage({
               </div>
               <p
                 className={`text-[10px] font-black tracking-[0.3em] uppercase md:text-sm ${
-                  feedback.isCorrect
+                  feedbackTone === "correct"
                     ? "text-emerald-600 dark:text-emerald-400"
-                    : feedback.score > 0
+                    : feedbackTone === "partial" || feedbackTone === "dontKnow"
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-red-600 dark:text-red-400"
                 }`}
               >
-                {feedback.isCorrect
+                {feedbackTone === "correct"
                   ? "Richtig"
-                  : feedback.score > 0
-                    ? "Teilweise"
-                    : "Falsch"}
+                  : feedbackTone === "dontKnow"
+                    ? "Noch nicht gewusst"
+                    : feedbackTone === "partial"
+                      ? "Teilweise"
+                      : "Falsch"}
               </p>
             </div>
 
@@ -142,7 +155,7 @@ export function QuizStage({
                 <button
                   type="button"
                   onClick={onContinueAfterFeedback}
-                  className="bg-accent mb-5 shadow-accent/30 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
+                  className="bg-accent shadow-accent/30 mb-5 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition hover:scale-105 active:scale-95 md:gap-3 md:px-12 md:py-5 md:text-lg"
                 >
                   Nächste Frage
                   <ArrowRight size={20} className="md:h-[22px] md:w-[22px]" />
@@ -219,7 +232,7 @@ export function QuizStage({
                   type="button"
                   onClick={() => void onAnalyzeSession()}
                   disabled={isAnalyzing}
-                  className="hover:text-cream mb-7 mt-10 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
+                  className="hover:text-cream mt-10 mb-7 inline-flex w-full max-w-xs items-center justify-center gap-2 rounded-full bg-red-50 px-6 py-3.5 text-[10px] font-bold tracking-[0.12em] text-red-600 uppercase shadow-lg shadow-red-500/10 transition hover:bg-red-500 disabled:opacity-60 md:px-8 md:py-4 md:text-xs dark:bg-red-800/30 dark:text-red-300 dark:hover:bg-red-500"
                 >
                   {isAnalyzing ? (
                     <Loader2 size={14} className="animate-spin" />

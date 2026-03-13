@@ -176,6 +176,52 @@ type QuestionForEvaluation = {
 
 type QuizGenerationResult = z.infer<typeof quizGenerationSchema>;
 type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
+
+function normalizeDontKnowExplanation(
+  explanation: string,
+  fallbackExplanation: string,
+): string {
+  const trimmedExplanation = explanation.trim();
+  const trimmedFallbackExplanation = fallbackExplanation.trim();
+  if (!trimmedExplanation) {
+    return trimmedFallbackExplanation || "Die ideale Antwort enthält die relevanten Punkte.";
+  }
+
+  const sanitizedExplanation = trimmedExplanation
+    .replace(/^Du wusstest die Antwort in diesem Moment noch nicht\.?\s*/i, "")
+    .replace(
+      /^Die Antwort wurde mit "Ich weiß es gerade nicht" abgegeben\.?\s*/i,
+      "",
+    )
+    .replace(
+      /^Die Antwort wurde mit "Ich weiss es gerade nicht" abgegeben\.?\s*/i,
+      "",
+    )
+    .replace(/^Die Antwort fehlt leider komplett\.?\s*/i, "")
+    .replace(/^Die Antwort fehlt komplett\.?\s*/i, "")
+    .replace(/^Es wurde keine Antwort gegeben\.?\s*/i, "")
+    .replace(/^Du hast die Frage nicht beantwortet\.?\s*/i, "")
+    .replace(/^Die Frage wurde nicht beantwortet\.?\s*/i, "")
+    .replace(/^Die Antwort enthält keine fachlichen Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Die Antwort enthält keine inhaltlichen Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Die Antwort nennt keine relevanten Punkte[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Es fehlen fachliche Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Es fehlen die relevanten Punkte[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Das ist völlig in Ordnung,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Das ist in Ordnung,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Das ist gar kein Problem,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Kein Problem,?[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Jeder hat mal[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Schau dir als Nächstes[^.!?]*[.!?]\s*/i, "")
+    .replace(/^Schau dir am besten[^.!?]*[.!?]\s*/i, "")
+    .trim();
+
+  if (!sanitizedExplanation) {
+    return trimmedFallbackExplanation || "Die ideale Antwort enthält die relevanten Punkte.";
+  }
+
+  return sanitizedExplanation;
+}
 type AnalysisOutputResult = z.infer<typeof analysisOutputSchema>;
 type AnalysisResult = z.infer<typeof analysisSchema>;
 type AnalysisTopicInsight = z.infer<typeof analysisTopicSchema>;
@@ -2452,6 +2498,7 @@ export const evaluateAnswer = action({
     sessionId: v.id("studySessions"),
     questionId: v.string(),
     userAnswer: v.string(),
+    answeredWithDontKnow: v.boolean(),
     timeSpentSeconds: v.number(),
     clientRequestId: v.optional(v.string()),
   },
@@ -2501,6 +2548,7 @@ export const evaluateAnswer = action({
           temperature: 0.1,
           maxOutputTokens: 300,
           thinkingBudget: 0,
+          answeredWithDontKnow: args.answeredWithDontKnow,
         });
 
         llmAttempts += 1;
@@ -2525,12 +2573,19 @@ export const evaluateAnswer = action({
             },
           ),
           system:
-            "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder fehlt.",
+            "Du bist ein sachlicher Prüfungs-Korrektor. Antworte auf Deutsch. Formuliere nüchtern und direkt. Verwende keine schmeichelnden, beschwichtigenden oder motivierenden Sätze. Erkläre kurz, was fachlich richtig ist oder was inhaltlich fehlt.",
           prompt: `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
 Hinweis bei Bedarf: ${question.explanationHint}
+Vermeide jede Form von Lob, Trost, Beschwichtigung oder persönlicher Zusprache.
+Antwortmodus: ${
+            args.answeredWithDontKnow
+              ? 'Die lernende Person hat bewusst "Ich weiß es gerade nicht" gewählt.'
+              : "Die lernende Person hat eine eigene Antwort eingereicht."
+          }
+${args.answeredWithDontKnow ? "Wenn \"Ich weiß es gerade nicht\" gewählt wurde, erkläre direkt den fachlichen Kern in 1 bis 2 Sätzen. Erwähne nicht, dass keine Antwort vorlag oder was in der Antwort fehlt." : ""}
 
 Antwort der lernenden Person:
 ${args.userAnswer}
@@ -2574,6 +2629,12 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
       const roundedScore = Math.round(
         Math.max(0, Math.min(100, generated.score)),
       );
+      const explanation = args.answeredWithDontKnow
+        ? normalizeDontKnowExplanation(
+            generated.explanation,
+            question.explanationHint,
+          )
+        : generated.explanation;
 
       await ctx.runMutation(internal.study.storeQuizResponse, {
         sessionId: args.sessionId,
@@ -2584,7 +2645,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
         userAnswer: args.userAnswer,
         isCorrect: generated.isCorrect,
         score: roundedScore,
-        explanation: generated.explanation,
+        explanation,
         idealAnswer: generated.idealAnswer,
         timeSpentSeconds: Math.max(1, Math.round(args.timeSpentSeconds)),
       });
@@ -2598,7 +2659,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
       return {
         isCorrect: generated.isCorrect,
         score: roundedScore,
-        explanation: generated.explanation,
+        explanation,
         idealAnswer: generated.idealAnswer,
       };
     } catch (error) {

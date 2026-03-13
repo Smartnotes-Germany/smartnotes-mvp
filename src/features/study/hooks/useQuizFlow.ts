@@ -96,6 +96,7 @@ export function useQuizFlow({
           sessionId,
           questionId: submittedQuestion.id,
           userAnswer: submittedAnswer,
+          answeredWithDontKnow: dontKnowSubmission,
           timeSpentSeconds,
           clientRequestId,
         });
@@ -108,7 +109,10 @@ export function useQuizFlow({
           return;
         }
 
-        setFeedback(result);
+        setFeedback({
+          ...result,
+          answeredWithDontKnow: dontKnowSubmission,
+        });
       } catch (error: unknown) {
         const latestContext = latestSessionContextRef.current;
         if (

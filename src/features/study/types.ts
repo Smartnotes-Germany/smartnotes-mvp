@@ -14,6 +14,7 @@ export type FeedbackState = {
   score: number;
   explanation: string;
   idealAnswer: string;
+  answeredWithDontKnow?: boolean;
 };
 
 export type QuizQuestion = {

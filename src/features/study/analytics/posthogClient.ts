@@ -10,6 +10,7 @@ const buildPostHogOptions = (): Partial<PostHogConfig> => {
   return {
     defaults: "2026-01-30",
     api_host: resolvedFrontendEnv.posthog.host,
+    ui_host: resolvedFrontendEnv.posthog.uiHost,
     person_profiles: "identified_only",
     capture_pageview: "history_change",
     capture_pageleave: true,

@@ -24,6 +24,7 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 - Google Vertex AI credentials (API key in Express Mode, or project/location auth)
 
 Environment variable reference: `docs/environment.md`.
+PostHog routing and proxy behavior: `docs/posthog-proxy.md`.
 
 Validation model:
 
@@ -49,10 +50,18 @@ pnpm exec convex dev
 ```bash
 VITE_CONVEX_URL=<your-convex-url>
 VITE_POSTHOG_KEY=<your-posthog-project-key>
-VITE_POSTHOG_HOST=https://eu.i.posthog.com
+VITE_POSTHOG_HOST=/snph
+VITE_POSTHOG_UI_HOST=https://eu.posthog.com
 ```
 
 Tip: start from `.env.example` and keep canonical names (`VITE_POSTHOG_*`).
+
+PostHog frontend routing notes:
+
+- `/snph` is the recommended setting. In production, Vercel rewrites that path to the EU PostHog hosts.
+- In local `pnpm dev` and `pnpm preview`, Vite proxies the same path to the same EU hosts.
+- If you set `VITE_POSTHOG_HOST` to an absolute URL instead, the proxy is bypassed in all environments.
+- `VITE_POSTHOG_UI_HOST` should remain the real PostHog app host, not the proxy path.
 
 4. Configure backend env vars in Convex:
 
@@ -80,6 +89,11 @@ pnpm exec convex env set POSTHOG_ENABLED true
 pnpm exec convex env set POSTHOG_PROJECT_KEY <your-posthog-project-key>
 pnpm exec convex env set POSTHOG_HOST https://eu.i.posthog.com
 ```
+
+Important:
+
+- `POSTHOG_HOST` here is for the Convex backend bridge, not the browser.
+- Do not set `POSTHOG_HOST=/snph`. Relative proxy paths only work for browser traffic via `VITE_POSTHOG_HOST`.
 
 5. Optional: source map upload for PostHog Error Tracking (build-time env vars):
 
@@ -166,6 +180,8 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 ### Frontend SDK defaults
 
 - `defaults: '2026-01-30'`
+- `api_host: '/snph'` by default unless `VITE_POSTHOG_HOST` overrides it
+- `ui_host: 'https://eu.posthog.com'` by default unless `VITE_POSTHOG_UI_HOST` overrides it
 - `person_profiles: 'identified_only'`
 - `capture_pageview: 'history_change'`
 - `capture_pageleave: true`
@@ -243,3 +259,4 @@ ORDER BY scope, status;
   - quiz generation failure threshold
 
 See `docs/observability-balanced-mode.md` for implementation details and admin operations.
+See `docs/posthog-proxy.md` for the full routing matrix, supported env combinations, and failure modes.

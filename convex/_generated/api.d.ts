@@ -12,8 +12,10 @@ import type * as access from "../access.js";
 import type * as admin from "../admin.js";
 import type * as ai from "../ai.js";
 import type * as crons from "../crons.js";
+import type * as env from "../env.js";
 import type * as errorTracking from "../errorTracking.js";
 import type * as observability from "../observability.js";
+import type * as posthog from "../posthog.js";
 import type * as retention from "../retention.js";
 import type * as study from "../study.js";
 
@@ -28,8 +30,10 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   ai: typeof ai;
   crons: typeof crons;
+  env: typeof env;
   errorTracking: typeof errorTracking;
   observability: typeof observability;
+  posthog: typeof posthog;
   retention: typeof retention;
   study: typeof study;
 }>;

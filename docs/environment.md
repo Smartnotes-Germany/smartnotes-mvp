@@ -21,15 +21,30 @@ Convex runs in its own runtime model, so we do not use T3 Env directly inside Co
 
 Do **not** put Convex backend secrets in Vite env files.
 
+For the full PostHog routing model across Vercel prod, local Vite dev, `vite preview`, Convex, and source-map upload, see `docs/posthog-proxy.md`.
+
 ## Frontend runtime env (validated via T3 Env)
 
 Used in browser code (`src/env.ts`).
 
-| Variable            | Required | Default                    | Notes                                   |
-| ------------------- | -------- | -------------------------- | --------------------------------------- |
-| `VITE_CONVEX_URL`   | yes      | -                          | Convex HTTP URL for `ConvexReactClient` |
-| `VITE_POSTHOG_KEY`  | no       | -                          | Enables frontend PostHog when set       |
-| `VITE_POSTHOG_HOST` | no       | `https://eu.i.posthog.com` | PostHog ingest host                     |
+| Variable               | Required | Default                  | Notes                                         |
+| ---------------------- | -------- | ------------------------ | --------------------------------------------- |
+| `VITE_CONVEX_URL`      | yes      | -                        | Convex HTTP URL for `ConvexReactClient`       |
+| `VITE_POSTHOG_KEY`     | no       | -                        | Enables frontend PostHog when set             |
+| `VITE_POSTHOG_HOST`    | no       | `/snph`                  | Recommended proxy path or absolute ingest URL |
+| `VITE_POSTHOG_UI_HOST` | no       | `https://eu.posthog.com` | PostHog app host for links and toolbar        |
+
+Frontend proxy behavior:
+
+- In Vercel deployments, `vercel.json` rewrites `/snph/static/*` to `https://eu-assets.i.posthog.com/static/*`.
+- In Vercel deployments, `vercel.json` rewrites `/snph/*` to `https://eu.i.posthog.com/*`.
+- In local Vite dev and `vite preview`, the same `/snph` path is proxied through `server.proxy` / `preview.proxy`.
+- If you override `VITE_POSTHOG_HOST` with an absolute URL, browser traffic bypasses the local proxy and Vercel rewrites.
+
+Important distinction:
+
+- `VITE_POSTHOG_HOST` controls browser routing and may be either a proxy path or an absolute URL.
+- `POSTHOG_HOST` and `POSTHOG_SOURCEMAPS_HOST` are not browser env vars and must remain absolute URLs.
 
 ## Build-time env for `vite.config.ts` (validated via T3 Env)
 
@@ -108,21 +123,10 @@ At least one auth path must exist:
 | `LANGFUSE_SECRET_KEY`                   | yes (for Langfuse) | -                 | Langfuse credential                   |
 | `LANGFUSE_BASEURL`                      | yes (for Langfuse) | -                 | Example: `https://cloud.langfuse.com` |
 
-Legacy alias (migration only):
-
-- `LANGFUSE_BASE_URL` -> `LANGFUSE_BASEURL`
-
 ## Setup flow (recommended)
 
 1. Copy `.env.example` values into `.env.local` and fill frontend/build values.
 2. Set Convex envs with `pnpm exec convex env set ...`.
 3. Run `pnpm dev`.
 4. Before CI/release builds, verify source-map env pair is either fully set or fully unset.
-
-## Migration checklist from legacy names
-
-1. Move frontend values to `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST`.
-2. Move build values to `POSTHOG_SOURCEMAPS_*`.
-3. Move Langfuse URL to `LANGFUSE_BASEURL`.
-4. Keep aliases temporarily.
-5. Remove aliases after all environments are updated.
+5. If PostHog traffic is not behaving as expected, verify the env combination against `docs/posthog-proxy.md`.

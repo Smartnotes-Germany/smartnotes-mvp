@@ -4,6 +4,13 @@ import tailwindcss from "@tailwindcss/vite";
 import posthogRollupPlugin from "@posthog/rollup-plugin";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
+import {
+  DEFAULT_POSTHOG_ASSETS_HOST,
+  DEFAULT_POSTHOG_INGEST_HOST,
+  DEFAULT_POSTHOG_PROXY_PATH,
+  isRelativeProxyPath,
+  normalizePostHogHost,
+} from "./shared/posthogProxy";
 
 const resolveBuildEnv = (mode: string) => {
   const runtimeEnv = {
@@ -32,6 +39,48 @@ const resolveBuildEnv = (mode: string) => {
     runtimeEnv,
     emptyStringAsUndefined: true,
   });
+};
+
+const escapeRegex = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const resolveFrontendPostHogHost = (mode: string) => {
+  const frontendHost =
+    loadEnv(mode, process.cwd(), "").VITE_POSTHOG_HOST ??
+    DEFAULT_POSTHOG_PROXY_PATH;
+
+  return normalizePostHogHost(frontendHost);
+};
+
+const createProxyRewrite = (sourcePrefix: string, targetPrefix: string) => {
+  const normalizedSourcePrefix = normalizePostHogHost(sourcePrefix);
+  const sourcePattern = new RegExp(`^${escapeRegex(normalizedSourcePrefix)}`);
+
+  return (path: string) => {
+    const rewrittenPath = path.replace(sourcePattern, targetPrefix);
+    return rewrittenPath.length > 0 ? rewrittenPath : "/";
+  };
+};
+
+const resolvePostHogProxy = (frontendPostHogHost: string) => {
+  if (!isRelativeProxyPath(frontendPostHogHost)) {
+    return undefined;
+  }
+
+  const staticProxyPath = `${frontendPostHogHost}/static`;
+
+  return {
+    [staticProxyPath]: {
+      target: DEFAULT_POSTHOG_ASSETS_HOST,
+      changeOrigin: true,
+      rewrite: createProxyRewrite(staticProxyPath, "/static"),
+    },
+    [frontendPostHogHost]: {
+      target: DEFAULT_POSTHOG_INGEST_HOST,
+      changeOrigin: true,
+      rewrite: createProxyRewrite(frontendPostHogHost, ""),
+    },
+  };
 };
 
 const resolvePostHogSourceMapPlugins = (
@@ -90,9 +139,17 @@ const resolvePostHogSourceMapPlugins = (
 export default defineConfig(({ mode }) => {
   const buildEnv = resolveBuildEnv(mode);
   const sourceMapPlugins = resolvePostHogSourceMapPlugins(buildEnv);
+  const frontendPostHogHost = resolveFrontendPostHogHost(mode);
+  const posthogProxy = resolvePostHogProxy(frontendPostHogHost);
 
   return {
     plugins: [react(), tailwindcss()],
+    server: {
+      proxy: posthogProxy,
+    },
+    preview: {
+      proxy: posthogProxy,
+    },
     build: {
       sourcemap: sourceMapPlugins.length > 0,
       rollupOptions: {

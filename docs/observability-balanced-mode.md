@@ -5,6 +5,7 @@
 Balanced mode keeps deep product and runtime insights while minimizing sensitive data capture.
 
 For the complete environment matrix and scope rules, see `docs/environment.md`.
+For frontend PostHog proxy routing behavior across prod and dev, see `docs/posthog-proxy.md`.
 
 ## Behavior
 
@@ -21,6 +22,7 @@ For the complete environment matrix and scope rules, see `docs/environment.md`.
 
 - Backend emits `ai_operation_completed` and `$ai_generation` (with redacted placeholders) to PostHog.
 - Capture is gated by Convex env vars and no-ops when disabled.
+- This backend bridge sends directly to the configured absolute PostHog host. It does not use the frontend `/snph` proxy path.
 - Required Convex vars:
   - `POSTHOG_ENABLED=true|false`
   - `POSTHOG_PROJECT_KEY=<project key>`
@@ -66,7 +68,7 @@ Correlation workflow:
 
 - `LANGFUSE_PUBLIC_KEY`
 - `LANGFUSE_SECRET_KEY`
-- `LANGFUSE_BASEURL` (EU cloud: `https://cloud.langfuse.com`, alias: `LANGFUSE_BASE_URL`)
+- `LANGFUSE_BASEURL` (EU cloud: `https://cloud.langfuse.com`)
 - `OBSERVABILITY_MODE=balanced`
 - `OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE=false`
 - `OBSERVABILITY_HASH_SALT=<random secret>`

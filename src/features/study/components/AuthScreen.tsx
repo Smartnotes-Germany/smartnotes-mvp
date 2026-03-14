@@ -77,8 +77,7 @@ export function AuthScreen({
                   }
                 }}
                 placeholder="SMARTNOTES-DEMO-2026"
-                data-ph-sensitive="true"
-                className="ph-no-capture border-cream-border bg-cream-light focus:border-accent mb-5 w-full rounded-2xl border px-4 py-3 text-sm font-medium transition outline-none"
+                className="border-cream-border bg-cream-light focus:border-accent mb-5 w-full rounded-2xl border px-4 py-3 text-sm font-medium transition outline-none"
               />
 
               {authError && (

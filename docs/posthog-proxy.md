@@ -191,6 +191,20 @@ This breaks links and UI integrations that expect the PostHog app origin. Use `h
 
 This risks serving `index.html` for PostHog requests. Keep the PostHog rewrites before the SPA fallback.
 
+### Re-introducing a frontend `before_send` scrubber
+
+Session replay uses the `/s/` endpoint and sends structured rrweb snapshot payloads in `$snapshot` events.
+
+If a future `before_send` hook rewrites those nested properties into strings or placeholder values, PostHog can reject the replay payload with errors such as `replay event submitted without snapshot data`.
+
+This project currently does not use a frontend `before_send` scrubber. Replay privacy is handled by PostHog's session recording masking configuration instead:
+
+- `blockSelector`
+- `maskTextSelector`
+- `maskAllInputs`
+- `maskInputFn`
+- `maskTextFn`
+
 ## Files that define the behavior
 
 - `vercel.json`

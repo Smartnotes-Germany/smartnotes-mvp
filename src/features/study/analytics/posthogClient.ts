@@ -1,6 +1,5 @@
 import posthog, { type PostHogConfig } from "posthog-js";
 import { resolvedFrontendEnv } from "../../../env";
-import { createPostHogBeforeSend } from "./privacy";
 
 const SENSITIVE_SELECTOR = ".ph-no-capture, [data-ph-sensitive='true']";
 
@@ -33,7 +32,6 @@ const buildPostHogOptions = (): Partial<PostHogConfig> => {
       maskInputFn: () => "[MASKIERT]",
       maskTextFn: () => "[MASKIERT]",
     },
-    before_send: createPostHogBeforeSend(),
     persistence: "memory",
   };
 };

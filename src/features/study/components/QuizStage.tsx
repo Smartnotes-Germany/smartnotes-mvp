@@ -186,8 +186,7 @@ export function QuizStage({
                 rows={1}
                 disabled={isSubmittingAnswer}
                 placeholder="Deine Antwort hier tippen..."
-                data-ph-sensitive="true"
-                className="ph-no-capture border-cream-border focus:border-accent placeholder:text-ink-muted/20 w-full overflow-hidden border-b-2 bg-transparent pb-4 text-center text-xl font-medium transition outline-none disabled:opacity-50 md:text-3xl"
+                className="border-cream-border focus:border-accent placeholder:text-ink-muted/20 w-full overflow-hidden border-b-2 bg-transparent pb-4 text-center text-xl font-medium transition outline-none disabled:opacity-50 md:text-3xl"
                 style={{ resize: "none" }}
               />
 

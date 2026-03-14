@@ -84,7 +84,7 @@ pnpm exec convex env set OBSERVABILITY_FLUSH_TIMEOUT_MS 300
 pnpm exec convex env set RETENTION_DAYS_RAW_CONTENT 14
 pnpm exec convex env set RETENTION_DAYS_ANALYTICS 180
 
-# PostHog AI bridge (privacy-safe)
+# PostHog AI bridge
 pnpm exec convex env set POSTHOG_ENABLED true
 pnpm exec convex env set POSTHOG_PROJECT_KEY <your-posthog-project-key>
 pnpm exec convex env set POSTHOG_HOST https://eu.i.posthog.com
@@ -161,7 +161,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
   - Redacts `sessionDocuments.extractedText` and `quizResponses.userAnswer`.
   - Deletes old `aiAnalyticsEvents` rows.
 
-## PostHog Rollout (Privacy First)
+## PostHog Rollout
 
 ### What is instrumented
 
@@ -170,12 +170,12 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - Backend AI operation bridge event: `ai_operation_completed` plus `$ai_generation` with redacted placeholders.
 - Correlation fields for AI observability: `traceId`, `documentIds`, `readyDocumentIds`.
 
-### Privacy guardrails
+### Frontend capture behavior
 
-- No access code, answer text, prompt/response text, extracted document text, or secrets are sent.
 - Sensitive UI fields are marked with `ph-no-capture` and `data-ph-sensitive="true"`.
 - PostHog frontend starts with `persistence: 'memory'` (consent rollout in PR #24).
-- `before_send` applies data scrubbing and conservative sampling for high-volume events.
+- Session replay masking is configured via `blockSelector`, `maskTextSelector`, `maskAllInputs`, `maskInputFn` and `maskTextFn`.
+- There is no frontend `before_send` scrubber anymore. Frontend events are sent to PostHog without property-level sanitization or client-side sampling.
 
 ### Frontend SDK defaults
 

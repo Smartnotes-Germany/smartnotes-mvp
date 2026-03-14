@@ -139,8 +139,8 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `pnpm lint` - run ESLint
 - `pnpm format` - format code with Prettier
 - `pnpm format:check` - check code formatting
-- `pnpm observability:debug-window:start -- --minutes 45` - activate sensitive debug capture for a bounded window
-- `pnpm observability:debug-window:stop` - disable sensitive debug capture immediately
+- `pnpm observability:debug-window:start -- --minutes 45` - set debug-window env vars for bounded troubleshooting
+- `pnpm observability:debug-window:stop` - clear debug-window env vars immediately
 
 ## Session And Round Model
 
@@ -154,8 +154,8 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 ## Balanced Observability
 
 - AI calls are traced with Langfuse telemetry in `balanced` mode.
-- By default, prompts/responses are not captured (`recordInputs: false`, `recordOutputs: false`).
-- Telemetry stores deep operational metadata (latency, token usage, fallback behavior, app scope, status).
+- Langfuse captures full AI inputs and outputs for every traced backend call.
+- Telemetry stores operational metadata plus unredacted request and response context.
 - AI actions flush telemetry on exit (`OBSERVABILITY_FLUSH_ON_EXIT`) with a bounded timeout (`OBSERVABILITY_FLUSH_TIMEOUT_MS`) to reduce trace loss.
 - A daily Convex cron redacts/deletes older sensitive data:
   - Redacts `sessionDocuments.extractedText` and `quizResponses.userAnswer`.
@@ -167,7 +167,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 
 - Frontend funnel events from access-code redemption to analysis/deep-dive completion.
 - UX events: stage transitions (`study_stage_viewed`), theme changes, consent update hook.
-- Backend AI operation bridge event: `ai_operation_completed` plus `$ai_generation` with redacted placeholders.
+- Backend AI operation bridge event: `ai_operation_completed` plus `$ai_generation` with unredacted AI payloads.
 - Correlation fields for AI observability: `traceId`, `documentIds`, `readyDocumentIds`.
 
 ### Frontend capture behavior

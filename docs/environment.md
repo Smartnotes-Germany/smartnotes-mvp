@@ -114,8 +114,8 @@ At least one auth path must exist:
 | Variable                                | Required           | Default           | Notes                                 |
 | --------------------------------------- | ------------------ | ----------------- | ------------------------------------- |
 | `OBSERVABILITY_MODE`                    | no                 | `balanced`        | `balanced`, `full`, `off`             |
-| `OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE` | no                 | `false`           | Debug capture gate                    |
-| `OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL` | no                 | -                 | Unix ms timestamp                     |
+| `OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE` | no                 | `false`           | Reserved for debug-window tooling     |
+| `OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL` | no                 | -                 | Reserved for debug-window tooling     |
 | `OBSERVABILITY_HASH_SALT`               | no                 | internal fallback | Custom value recommended              |
 | `OBSERVABILITY_FLUSH_ON_EXIT`           | no                 | `true`            | Flush telemetry before exit           |
 | `OBSERVABILITY_FLUSH_TIMEOUT_MS`        | no                 | `300`             | Clamped to `50..5000`                 |

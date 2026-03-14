@@ -117,35 +117,24 @@ const applyLangfuseEnvironmentFallbacks = () => {
   }
 };
 
-const sanitizeMetadataValue = (
+const normalizeTelemetryMetadataValue = (
   value: unknown,
 ): string | number | boolean | undefined => {
   if (value === null || value === undefined) {
     return undefined;
   }
   if (typeof value === "string") {
-    return value.length > 240 ? `${value.slice(0, 240)}…` : value;
+    return value;
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return value;
   }
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (typeof item === "string") {
-          return item;
-        }
-        if (typeof item === "number" || typeof item === "boolean") {
-          return String(item);
-        }
-        return null;
-      })
-      .filter((item): item is string => Boolean(item))
-      .slice(0, 12)
-      .join(",");
-  }
 
-  return "[object]";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 };
 
 const sanitizeTelemetryMetadata = (
@@ -155,13 +144,12 @@ const sanitizeTelemetryMetadata = (
     return undefined;
   }
 
-  const sanitizedEntries = Object.entries(metadata)
-    .slice(0, 24)
-    .map(([key, value]) => [key, sanitizeMetadataValue(value)] as const)
-    .filter(
-      (entry): entry is readonly [string, string | number | boolean] =>
-        entry[1] !== undefined,
-    );
+  const sanitizedEntries = Object.entries(metadata).flatMap(([key, value]) => {
+    const normalizedValue = normalizeTelemetryMetadataValue(value);
+    return normalizedValue === undefined
+      ? []
+      : [[key, normalizedValue] as const];
+  });
 
   return Object.fromEntries(sanitizedEntries);
 };
@@ -271,10 +259,6 @@ export const buildTelemetryConfig = ({
   functionId,
   metadata,
 }: BuildTelemetryConfigArgs): TelemetryConfig => {
-  const mode = getMode();
-  const sensitiveCaptureEnabled =
-    mode === "full" || isSensitiveCaptureEnabled();
-
   if (!ensureTelemetryInitialized()) {
     return {
       isEnabled: false,
@@ -285,11 +269,11 @@ export const buildTelemetryConfig = ({
   return {
     isEnabled: true,
     functionId,
-    recordInputs: sensitiveCaptureEnabled,
-    recordOutputs: sensitiveCaptureEnabled,
+    recordInputs: true,
+    recordOutputs: true,
     metadata: {
-      mode,
-      contentCaptured: sensitiveCaptureEnabled,
+      mode: getMode(),
+      contentCaptured: true,
       ...(sanitizeTelemetryMetadata(metadata) ?? {}),
     },
   };

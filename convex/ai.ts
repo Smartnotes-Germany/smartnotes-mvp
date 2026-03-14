@@ -31,7 +31,6 @@ import {
   getObservabilityMode,
   getTelemetryProvider,
   hashIdentifier,
-  isSensitiveCaptureEnabled,
   redactTextForLog,
 } from "./observability";
 import { captureAiOperationCompleted } from "./posthog";
@@ -1075,11 +1074,20 @@ type PersistedAiAnalyticsPayload = {
   errorCategory?: PersistedAiErrorCategory;
   error?: ReturnType<typeof extractErrorForLog>;
   metadata?: Record<string, unknown>;
+  posthogInput?: string;
+  posthogOutput?: string;
+  posthogProperties?: Record<string, string | number | boolean | string[]>;
 };
 
 type DocumentCorrelationMetadata = {
   documentIds?: string[];
   readyDocumentIds?: string[];
+};
+
+type PostHogFileAttachmentSummary = {
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
 };
 
 const analyticsMetadataAllowlist = new Set([
@@ -1147,6 +1155,37 @@ const toSafeAnalyticsMetadataValue = (
   return "[object]";
 };
 
+const stringifyForPostHog = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const summarizeFilePartsForPostHog = (
+  fileParts: Array<{
+    filename: string;
+    mediaType: string;
+    data: Buffer;
+  }>,
+): PostHogFileAttachmentSummary[] =>
+  fileParts.map((part) => ({
+    filename: part.filename,
+    mediaType: part.mediaType,
+    sizeBytes: part.data.byteLength,
+  }));
+
 const sanitizeAnalyticsMetadata = (metadata?: Record<string, unknown>) => {
   if (!metadata) {
     return undefined;
@@ -1169,10 +1208,9 @@ const toStringArray = (value: unknown): string[] | undefined => {
     return undefined;
   }
 
-  const normalized = value
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.slice(0, 120))
-    .slice(0, 50);
+  const normalized = value.filter(
+    (entry): entry is string => typeof entry === "string",
+  );
 
   return normalized.length > 0 ? normalized : undefined;
 };
@@ -1645,8 +1683,7 @@ const persistAiAnalyticsEvent = async (
         ? payload.error
         : undefined;
     const privacyMode = payload.privacyMode ?? getObservabilityMode();
-    const contentCaptured =
-      payload.contentCaptured ?? isSensitiveCaptureEnabled();
+    const contentCaptured = payload.contentCaptured ?? true;
     const telemetryProvider =
       payload.telemetryProvider ?? getTelemetryProvider();
 
@@ -1713,8 +1750,38 @@ const persistAiAnalyticsEvent = async (
       fallbackUsed: payload.fallbackUsed,
       telemetryProvider,
       privacyMode,
+      modelId: payload.modelId,
+      finishReason: payload.finishReason,
+      totalDocuments: payload.totalDocuments,
+      readyDocuments: payload.readyDocuments,
+      filePartCount: payload.filePartCount,
+      sourceContextLength: payload.sourceContextLength,
+      outputQuestionCount: payload.outputQuestionCount,
+      errorCategory: payload.errorCategory,
+      errorName:
+        errorRecord &&
+        "name" in errorRecord &&
+        typeof errorRecord.name === "string"
+          ? errorRecord.name
+          : undefined,
+      errorMessage:
+        errorRecord &&
+        "message" in errorRecord &&
+        typeof errorRecord.message === "string"
+          ? errorRecord.message
+          : undefined,
+      errorStackPreview:
+        errorRecord &&
+        "stack" in errorRecord &&
+        typeof errorRecord.stack === "string"
+          ? errorRecord.stack
+          : undefined,
+      contentCaptured,
+      input: payload.posthogInput,
+      output: payload.posthogOutput,
       documentIds: toStringArray(payload.metadata?.documentIds),
       readyDocumentIds: toStringArray(payload.metadata?.readyDocumentIds),
+      extraProperties: payload.posthogProperties,
     });
   } catch (error) {
     console.warn("[KI-Monitoring]", {
@@ -2049,10 +2116,15 @@ export const generateQuiz = action({
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
+    let desiredCount = 6;
+    let sourceContext = "";
+    let generatedQuiz: QuizGenerationResult | null = null;
+    let normalizedQuestions: QuestionForEvaluation[] = [];
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
     let analyticsError: unknown;
 
     try {
-      const desiredCount = Math.max(
+      desiredCount = Math.max(
         3,
         Math.min(10, Math.floor(args.questionCount ?? 6)),
       );
@@ -2146,7 +2218,6 @@ Anforderungen:
         mediaType: string;
         filename: string;
       }> = [];
-      let sourceContext = "";
 
       try {
         const modelInput = await buildModelInputFromDocuments(
@@ -2183,6 +2254,7 @@ Anforderungen:
 
       filePartCount = fileParts.length;
       sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
 
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
@@ -2272,6 +2344,7 @@ Anforderungen:
         }
 
         generated = result.output;
+        generatedQuiz = result.output;
       } catch (error) {
         if (!isNoOutputGeneratedError(error)) {
           trace.addUsage(extractUsageFromError(error));
@@ -2349,6 +2422,7 @@ Anforderungen:
             }
 
             generated = fallbackResult.output;
+            generatedQuiz = fallbackResult.output;
           } else {
             trace.log("info", "llm_fallback_request", {
               strategy: "json_messages",
@@ -2393,6 +2467,7 @@ Anforderungen:
             );
 
             generated = normalizeQuizGenerationOutput(fallbackResult.output);
+            generatedQuiz = generated;
 
             trace.log("info", "llm_fallback_response", {
               ...fallbackLog.details,
@@ -2443,7 +2518,7 @@ Anforderungen:
         );
       }
 
-      const normalizedQuestions = generated.questions
+      normalizedQuestions = generated.questions
         .slice(0, desiredCount)
         .map((question, index) => ({
           id: `${Date.now()}-${index + 1}`,
@@ -2501,6 +2576,22 @@ Anforderungen:
           clientRequestId: args.clientRequestId,
           ...documentCorrelationMetadata,
         },
+        posthogInput: stringifyForPostHog({
+          desiredCount,
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedQuiz,
+          normalizedQuestions,
+        }),
+        posthogProperties: {
+          requestedQuestionCount: desiredCount,
+          sourceContext,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          generatedQuiz: stringifyForPostHog(generatedQuiz) ?? "",
+          normalizedQuestions: stringifyForPostHog(normalizedQuestions) ?? "[]",
+        },
       });
       await flushTelemetry({
         traceId: trace.traceId,
@@ -2529,6 +2620,10 @@ export const evaluateAnswer = action({
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
+    let round = 0;
+    let question: QuestionForEvaluation | null = null;
+    let evaluationPrompt = "";
+    let generatedEvaluation: AnswerEvaluationResult | null = null;
     let analyticsError: unknown;
 
     try {
@@ -2547,7 +2642,8 @@ export const evaluateAnswer = action({
         questionId: args.questionId,
       });
 
-      const { round, question } = evaluationContext;
+      round = evaluationContext.round;
+      question = evaluationContext.question;
 
       trace.log("info", "context_loaded", {
         round,
@@ -2590,7 +2686,7 @@ export const evaluateAnswer = action({
           ),
           system:
             "Du bist ein fairer und unterstützender Prüfungs-Korrektor. Antworte auf Deutsch und erkläre kurz, was richtig ist oder fehlt.",
-          prompt: `Thema: ${question.topic}
+          prompt: (evaluationPrompt = `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
@@ -2599,7 +2695,7 @@ Hinweis bei Bedarf: ${question.explanationHint}
 Antwort der lernenden Person:
 ${args.userAnswer}
 
-Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`,
+Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`),
         });
 
         const resultLog = extractGenerationResultForLog(result);
@@ -2616,6 +2712,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
         });
 
         generated = result.output;
+        generatedEvaluation = result.output;
       } catch (error) {
         if (isNoOutputGeneratedError(error)) {
           trace.addUsage(extractUsageFromError(error));
@@ -2690,6 +2787,23 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
           answerLength: args.userAnswer.length,
           timeSpentSeconds: args.timeSpentSeconds,
         },
+        posthogInput: stringifyForPostHog({
+          round,
+          question,
+          userAnswer: args.userAnswer,
+          prompt: evaluationPrompt,
+        }),
+        posthogOutput: stringifyForPostHog(generatedEvaluation),
+        posthogProperties: {
+          round,
+          questionTopic: question?.topic ?? "",
+          questionPrompt: question?.prompt ?? "",
+          expectedAnswer: question?.idealAnswer ?? "",
+          explanationHint: question?.explanationHint ?? "",
+          userAnswer: args.userAnswer,
+          prompt: evaluationPrompt,
+          evaluationResult: stringifyForPostHog(generatedEvaluation) ?? "",
+        },
       });
       await flushTelemetry({
         traceId: trace.traceId,
@@ -2724,6 +2838,10 @@ export const analyzePerformance = action({
     let documentIds: string[] = [];
     let readyDocumentIds: string[] = [];
     let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
+    let responsesForPostHog: FullModeResponseContextInput[] = [];
+    let analysisSystemPrompt = "";
+    let analysisPrompt = "";
+    let generatedAnalysis: AnalysisResult | null = null;
     let analyticsError: unknown;
 
     try {
@@ -2741,6 +2859,7 @@ export const analyzePerformance = action({
 
       let { session, responses } = result;
       const { documents } = result;
+      responsesForPostHog = responses;
 
       trace.log("info", "context_loaded", {
         responseCount: responses.length,
@@ -2784,6 +2903,7 @@ export const analyzePerformance = action({
 
         session = fullContext.session;
         responses = fullContext.responses;
+        responsesForPostHog = responses;
         responseCount = responses.length;
 
         trace.log("info", "context_reloaded_for_full_mode", {
@@ -2898,6 +3018,8 @@ Pflichtregeln:
                         retrySourceError,
                         invalidOutput,
                       );
+                analysisSystemPrompt = focusSystemPrompt;
+                analysisPrompt = prompt;
 
                 const result = await generateText({
                   model: model("gemini-3-flash-preview"),
@@ -2992,6 +3114,7 @@ Pflichtregeln:
               ...summary,
               topics: mergedTopics,
             };
+            generatedAnalysis = analysis;
           } catch (error) {
             trace.addUsage(extractUsageFromError(error));
             usedFallback = true;
@@ -3062,6 +3185,8 @@ Pflichtregeln:
                       retrySourceError,
                       invalidOutput,
                     );
+              analysisSystemPrompt = fullSystemPrompt;
+              analysisPrompt = prompt;
 
               const result = await generateText({
                 model: model("gemini-3-flash-preview"),
@@ -3141,6 +3266,7 @@ Pflichtregeln:
           }
 
           analysis = generated;
+          generatedAnalysis = analysis;
         } catch (error) {
           trace.addUsage(extractUsageFromError(error));
           usedFallback = true;
@@ -3166,6 +3292,7 @@ Pflichtregeln:
         topicCount: analysis.topics.length,
         usageTotals: trace.getUsageTotals(),
       });
+      generatedAnalysis = analysis;
 
       return analysis;
     } catch (error) {
@@ -3195,6 +3322,22 @@ Pflichtregeln:
           analysisMode,
           topic: resolvedFocusTopic || undefined,
           ...documentCorrelationMetadata,
+        },
+        posthogInput: stringifyForPostHog({
+          analysisMode,
+          resolvedFocusTopic,
+          prompt: analysisPrompt,
+          system: analysisSystemPrompt,
+          responses: responsesForPostHog,
+        }),
+        posthogOutput: stringifyForPostHog(generatedAnalysis),
+        posthogProperties: {
+          analysisMode,
+          resolvedFocusTopic,
+          prompt: analysisPrompt,
+          system: analysisSystemPrompt,
+          responses: stringifyForPostHog(responsesForPostHog) ?? "[]",
+          analysisResult: stringifyForPostHog(generatedAnalysis) ?? "",
         },
       });
       await flushTelemetry({
@@ -3230,6 +3373,10 @@ export const generateTopicDeepDive = action({
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
+    let sourceContext = "";
+    let generatedDeepDive: DeepDiveGenerationResult | null = null;
+    let deepDiveQuestionsForPostHog: QuestionForEvaluation[] = [];
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
     let analyticsError: unknown;
 
     try {
@@ -3309,8 +3456,6 @@ export const generateTopicDeepDive = action({
         mediaType: string;
         filename: string;
       }> = [];
-      let sourceContext = "";
-
       try {
         const modelInput = await buildModelInputFromDocuments(
           ctx,
@@ -3347,6 +3492,7 @@ export const generateTopicDeepDive = action({
 
       filePartCount = fileParts.length;
       sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
 
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
@@ -3439,6 +3585,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
         }
 
         generated = result.output;
+        generatedDeepDive = result.output;
       } catch (error) {
         if (isNoOutputGeneratedError(error)) {
           trace.addUsage(extractUsageFromError(error));
@@ -3492,6 +3639,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
         usageTotals: trace.getUsageTotals(),
       });
 
+      deepDiveQuestionsForPostHog = deepDiveQuestions;
       outputQuestionCount = deepDiveQuestions.length;
 
       return {
@@ -3526,6 +3674,23 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
           clientRequestId: args.clientRequestId,
           topic: args.topic,
           ...documentCorrelationMetadata,
+        },
+        posthogInput: stringifyForPostHog({
+          topic: args.topic,
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedDeepDive,
+          deepDiveQuestions: deepDiveQuestionsForPostHog,
+        }),
+        posthogProperties: {
+          topic: args.topic,
+          sourceContext,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          generatedDeepDive: stringifyForPostHog(generatedDeepDive) ?? "",
+          deepDiveQuestions:
+            stringifyForPostHog(deepDiveQuestionsForPostHog) ?? "[]",
         },
       });
       await flushTelemetry({

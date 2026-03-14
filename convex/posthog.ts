@@ -6,11 +6,12 @@ const DEFAULT_POSTHOG_HOST = "https://eu.i.posthog.com";
 const CAPTURE_TIMEOUT_MS = 1_500;
 
 type PostHogPrimitive = string | number | boolean;
+type PostHogPropertyValue = PostHogPrimitive | PostHogPrimitive[] | undefined;
 
 type CapturePayload = {
   event: string;
   distinctId: string;
-  properties: Record<string, PostHogPrimitive | PostHogPrimitive[] | undefined>;
+  properties: Record<string, PostHogPropertyValue>;
 };
 
 type CaptureAiOperationPayload = {
@@ -28,6 +29,21 @@ type CaptureAiOperationPayload = {
   privacyMode?: "balanced" | "full" | "off";
   documentIds?: string[];
   readyDocumentIds?: string[];
+  modelId?: string;
+  finishReason?: string;
+  totalDocuments?: number;
+  readyDocuments?: number;
+  filePartCount?: number;
+  sourceContextLength?: number;
+  outputQuestionCount?: number;
+  errorCategory?: string;
+  errorName?: string;
+  errorMessage?: string;
+  errorStackPreview?: string;
+  contentCaptured?: boolean;
+  input?: string;
+  output?: string;
+  extraProperties?: Record<string, PostHogPropertyValue>;
 };
 
 const getPostHogConfig = () => {
@@ -47,14 +63,6 @@ const getPostHogConfig = () => {
     host,
     projectKey,
   };
-};
-
-const normalizePropertyArray = (values: string[] | undefined) => {
-  if (!values || values.length === 0) {
-    return undefined;
-  }
-
-  return values.map((value) => value.slice(0, 120)).slice(0, 50);
 };
 
 const capture = async (payload: CapturePayload) => {
@@ -114,8 +122,21 @@ export const captureAiOperationCompleted = async (
     fallbackUsed: payload.fallbackUsed,
     telemetryProvider: payload.telemetryProvider,
     privacyMode: payload.privacyMode,
-    documentIds: normalizePropertyArray(payload.documentIds),
-    readyDocumentIds: normalizePropertyArray(payload.readyDocumentIds),
+    documentIds: payload.documentIds,
+    readyDocumentIds: payload.readyDocumentIds,
+    modelId: payload.modelId,
+    finishReason: payload.finishReason,
+    totalDocuments: payload.totalDocuments,
+    readyDocuments: payload.readyDocuments,
+    filePartCount: payload.filePartCount,
+    sourceContextLength: payload.sourceContextLength,
+    outputQuestionCount: payload.outputQuestionCount,
+    errorCategory: payload.errorCategory,
+    errorName: payload.errorName,
+    errorMessage: payload.errorMessage,
+    errorStackPreview: payload.errorStackPreview,
+    contentCaptured: payload.contentCaptured,
+    ...payload.extraProperties,
   };
 
   await Promise.allSettled([
@@ -129,8 +150,8 @@ export const captureAiOperationCompleted = async (
       distinctId: payload.distinctId,
       properties: {
         ...commonProperties,
-        input: "[redacted]",
-        output: "[redacted]",
+        input: payload.input,
+        output: payload.output,
       },
     }),
   ]);

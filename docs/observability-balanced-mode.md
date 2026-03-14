@@ -10,17 +10,15 @@ For frontend PostHog proxy routing behavior across prod and dev, see `docs/posth
 ## Behavior
 
 - OpenTelemetry + Langfuse tracing is enabled for all AI SDK `generateText` calls.
-- Default capture mode:
-  - `recordInputs: false`
-  - `recordOutputs: false`
-- Trace metadata includes only operational fields (`appScope`, hashed session id, counts, statuses, `documentIds`, `readyDocumentIds`). In telemetry/Convex metadata these document fields are sanitized as comma-separated strings with truncation limits.
+- Langfuse always captures full AI inputs and outputs.
+- Trace metadata now includes the full values passed to telemetry instead of truncated operational-only samples.
 - Sensitive previews are removed from backend logs.
 - Every AI action attempts a bounded flush before exit, reducing dropped traces in serverless runtimes.
-- PostHog is used as a privacy-safe product + reliability analytics layer (without replacing Langfuse tracing).
+- PostHog is used as a product + reliability analytics layer alongside Langfuse tracing.
 
-## PostHog Bridge (Privacy-safe)
+## PostHog Bridge
 
-- Backend emits `ai_operation_completed` and `$ai_generation` (with redacted placeholders) to PostHog.
+- Backend emits `ai_operation_completed` and `$ai_generation` with unredacted AI payloads to PostHog.
 - Capture is gated by Convex env vars and no-ops when disabled.
 - This backend bridge sends directly to the configured absolute PostHog host. It does not use the frontend `/snph` proxy path.
 - Required Convex vars:
@@ -39,16 +37,15 @@ For cross-system debugging use these fields together:
 Format and limits by sink:
 
 - Langfuse telemetry metadata (`experimental_telemetry.metadata`):
-  - `documentIds` / `readyDocumentIds` are stored as comma-separated strings.
-  - Arrays are truncated to the first 12 entries.
+  - `documentIds` / `readyDocumentIds` are stored with the full values passed from the backend.
 - Convex analytics (`aiAnalyticsEvents.metadataJson`):
   - `documentIds` / `readyDocumentIds` are stored as comma-separated strings.
   - Arrays are truncated to the first 20 entries.
 - PostHog AI bridge (`ai_operation_completed` / `$ai_generation`):
   - `documentIds` / `readyDocumentIds` are stored as arrays.
-  - Arrays are truncated to the first 50 entries.
+  - Arrays are forwarded without backend truncation.
 
-Because of sanitization limits, these fields are intended for correlation samples, not guaranteed full document inventories.
+Convex analytics still keep the sampled, truncated correlation view. Langfuse and PostHog now receive the full backend values.
 
 Correlation workflow:
 
@@ -56,13 +53,11 @@ Correlation workflow:
 2. Find the same `traceId` in `aiAnalyticsEvents` and Langfuse traces.
 3. Use `documentIds` and `readyDocumentIds` to verify which documents were available and ready for the operation.
 
-### Data minimization policy
+### Capture scope
 
-- Never send raw prompts/responses.
-- Never send extracted document text.
-- Never send user answer text.
-- Never send access codes, grant tokens, or secrets.
-- Only operational metadata is allowed (scope/status/latency/tokens/fallback/counts/IDs for correlation).
+- Langfuse receives full prompts, messages, and model outputs for traced backend AI calls.
+- PostHog receives operational metrics plus unredacted AI request/response payloads, source context, generated question sets, analysis payloads, and answer-evaluation content.
+- Correlation fields (`traceId`, `documentIds`, `readyDocumentIds`) remain available in both systems.
 
 ## Required Convex Environment Variables
 
@@ -129,7 +124,7 @@ pnpm exec convex run admin:deleteData '{"adminSecret":"<secret>","sessionId":"<s
 
 ## Temporary Sensitive Debug Window
 
-If needed, temporarily enable sensitive capture:
+The debug-window helper still manages the legacy env vars, but it no longer gates Langfuse or PostHog capture:
 
 - Start window (default 30 min):
 
@@ -154,4 +149,4 @@ The script sets:
 - `OBSERVABILITY_ALLOW_SENSITIVE_CAPTURE=true|false`
 - `OBSERVABILITY_SENSITIVE_CAPTURE_UNTIL=<unix-ms-timestamp>`
 
-After the window ends, tracing falls back to balanced defaults automatically.
+After the window ends, the env vars are cleared again. Langfuse and PostHog capture remain unchanged.

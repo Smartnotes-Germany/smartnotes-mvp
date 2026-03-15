@@ -187,7 +187,10 @@ function normalizeDontKnowExplanation(
   const trimmedExplanation = explanation.trim();
   const trimmedFallbackExplanation = fallbackExplanation.trim();
   if (!trimmedExplanation) {
-    return trimmedFallbackExplanation || "Die ideale Antwort enthält die relevanten Punkte.";
+    return (
+      trimmedFallbackExplanation ||
+      "Die ideale Antwort enthält die relevanten Punkte."
+    );
   }
 
   const sanitizedExplanation = trimmedExplanation
@@ -205,8 +208,14 @@ function normalizeDontKnowExplanation(
     .replace(/^Es wurde keine Antwort gegeben\.?\s*/i, "")
     .replace(/^Du hast die Frage nicht beantwortet\.?\s*/i, "")
     .replace(/^Die Frage wurde nicht beantwortet\.?\s*/i, "")
-    .replace(/^Die Antwort enthält keine fachlichen Angaben[^.!?]*[.!?]\s*/i, "")
-    .replace(/^Die Antwort enthält keine inhaltlichen Angaben[^.!?]*[.!?]\s*/i, "")
+    .replace(
+      /^Die Antwort enthält keine fachlichen Angaben[^.!?]*[.!?]\s*/i,
+      "",
+    )
+    .replace(
+      /^Die Antwort enthält keine inhaltlichen Angaben[^.!?]*[.!?]\s*/i,
+      "",
+    )
     .replace(/^Die Antwort nennt keine relevanten Punkte[^.!?]*[.!?]\s*/i, "")
     .replace(/^Es fehlen fachliche Angaben[^.!?]*[.!?]\s*/i, "")
     .replace(/^Es fehlen die relevanten Punkte[^.!?]*[.!?]\s*/i, "")
@@ -220,7 +229,10 @@ function normalizeDontKnowExplanation(
     .trim();
 
   if (!sanitizedExplanation) {
-    return trimmedFallbackExplanation || "Die ideale Antwort enthält die relevanten Punkte.";
+    return (
+      trimmedFallbackExplanation ||
+      "Die ideale Antwort enthält die relevanten Punkte."
+    );
   }
 
   return sanitizedExplanation;
@@ -2780,7 +2792,7 @@ export const evaluateAnswer = action({
           ),
           system:
             "Du bist ein sachlicher Prüfungs-Korrektor. Antworte auf Deutsch. Formuliere nüchtern und direkt. Verwende keine schmeichelnden, beschwichtigenden oder motivierenden Sätze. Erkläre kurz, was fachlich richtig ist oder was inhaltlich fehlt.",
-            prompt: (evaluationPrompt = `Thema: ${question.topic}
+          prompt: (evaluationPrompt = `Thema: ${question.topic}
 Frage: ${question.prompt}
 Probiere dich bei deiner Antwort kurz und knapp zu halten. 
 Erwartete Antwort-Richtung: ${question.idealAnswer}
@@ -2791,7 +2803,7 @@ Antwortmodus: ${
               ? 'Die lernende Person hat bewusst "Ich weiß es gerade nicht" gewählt.'
               : "Die lernende Person hat eine eigene Antwort eingereicht."
           }
-${args.answeredWithDontKnow ? "Wenn \"Ich weiß es gerade nicht\" gewählt wurde, erkläre direkt den fachlichen Kern in 1 bis 2 Sätzen. Erwähne nicht, dass keine Antwort vorlag oder was in der Antwort fehlt." : ""}
+${args.answeredWithDontKnow ? 'Wenn "Ich weiß es gerade nicht" gewählt wurde, erkläre direkt den fachlichen Kern in 1 bis 2 Sätzen. Erwähne nicht, dass keine Antwort vorlag oder was in der Antwort fehlt.' : ""}
 
 Antwort der lernenden Person:
 ${args.userAnswer}

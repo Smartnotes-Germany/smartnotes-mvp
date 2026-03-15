@@ -150,16 +150,21 @@ export function useQuizFlow({
           result.score,
           Date.now() - evaluationStartedAt,
           result.isCorrect,
+          dontKnowSubmission,
           {
             answeredQuestions,
             totalQuestions,
           },
         );
       } catch (error: unknown) {
-        trackQuizAnswerEvaluationFailed(Date.now() - evaluationStartedAt, {
-          answeredQuestions,
-          totalQuestions,
-        });
+        trackQuizAnswerEvaluationFailed(
+          Date.now() - evaluationStartedAt,
+          dontKnowSubmission,
+          {
+            answeredQuestions,
+            totalQuestions,
+          },
+        );
         const latestContext = latestSessionContextRef.current;
         if (
           latestContext.grantToken !== submissionContext.grantToken ||

@@ -253,6 +253,7 @@ export const trackQuizAnswerEvaluated = (
   score: number,
   durationMs: number,
   isCorrect: boolean,
+  dontKnowSubmission: boolean,
   properties: ProgressProperties,
 ) => {
   captureStudyEvent("quiz_answer_evaluated", {
@@ -264,11 +265,13 @@ export const trackQuizAnswerEvaluated = (
     durationBucket: toDurationBucketMs(durationMs),
     scoreBucket: toScoreBucket(score),
     isCorrect,
+    dontKnowSubmission,
   });
 };
 
 export const trackQuizAnswerEvaluationFailed = (
   durationMs: number,
+  dontKnowSubmission: boolean,
   properties: ProgressProperties,
 ) => {
   captureStudyEvent("quiz_answer_evaluation_failed", {
@@ -278,6 +281,7 @@ export const trackQuizAnswerEvaluationFailed = (
     totalQuestions: properties.totalQuestions,
     durationMs,
     durationBucket: toDurationBucketMs(durationMs),
+    dontKnowSubmission,
   });
 };
 

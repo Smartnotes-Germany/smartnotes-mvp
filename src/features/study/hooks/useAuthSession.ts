@@ -10,6 +10,9 @@ import { STORAGE_KEYS } from "../constants";
 import { formatError } from "../errorUtils";
 import type { GrantStatus } from "../types";
 import {
+  identifyPostHogUser,
+  registerPostHogContext,
+  resetPostHogUser,
   trackAuthCodeRedeemFailed,
   trackAuthCodeRedeemStarted,
   trackAuthCodeRedeemSucceeded,
@@ -105,6 +108,21 @@ export function useAuthSession(): AuthSessionReturn {
     setIsAcceptingPrivacy(false);
   }, []);
 
+  const applyAnalyticsIdentity = useCallback(
+    (identity: {
+      identityKey: string;
+      identityLabel: string;
+      identityEmail?: string;
+      note?: string;
+    }) => {
+      identifyPostHogUser(identity, {
+        grantToken,
+        sessionId,
+      });
+    },
+    [grantToken, sessionId],
+  );
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
@@ -112,19 +130,33 @@ export function useAuthSession(): AuthSessionReturn {
     if (code && !grantToken && !isProcessingMagicLink.current) {
       isProcessingMagicLink.current = true;
       setIsConsumingMagicLink(true);
+      trackAuthCodeRedeemStarted("magic_link");
 
       const newUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
 
-      void redeemAccessCode({ code })
+      void redeemAccessCode({ code, source: "magic_link" })
         .then((result) => {
           setGrantToken(result.grantToken);
           localStorage.setItem(STORAGE_KEYS.grantToken, result.grantToken);
+          identifyPostHogUser(
+            {
+              identityKey: result.identityKey,
+              identityLabel: result.identityLabel,
+              identityEmail: result.identityEmail,
+              note: result.note,
+            },
+            {
+              grantToken: result.grantToken,
+            },
+          );
+          trackAuthCodeRedeemSucceeded("magic_link");
         })
         .catch((error: unknown) => {
           if (grantToken) {
             return;
           }
+          trackAuthCodeRedeemFailed("magic_link");
           setAuthError(
             formatError(error, {
               fallback:
@@ -149,6 +181,34 @@ export function useAuthSession(): AuthSessionReturn {
   }, [grantStatus, grantToken]);
 
   useEffect(() => {
+    if (!grantToken || !grantStatus?.valid) {
+      return;
+    }
+
+    if (!grantStatus.identityKey || !grantStatus.identityLabel) {
+      return;
+    }
+
+    applyAnalyticsIdentity({
+      identityKey: grantStatus.identityKey,
+      identityLabel: grantStatus.identityLabel,
+      identityEmail: grantStatus.identityEmail,
+      note: grantStatus.note,
+    });
+  }, [applyAnalyticsIdentity, grantStatus, grantToken]);
+
+  useEffect(() => {
+    if (!grantToken) {
+      return;
+    }
+
+    registerPostHogContext({
+      grantToken,
+      sessionId,
+    });
+  }, [grantToken, sessionId]);
+
+  useEffect(() => {
     if (
       !grantToken ||
       !grantStatus?.valid ||
@@ -171,6 +231,10 @@ export function useAuthSession(): AuthSessionReturn {
       .then((newSessionId) => {
         setSessionId(newSessionId);
         localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+        registerPostHogContext({
+          grantToken,
+          sessionId: newSessionId,
+        });
         markStartedSession(newSessionId, "auto");
       })
       .catch((error: unknown) => {
@@ -207,6 +271,10 @@ export function useAuthSession(): AuthSessionReturn {
     if (sessionId !== latestSessionId) {
       setSessionId(latestSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, latestSessionId);
+      registerPostHogContext({
+        grantToken,
+        sessionId: latestSessionId,
+      });
       maybeTrackResumedSession(latestSessionId);
     }
   }, [
@@ -236,13 +304,28 @@ export function useAuthSession(): AuthSessionReturn {
     setAuthError(null);
 
     try {
-      const auth = await redeemAccessCode({ code: accessCodeInput });
+      const auth = await redeemAccessCode({
+        code: accessCodeInput,
+        source: "manual_code",
+      });
       const newSessionId = await startSession({ grantToken: auth.grantToken });
       setGrantToken(auth.grantToken);
       setSessionId(newSessionId);
       localStorage.setItem(STORAGE_KEYS.grantToken, auth.grantToken);
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
       setAccessCodeInput("");
+      identifyPostHogUser(
+        {
+          identityKey: auth.identityKey,
+          identityLabel: auth.identityLabel,
+          identityEmail: auth.identityEmail,
+          note: auth.note,
+        },
+        {
+          grantToken: auth.grantToken,
+          sessionId: newSessionId,
+        },
+      );
       markStartedSession(newSessionId, "auth_code");
       trackAuthCodeRedeemSucceeded();
     } catch (error: unknown) {
@@ -268,6 +351,10 @@ export function useAuthSession(): AuthSessionReturn {
       const newSessionId = await startSession({ grantToken });
       setSessionId(newSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+      registerPostHogContext({
+        grantToken,
+        sessionId: newSessionId,
+      });
       markStartedSession(newSessionId, "fresh");
       return null;
     } catch (error: unknown) {
@@ -291,6 +378,7 @@ export function useAuthSession(): AuthSessionReturn {
       localStorage.removeItem(STORAGE_KEYS.grantToken);
       localStorage.removeItem(STORAGE_KEYS.sessionId);
       localStorage.removeItem("smartnotes.privacy-accepted"); // Also remove from local storage
+      resetPostHogUser();
       setIsSigningOut(false);
       signOutTimeoutRef.current = null;
     }, 500);

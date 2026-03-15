@@ -3,8 +3,15 @@ import type { FeedbackState, GrantStatus, SessionSnapshot } from "./types";
 
 export const redeemAccessCodeRef = makeFunctionReference<
   "mutation",
-  { code: string },
-  { grantToken: string }
+  { code: string; source?: "manual_code" | "magic_link" },
+  {
+    grantToken: string;
+    expiresAt?: number;
+    identityKey: string;
+    identityLabel: string;
+    identityEmail?: string;
+    note?: string;
+  }
 >("access:redeemAccessCode");
 
 export const startSessionRef = makeFunctionReference<

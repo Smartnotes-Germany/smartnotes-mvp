@@ -72,6 +72,10 @@ const aiAnalyticsErrorCategoryValidator = v.union(
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
+  identityKey?: string;
+  identityLabel?: string;
+  identityEmail?: string;
+  note?: string;
   revokedAt?: number;
 };
 
@@ -154,6 +158,10 @@ const ensureGrant = async (
 
   return {
     _id: grant._id,
+    identityKey: grant.identityKey,
+    identityLabel: grant.identityLabel,
+    identityEmail: grant.identityEmail,
+    note: grant.note,
     revokedAt: grant.revokedAt,
   };
 };
@@ -213,6 +221,22 @@ export const getLatestSessionId = query({
       .first();
 
     return latestSession?._id ?? null;
+  },
+});
+
+export const getGrantAnalyticsIdentity = internalQuery({
+  args: {
+    grantToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+
+    return {
+      identityKey: grant.identityKey,
+      identityLabel: grant.identityLabel,
+      identityEmail: grant.identityEmail,
+      note: grant.note,
+    };
   },
 });
 

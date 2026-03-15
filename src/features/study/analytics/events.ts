@@ -2,6 +2,7 @@ import { isPostHogEnabled, posthogClient } from "./posthogClient";
 
 type AnalyticsValue = string | number | boolean;
 type AnalyticsProperties = Record<string, AnalyticsValue | undefined>;
+export type AuthSource = "manual_code" | "magic_link";
 
 export type AnalyticsStage =
   | "auth"
@@ -94,24 +95,33 @@ type DocumentProperties = {
   readyDocuments?: number;
 };
 
-export const trackAuthCodeRedeemStarted = () => {
+export const trackAuthCodeRedeemStarted = (
+  source: AuthSource = "manual_code",
+) => {
   captureStudyEvent("auth_code_redeem_started", {
     stage: "auth",
     status: "started",
+    source,
   });
 };
 
-export const trackAuthCodeRedeemSucceeded = () => {
+export const trackAuthCodeRedeemSucceeded = (
+  source: AuthSource = "manual_code",
+) => {
   captureStudyEvent("auth_code_redeem_succeeded", {
     stage: "auth",
     status: "succeeded",
+    source,
   });
 };
 
-export const trackAuthCodeRedeemFailed = () => {
+export const trackAuthCodeRedeemFailed = (
+  source: AuthSource = "manual_code",
+) => {
   captureStudyEvent("auth_code_redeem_failed", {
     stage: "auth",
     status: "failed",
+    source,
   });
 };
 

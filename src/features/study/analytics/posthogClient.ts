@@ -1,5 +1,6 @@
 import posthog, { type PostHogConfig } from "posthog-js";
 import { resolvedFrontendEnv } from "../../../env";
+import { buildPostHogDistinctId } from "../../../../shared/identity";
 
 const SENSITIVE_SELECTOR = ".ph-no-capture, [data-ph-sensitive='true']";
 
@@ -32,7 +33,7 @@ const buildPostHogOptions = (): Partial<PostHogConfig> => {
       maskInputFn: () => "[MASKIERT]",
       maskTextFn: () => "[MASKIERT]",
     },
-    persistence: "memory",
+    persistence: "localStorage",
   };
 };
 
@@ -54,3 +55,67 @@ export const initializePostHog = () => {
 export const isPostHogEnabled = () => initialized;
 
 export const posthogClient = posthog;
+
+type AnalyticsIdentity = {
+  identityKey: string;
+  identityLabel: string;
+  identityEmail?: string;
+  note?: string;
+};
+
+type AnalyticsContext = {
+  grantToken?: string | null;
+  sessionId?: string | null;
+};
+
+export const identifyPostHogUser = (
+  identity: AnalyticsIdentity,
+  context?: AnalyticsContext,
+) => {
+  if (!isPostHogEnabled()) {
+    return;
+  }
+
+  posthogClient.identify(buildPostHogDistinctId(identity.identityKey), {
+    identityKey: identity.identityKey,
+    identityLabel: identity.identityLabel,
+    ...(identity.identityEmail
+      ? {
+          identityEmail: identity.identityEmail,
+          $email: identity.identityEmail,
+        }
+      : {}),
+    ...(identity.note ? { note: identity.note } : {}),
+    $name: identity.identityLabel,
+  });
+
+  posthogClient.register({
+    identityKey: identity.identityKey,
+    identityLabel: identity.identityLabel,
+    ...(identity.identityEmail
+      ? { identityEmail: identity.identityEmail }
+      : {}),
+    ...(identity.note ? { note: identity.note } : {}),
+    ...(context?.grantToken ? { grantToken: context.grantToken } : {}),
+    ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
+  });
+};
+
+export const registerPostHogContext = (context: AnalyticsContext) => {
+  if (!isPostHogEnabled()) {
+    return;
+  }
+
+  posthogClient.register({
+    ...(context.grantToken ? { grantToken: context.grantToken } : {}),
+    ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+  });
+};
+
+export const resetPostHogUser = () => {
+  if (!isPostHogEnabled()) {
+    return;
+  }
+
+  posthogClient.reset();
+};

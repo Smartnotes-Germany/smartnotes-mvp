@@ -99,6 +99,10 @@ export type GrantStatus = {
   valid: boolean;
   reason?: string;
   expiresAt?: number;
+  identityKey?: string;
+  identityLabel?: string;
+  identityEmail?: string;
+  note?: string;
 };
 
 export type FormatErrorOptions = {

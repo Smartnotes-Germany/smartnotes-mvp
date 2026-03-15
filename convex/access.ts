@@ -3,6 +3,13 @@ import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { mutation, query } from "./errorTracking";
 import { readRequiredEnv } from "./env";
+import {
+  buildIdentityKey,
+  buildPostHogDistinctId,
+  normalizeIdentityEmail,
+  normalizeIdentityLabel,
+} from "../shared/identity";
+import { captureEvent } from "./posthog";
 
 /** Constants for access management */
 const DEMO_ACCESS_CODE = "SMARTNOTES-DEMO-2026";
@@ -35,10 +42,20 @@ const normalizeCode = (rawCode: string) =>
 
 const getAccessCodeIdentity = (
   accessCode: Doc<"accessCodes">,
-): { identityLabel: string; identityEmail?: string; note?: string } => {
-  const identityLabel =
-    accessCode.identityLabel?.trim() || accessCode.note?.trim() || "";
-  const identityEmail = accessCode.identityEmail?.trim();
+): {
+  identityKey: string;
+  identityLabel: string;
+  identityEmail?: string;
+  note?: string;
+} => {
+  const identityLabel = accessCode.identityLabel
+    ? normalizeIdentityLabel(accessCode.identityLabel)
+    : accessCode.note
+      ? normalizeIdentityLabel(accessCode.note)
+      : "";
+  const identityEmail = accessCode.identityEmail
+    ? normalizeIdentityEmail(accessCode.identityEmail)
+    : undefined;
   const note = accessCode.note?.trim();
 
   if (!identityLabel) {
@@ -47,7 +64,15 @@ const getAccessCodeIdentity = (
     );
   }
 
+  const identityKey =
+    accessCode.identityKey ||
+    buildIdentityKey({
+      identityLabel,
+      identityEmail,
+    });
+
   return {
+    identityKey,
     identityLabel,
     ...(identityEmail ? { identityEmail } : {}),
     ...(note ? { note } : {}),
@@ -102,6 +127,12 @@ const redeemStoredAccessCode = async (
   });
 
   await ctx.db.patch(accessCode._id, {
+    identityKey: identity.identityKey,
+    identityLabel: identity.identityLabel,
+    ...(identity.identityEmail
+      ? { identityEmail: identity.identityEmail }
+      : {}),
+    ...(identity.note ? { note: identity.note } : {}),
     consumedAt: now,
     consumedByGrantId: grantId,
   });
@@ -109,6 +140,7 @@ const redeemStoredAccessCode = async (
   return {
     grantToken,
     expiresAt,
+    ...identity,
   };
 };
 
@@ -118,17 +150,81 @@ const redeemStoredAccessCode = async (
 export const redeemAccessCode = mutation({
   args: {
     code: v.string(),
+    source: v.optional(
+      v.union(v.literal("manual_code"), v.literal("magic_link")),
+    ),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const normalizedCode = normalizeCode(args.code);
+    const source = args.source ?? "manual_code";
     const accessCode = await findAccessCode(ctx, normalizedCode, now);
 
     if (!accessCode) {
+      await captureEvent({
+        event: "auth_code_redeem_failed",
+        distinctId: "smartnotes-anonymous-auth",
+        properties: {
+          status: "failed",
+          source,
+          failureReason: "unknown_code",
+          normalizedCode,
+          attribution: "anonymous_client_or_server",
+        },
+      });
       throw new Error("Zugangscode wurde nicht erkannt.");
     }
 
-    return redeemStoredAccessCode(ctx, accessCode, now);
+    try {
+      const result = await redeemStoredAccessCode(ctx, accessCode, now);
+
+      await captureEvent({
+        event: "auth_code_redeem_succeeded",
+        distinctId: buildPostHogDistinctId(result.identityKey),
+        properties: {
+          status: "succeeded",
+          source,
+          attribution: "identified_server",
+          identityKey: result.identityKey,
+        },
+        personProperties: {
+          identityKey: result.identityKey,
+          identityLabel: result.identityLabel,
+          ...(result.identityEmail
+            ? { identityEmail: result.identityEmail }
+            : {}),
+          ...(result.note ? { note: result.note } : {}),
+        },
+      });
+
+      return result;
+    } catch (error) {
+      if (accessCode.consumedAt) {
+        const identity = getAccessCodeIdentity(accessCode);
+        await captureEvent({
+          event: "auth_code_redeem_failed",
+          distinctId: buildPostHogDistinctId(identity.identityKey),
+          properties: {
+            status: "failed",
+            source,
+            failureReason: "already_used",
+            normalizedCode,
+            attribution: "identified_server",
+            identityKey: identity.identityKey,
+          },
+          personProperties: {
+            identityKey: identity.identityKey,
+            identityLabel: identity.identityLabel,
+            ...(identity.identityEmail
+              ? { identityEmail: identity.identityEmail }
+              : {}),
+            ...(identity.note ? { note: identity.note } : {}),
+          },
+        });
+      }
+
+      throw error;
+    }
   },
 });
 
@@ -176,6 +272,10 @@ export const validateGrant = query({
 
     return {
       valid: true,
+      identityKey: grant.identityKey,
+      identityLabel: grant.identityLabel,
+      identityEmail: grant.identityEmail,
+      note: grant.note,
     };
   },
 });
@@ -202,8 +302,18 @@ export const createAccessCodes = mutation({
 
     const now = Date.now();
     let inserted = 0;
-    const identityLabel = args.identityLabel?.trim();
-    const identityEmail = args.identityEmail?.trim();
+    const identityLabel = args.identityLabel
+      ? normalizeIdentityLabel(args.identityLabel)
+      : undefined;
+    const identityEmail = args.identityEmail
+      ? normalizeIdentityEmail(args.identityEmail)
+      : undefined;
+    const identityKey = identityLabel
+      ? buildIdentityKey({
+          identityLabel,
+          identityEmail,
+        })
+      : undefined;
 
     for (const code of args.codes) {
       const normalizedCode = normalizeCode(code);
@@ -226,6 +336,7 @@ export const createAccessCodes = mutation({
         code,
         normalizedCode,
         createdAt: now,
+        ...(identityKey ? { identityKey } : {}),
         ...(identityLabel ? { identityLabel } : {}),
         ...(identityEmail ? { identityEmail } : {}),
         ...(args.note ? { note: args.note } : {}),

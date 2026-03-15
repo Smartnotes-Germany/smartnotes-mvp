@@ -35,6 +35,7 @@ import {
 } from "./observability";
 import { captureAiOperationCompleted } from "./posthog";
 import { readOptionalEnv, readRequiredEnv } from "./env";
+import { buildPostHogDistinctId } from "../shared/identity";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -1054,6 +1055,8 @@ type PersistedAiErrorCategory =
 type PersistedAiAnalyticsPayload = {
   traceId: string;
   sessionId: Id<"studySessions">;
+  posthogDistinctId?: string;
+  posthogPersonProperties?: Record<string, string | number | boolean>;
   scope: string;
   status: PersistedAiAnalyticsStatus;
   privacyMode?: PersistedPrivacyMode;
@@ -1735,10 +1738,13 @@ const persistAiAnalyticsEvent = async (
       metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
     });
 
-    const sessionHash = hashIdentifier(payload.sessionId);
-
     await captureAiOperationCompleted({
-      distinctId: `session_${sessionHash}`,
+      distinctId:
+        payload.posthogDistinctId ??
+        buildPostHogDistinctId(
+          `session-fallback:${hashIdentifier(payload.sessionId)}`,
+        ),
+      personProperties: payload.posthogPersonProperties,
       traceId: payload.traceId,
       scope: payload.scope,
       status: payload.status,
@@ -1788,10 +1794,46 @@ const persistAiAnalyticsEvent = async (
       event: "analytics_persist_failed",
       traceId: payload.traceId,
       scope: payload.scope,
-      sessionHash: hashIdentifier(payload.sessionId),
+      distinctId:
+        payload.posthogDistinctId ??
+        buildPostHogDistinctId(
+          `session-fallback:${hashIdentifier(payload.sessionId)}`,
+        ),
       error: extractErrorForLog(error),
     });
   }
+};
+
+const getGrantPostHogIdentity = async (
+  ctx: Pick<ActionCtx, "runQuery">,
+  grantToken: string,
+) => {
+  const identity = await ctx.runQuery(
+    internal.study.getGrantAnalyticsIdentity,
+    {
+      grantToken,
+    },
+  );
+
+  if (!identity.identityKey || !identity.identityLabel) {
+    return null;
+  }
+
+  return {
+    distinctId: buildPostHogDistinctId(identity.identityKey),
+    personProperties: {
+      identityKey: identity.identityKey,
+      identityLabel: identity.identityLabel,
+      ...(identity.identityEmail
+        ? {
+            identityEmail: identity.identityEmail,
+            $email: identity.identityEmail,
+          }
+        : {}),
+      ...(identity.note ? { note: identity.note } : {}),
+      $name: identity.identityLabel,
+    },
+  };
 };
 
 const parseJsonStringSafely = (value: string): unknown => {
@@ -2103,6 +2145,7 @@ export const generateQuiz = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -2554,6 +2597,8 @@ Anforderungen:
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "generateQuiz",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -2616,6 +2661,7 @@ export const evaluateAnswer = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -2769,6 +2815,8 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "evaluateAnswer",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -2827,6 +2875,7 @@ export const analyzePerformance = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -3302,6 +3351,8 @@ Pflichtregeln:
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "analyzePerformance",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -3361,6 +3412,7 @@ export const generateTopicDeepDive = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -3653,6 +3705,8 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "generateTopicDeepDive",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,

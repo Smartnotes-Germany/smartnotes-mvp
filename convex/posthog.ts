@@ -7,15 +7,18 @@ const CAPTURE_TIMEOUT_MS = 1_500;
 
 type PostHogPrimitive = string | number | boolean;
 type PostHogPropertyValue = PostHogPrimitive | PostHogPrimitive[] | undefined;
+type PostHogPersonProperties = Record<string, PostHogPropertyValue>;
 
 type CapturePayload = {
   event: string;
   distinctId: string;
   properties: Record<string, PostHogPropertyValue>;
+  personProperties?: PostHogPersonProperties;
 };
 
 type CaptureAiOperationPayload = {
   distinctId: string;
+  personProperties?: PostHogPersonProperties;
   traceId: string;
   scope: string;
   status: "success" | "error";
@@ -87,7 +90,12 @@ const capture = async (payload: CapturePayload) => {
         api_key: config.projectKey,
         event: payload.event,
         distinct_id: payload.distinctId,
-        properties: payload.properties,
+        properties: {
+          ...payload.properties,
+          ...(payload.personProperties
+            ? { $set: payload.personProperties }
+            : {}),
+        },
       }),
     });
 
@@ -105,6 +113,10 @@ const capture = async (payload: CapturePayload) => {
   } finally {
     clearTimeout(timeout);
   }
+};
+
+export const captureEvent = async (payload: CapturePayload) => {
+  await capture(payload);
 };
 
 export const captureAiOperationCompleted = async (
@@ -144,6 +156,7 @@ export const captureAiOperationCompleted = async (
       event: "ai_operation_completed",
       distinctId: payload.distinctId,
       properties: commonProperties,
+      personProperties: payload.personProperties,
     }),
     capture({
       event: "$ai_generation",
@@ -153,6 +166,7 @@ export const captureAiOperationCompleted = async (
         input: payload.input,
         output: payload.output,
       },
+      personProperties: payload.personProperties,
     }),
   ]);
 };

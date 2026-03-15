@@ -8,6 +8,11 @@ import {
 } from "./errorTracking";
 import { readRequiredEnv } from "./env";
 import { v } from "convex/values";
+import {
+  buildIdentityKey,
+  normalizeIdentityEmail,
+  normalizeIdentityLabel,
+} from "../shared/identity";
 
 // Access token
 const getConfiguredAdminSecret = () => {
@@ -246,13 +251,20 @@ export const generateMagicLink = mutation({
   handler: async (ctx, args) => {
     assertAdminSecret(args.adminSecret);
 
-    const identityLabel = args.identityLabel.trim();
-    const identityEmail = args.identityEmail?.trim();
+    const identityLabel = normalizeIdentityLabel(args.identityLabel);
+    const identityEmail = args.identityEmail
+      ? normalizeIdentityEmail(args.identityEmail)
+      : undefined;
     const note = args.note?.trim();
 
     if (!identityLabel) {
       throw new Error("Bitte gib eine Nutzerkennung an.");
     }
+
+    const identityKey = buildIdentityKey({
+      identityLabel,
+      identityEmail,
+    });
 
     const code = Math.random().toString(36).substring(2, 10).toUpperCase();
     const now = Date.now();
@@ -260,6 +272,7 @@ export const generateMagicLink = mutation({
     await ctx.db.insert("accessCodes", {
       code,
       normalizedCode: "SMARTNOTES-" + code,
+      identityKey,
       identityLabel,
       ...(identityEmail ? { identityEmail } : {}),
       ...(note ? { note } : {}),

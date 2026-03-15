@@ -7,12 +7,6 @@ export const redeemAccessCodeRef = makeFunctionReference<
   { grantToken: string }
 >("access:redeemAccessCode");
 
-export const consumeMagicLinkRef = makeFunctionReference<
-  "mutation",
-  { code: string },
-  { grantToken: string; obfuscatedCodes: string[] }
->("access:consumeMagicLink");
-
 export const startSessionRef = makeFunctionReference<
   "mutation",
   { grantToken: string; title?: string },

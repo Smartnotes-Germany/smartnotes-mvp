@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
-  consumeMagicLinkRef,
   latestSessionIdRef,
   redeemAccessCodeRef,
   startSessionRef,
@@ -86,7 +85,6 @@ export function useAuthSession(): AuthSessionReturn {
   }, []);
 
   const redeemAccessCode = useMutation(redeemAccessCodeRef);
-  const consumeMagicLink = useMutation(consumeMagicLinkRef);
   const startSession = useMutation(startSessionRef);
 
   const grantStatus = useQuery(
@@ -118,7 +116,7 @@ export function useAuthSession(): AuthSessionReturn {
       const newUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
 
-      void consumeMagicLink({ code })
+      void redeemAccessCode({ code })
         .then((result) => {
           setGrantToken(result.grantToken);
           localStorage.setItem(STORAGE_KEYS.grantToken, result.grantToken);
@@ -138,7 +136,7 @@ export function useAuthSession(): AuthSessionReturn {
           setIsConsumingMagicLink(false);
         });
     }
-  }, [consumeMagicLink, grantToken]);
+  }, [grantToken, redeemAccessCode]);
 
   useEffect(() => {
     if (!grantToken || !grantStatus || grantStatus.valid) {

@@ -129,6 +129,7 @@ export function useQuizFlow({
           sessionId,
           questionId: submittedQuestion.id,
           userAnswer: submittedAnswer,
+          answeredWithDontKnow: dontKnowSubmission,
           timeSpentSeconds,
           clientRequestId,
         });
@@ -141,7 +142,10 @@ export function useQuizFlow({
           return;
         }
 
-        setFeedback(result);
+        setFeedback({
+          ...result,
+          answeredWithDontKnow: dontKnowSubmission,
+        });
         trackQuizAnswerEvaluated(
           result.score,
           Date.now() - evaluationStartedAt,

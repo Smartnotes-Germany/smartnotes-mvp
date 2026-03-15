@@ -43,6 +43,16 @@ export function QuizStage({
   isGeneratingQuiz,
   onContinueAfterFeedback,
 }: QuizStageProps) {
+  const feedbackTone = !feedback
+    ? null
+    : feedback.isCorrect
+      ? "correct"
+      : feedback.answeredWithDontKnow
+        ? "dontKnow"
+        : feedback.score > 0
+          ? "partial"
+          : "incorrect";
+
   const analysisCtaVariant = useFeatureFlagVariantKey(
     ANALYTICS_FEATURE_FLAGS.analysisCtaVariant,
   );
@@ -98,16 +108,17 @@ export function QuizStage({
             <div className="mb-8 flex flex-col items-center gap-4 md:mb-12">
               <div
                 className={`flex h-14 w-14 items-center justify-center rounded-full shadow-lg md:h-16 md:w-16 ${
-                  feedback.isCorrect
+                  feedbackTone === "correct"
                     ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400"
-                    : feedback.score > 0
+                    : feedbackTone === "partial" || feedbackTone === "dontKnow"
                       ? "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
                       : "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400"
                 }`}
               >
-                {feedback.isCorrect ? (
+                {feedbackTone === "correct" ? (
                   <CheckCircle2 size={28} className="md:h-8 md:w-8" />
-                ) : feedback.score > 0 ? (
+                ) : feedbackTone === "partial" ||
+                  feedbackTone === "dontKnow" ? (
                   <Lightbulb size={28} className="md:h-8 md:w-8" />
                 ) : (
                   <XCircle size={28} className="md:h-8 md:w-8" />
@@ -115,18 +126,20 @@ export function QuizStage({
               </div>
               <p
                 className={`text-[10px] font-black tracking-[0.3em] uppercase md:text-sm ${
-                  feedback.isCorrect
+                  feedbackTone === "correct"
                     ? "text-emerald-600 dark:text-emerald-400"
-                    : feedback.score > 0
+                    : feedbackTone === "partial" || feedbackTone === "dontKnow"
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-red-600 dark:text-red-400"
                 }`}
               >
-                {feedback.isCorrect
+                {feedbackTone === "correct"
                   ? "Richtig"
-                  : feedback.score > 0
-                    ? "Teilweise"
-                    : "Falsch"}
+                  : feedbackTone === "dontKnow"
+                    ? "Noch nicht gewusst"
+                    : feedbackTone === "partial"
+                      ? "Teilweise"
+                      : "Falsch"}
               </p>
             </div>
 

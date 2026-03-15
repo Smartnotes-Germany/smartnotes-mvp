@@ -49,6 +49,8 @@ export default defineSchema({
     createdAt: v.number(),
     consumedAt: v.optional(v.number()),
     consumedByGrantId: v.optional(v.id("accessGrants")),
+    identityLabel: v.optional(v.string()),
+    identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
   }).index("by_normalizedCode", ["normalizedCode"]),
 
@@ -56,6 +58,9 @@ export default defineSchema({
   accessGrants: defineTable({
     token: v.string(),
     createdAt: v.number(),
+    identityLabel: v.optional(v.string()),
+    identityEmail: v.optional(v.string()),
+    note: v.optional(v.string()),
     revokedAt: v.optional(v.number()),
   }).index("by_token", ["token"]),
 

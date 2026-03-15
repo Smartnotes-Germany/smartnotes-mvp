@@ -33,6 +33,27 @@ const generateToken = () => {
 const normalizeCode = (rawCode: string) =>
   rawCode.trim().replace(/\s+/g, "-").toUpperCase();
 
+const getAccessCodeIdentity = (
+  accessCode: Doc<"accessCodes">,
+): { identityLabel: string; identityEmail?: string; note?: string } => {
+  const identityLabel =
+    accessCode.identityLabel?.trim() || accessCode.note?.trim() || "";
+  const identityEmail = accessCode.identityEmail?.trim();
+  const note = accessCode.note?.trim();
+
+  if (!identityLabel) {
+    throw new Error(
+      "Dieser Zugangscode ist keiner identifizierten Person zugeordnet.",
+    );
+  }
+
+  return {
+    identityLabel,
+    ...(identityEmail ? { identityEmail } : {}),
+    ...(note ? { note } : {}),
+  };
+};
+
 const findAccessCode = async (
   ctx: MutationCtx,
   normalizedCode: string,
@@ -70,12 +91,14 @@ const redeemStoredAccessCode = async (
     throw new Error("Dieser Zugangscode wurde bereits verwendet.");
   }
 
+  const identity = getAccessCodeIdentity(accessCode);
   const grantToken = generateToken();
   const expiresAt = now + ACCESS_GRANT_TTL_MS;
 
   const grantId = await ctx.db.insert("accessGrants", {
     token: grantToken,
     createdAt: now,
+    ...identity,
   });
 
   await ctx.db.patch(accessCode._id, {
@@ -164,6 +187,8 @@ export const createAccessCodes = mutation({
   args: {
     adminSecret: v.string(),
     codes: v.array(v.string()),
+    identityLabel: v.optional(v.string()),
+    identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -177,6 +202,8 @@ export const createAccessCodes = mutation({
 
     const now = Date.now();
     let inserted = 0;
+    const identityLabel = args.identityLabel?.trim();
+    const identityEmail = args.identityEmail?.trim();
 
     for (const code of args.codes) {
       const normalizedCode = normalizeCode(code);
@@ -199,6 +226,8 @@ export const createAccessCodes = mutation({
         code,
         normalizedCode,
         createdAt: now,
+        ...(identityLabel ? { identityLabel } : {}),
+        ...(identityEmail ? { identityEmail } : {}),
         ...(args.note ? { note: args.note } : {}),
       });
       inserted += 1;

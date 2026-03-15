@@ -64,8 +64,10 @@ const resolveTarget = async (
     throw new Error("Lernsitzung wurde nicht gefunden.");
   }
 
+  const grant = await ctx.db.get(session.grantId);
+
   return {
-    grant: null,
+    grant,
     sessions: [session],
   };
 };
@@ -237,10 +239,20 @@ export const verifySecret = query({
 export const generateMagicLink = mutation({
   args: {
     adminSecret: v.string(),
+    identityLabel: v.string(),
+    identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     assertAdminSecret(args.adminSecret);
+
+    const identityLabel = args.identityLabel.trim();
+    const identityEmail = args.identityEmail?.trim();
+    const note = args.note?.trim();
+
+    if (!identityLabel) {
+      throw new Error("Bitte gib eine Nutzerkennung an.");
+    }
 
     const code = Math.random().toString(36).substring(2, 10).toUpperCase();
     const now = Date.now();
@@ -248,7 +260,9 @@ export const generateMagicLink = mutation({
     await ctx.db.insert("accessCodes", {
       code,
       normalizedCode: "SMARTNOTES-" + code,
-      note: args.note,
+      identityLabel,
+      ...(identityEmail ? { identityEmail } : {}),
+      ...(note ? { note } : {}),
       createdAt: now,
     });
 

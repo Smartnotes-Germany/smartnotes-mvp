@@ -10,8 +10,12 @@ export default function Page() {
   );
   const [adminSecret, setAdminSecret] = useState(draftSecret);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [identityLabel, setIdentityLabel] = useState("");
+  const [identityEmail, setIdentityEmail] = useState("");
   const [note, setNote] = useState("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [generatedIdentityLabel, setGeneratedIdentityLabel] =
+    useState<string>("");
 
   const verifySecret = useQuery(api.admin.verifySecret, { adminSecret });
   const generateMagicLink = useMutation(api.admin.generateMagicLink);
@@ -38,16 +42,32 @@ export default function Page() {
     setAdminSecret("");
     localStorage.removeItem("adminSecret");
     setGeneratedLink(null);
+    setGeneratedIdentityLabel("");
   };
 
   const handleGenerateLink = async () => {
+    const trimmedIdentityLabel = identityLabel.trim();
+
+    if (!trimmedIdentityLabel) {
+      alert("Bitte gib den Namen oder die Kennung des Nutzers ein.");
+      return;
+    }
+
     try {
       setCopiedCode(null); // Clear previous "Kopiert!" state
       setGeneratedLink(null); // Clear previous generated link
-      const { code } = await generateMagicLink({ adminSecret, note });
+      const { code } = await generateMagicLink({
+        adminSecret,
+        identityLabel: trimmedIdentityLabel,
+        identityEmail: identityEmail.trim() || undefined,
+        note: note.trim() || undefined,
+      });
       const magicLink = `${window.location.origin}/?code=SMARTNOTES-${code}`;
       setGeneratedLink(magicLink);
-      setNote(""); // Clear the note input after link generation
+      setGeneratedIdentityLabel(trimmedIdentityLabel);
+      setIdentityLabel("");
+      setIdentityEmail("");
+      setNote("");
     } catch (err) {
       console.error(err);
       alert("Fehler beim Generieren des Links.");
@@ -69,6 +89,9 @@ export default function Page() {
 
   const handleNewLink = () => {
     setGeneratedLink(null);
+    setGeneratedIdentityLabel("");
+    setIdentityLabel("");
+    setIdentityEmail("");
     setNote("");
   };
 
@@ -83,7 +106,7 @@ export default function Page() {
               className="mx-auto mb-4 h-12 w-auto rounded-xl"
             />
             <h2 className="flex items-center justify-center gap-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-              Admin Login
+              Admin-Anmeldung
             </h2>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               Bitte gib dein Admin-Secret ein, um fortzufahren.
@@ -92,7 +115,7 @@ export default function Page() {
           <form className="mt-8 space-y-6" onSubmit={handleLogin}>
             <div>
               <label htmlFor="secret" className="sr-only">
-                Admin Secret
+                Admin-Secret
               </label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -105,7 +128,7 @@ export default function Page() {
                   value={draftSecret}
                   onChange={(e) => setDraftSecret(e.target.value)}
                   className="block w-full rounded-xl border border-gray-300 bg-gray-50 py-3 pr-3 pl-10 text-gray-900 transition-all outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  placeholder="Admin Secret"
+                  placeholder="Admin-Secret"
                 />
               </div>
             </div>
@@ -139,10 +162,10 @@ export default function Page() {
             />
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                Admin Dashboard
+                Admin-Dashboard
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Manage access and tokens
+                Zugriffscodes und Nutzerzuordnung verwalten
               </p>
             </div>
           </div>
@@ -164,6 +187,9 @@ export default function Page() {
             <div className="space-y-4">
               {generatedLink ? (
                 <div className="space-y-4">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200">
+                    Zugeordnet zu: <strong>{generatedIdentityLabel}</strong>
+                  </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Generierter Magic Link
@@ -205,16 +231,45 @@ export default function Page() {
                 <>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Name oder Kennung des Nutzers
+                    </label>
+                    <input
+                      type="text"
+                      value={identityLabel}
+                      onChange={(e) => setIdentityLabel(e.target.value)}
+                      placeholder="z. B. Max Mustermann oder Matrikelnummer"
+                      className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-900 transition-all outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      E-Mail-Adresse (optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={identityEmail}
+                      onChange={(e) => setIdentityEmail(e.target.value)}
+                      placeholder="max@schule.de"
+                      className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-900 transition-all outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Notiz (optional)
                     </label>
                     <input
                       type="text"
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
-                      placeholder={"Z.B. Name des Nutzers"}
+                      placeholder="z. B. Kurs, Gruppe oder interner Hinweis"
                       className="w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-900 transition-all outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                     />
                   </div>
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
+                    Ohne Nutzerzuordnung wird kein Link mehr erstellt. Jeder
+                    Zugangscode muss einer identifizierbaren Person zugeordnet
+                    sein.
+                  </p>
                   <button
                     onClick={handleGenerateLink}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-8 py-3 font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 sm:w-auto"
@@ -237,15 +292,18 @@ export default function Page() {
               <p>
                 Der Magic Link enthält einen einmalig verwendbaren Zugangscode.
                 Sobald der Nutzer den Link öffnet, wird der Code im Backend
-                entwertet und eine dauerhafte Sitzung (Grant) im Browser des
-                Nutzers erstellt.
+                entwertet und eine dauerhafte, einer Person zugeordnete Sitzung
+                im Browser des Nutzers erstellt.
               </p>
               <ul className="list-disc space-y-2 pl-5">
-                <li>Links sind nur einmal gültig.</li>
-                <li>Codes werden nach der Verwendung sofort gelöscht.</li>
+                <li>Links und Zugangscodes sind nur einmal gültig.</li>
                 <li>
-                  Das Admin-Secret wird lokal verschlüsselt im Browser
-                  gespeichert (Session).
+                  Die Nutzerzuordnung bleibt nach dem Einlösen zur Verwaltung,
+                  Nachvollziehbarkeit und für Analytics erhalten.
+                </li>
+                <li>
+                  Das Admin-Secret wird lokal im Browser gespeichert, bis du
+                  dich abmeldest.
                 </li>
               </ul>
             </div>

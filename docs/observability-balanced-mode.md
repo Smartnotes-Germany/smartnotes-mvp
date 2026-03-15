@@ -21,10 +21,14 @@ For frontend PostHog proxy routing behavior across prod and dev, see `docs/posth
 - Backend emits `ai_operation_completed` and `$ai_generation` with unredacted AI payloads to PostHog.
 - Capture is gated by Convex env vars and no-ops when disabled.
 - This backend bridge sends directly to the configured absolute PostHog host. It does not use the frontend `/snph` proxy path.
+- Backend PostHog events also stamp `app_area="app"` and `source_surface="server"`.
+- If `POSTHOG_APP_ENV` (or `APP_ENV`) is set in Convex, backend events include
+  the explicit environment tag as well.
 - Required Convex vars:
   - `POSTHOG_ENABLED=true|false`
   - `POSTHOG_PROJECT_KEY=<project key>`
   - `POSTHOG_HOST=https://eu.i.posthog.com`
+  - optional: `POSTHOG_APP_ENV=development|preview|production`
 
 ### Correlation guidance (PR #28)
 

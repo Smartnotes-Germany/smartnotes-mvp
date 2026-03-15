@@ -21,7 +21,9 @@ Convex runs in its own runtime model, so we do not use T3 Env directly inside Co
 
 Do **not** put Convex backend secrets in Vite env files.
 
-For the full PostHog routing model across Vercel prod, local Vite dev, `vite preview`, Convex, and source-map upload, see `docs/posthog-proxy.md`.
+For the full PostHog routing and persistence model across Vercel prod,
+localhost dev, Vercel preview, Convex, and source-map upload, see
+`docs/posthog-proxy.md`.
 
 ## Frontend runtime env (validated via T3 Env)
 
@@ -40,6 +42,19 @@ Frontend proxy behavior:
 - In Vercel deployments, `vercel.json` rewrites `/snph/*` to `https://eu.i.posthog.com/*`.
 - In local Vite dev and `vite preview`, the same `/snph` path is proxied through `server.proxy` / `preview.proxy`.
 - If you override `VITE_POSTHOG_HOST` with an absolute URL, browser traffic bypasses the local proxy and Vercel rewrites.
+
+Frontend PostHog runtime behavior:
+
+- Persistence defaults to `localStorage+cookie`.
+- Production on `smartnotes.tech` / `app.smartnotes.tech` uses the cookie
+  domain `.smartnotes.tech`.
+- Local development uses `localhost` only and does not set an explicit cookie
+  domain.
+- Vercel preview deployments keep full PostHog functionality per repo, but
+  anonymous cross-repo browser continuity is not expected because the generated
+  preview hosts do not share a parent cookie domain.
+- Person-level merging still works later when the same normalized email is
+  known in both repos.
 
 Important distinction:
 
@@ -108,6 +123,7 @@ At least one auth path must exist:
 | `POSTHOG_ENABLED`     | no          | `false`                    | Enables backend event bridge         |
 | `POSTHOG_PROJECT_KEY` | conditional | -                          | Required when `POSTHOG_ENABLED=true` |
 | `POSTHOG_HOST`        | no          | `https://eu.i.posthog.com` | Backend capture host                 |
+| `POSTHOG_APP_ENV`     | no          | -                          | Optional explicit backend env tag    |
 
 ### Observability / Langfuse
 

@@ -1,13 +1,15 @@
 # Smartnotes
 
 Smartnotes is a Vite + React 19 single-page app backed by Convex.
-It runs an anonymous, three-step study flow:
+It runs a code-gated study flow with identified access grants:
 
 1. Upload class material (PDFs, slides, Word/docs, notes).
 2. Generate and answer exam-style questions with explanations.
 3. Analyze topic readiness, then deep dive weak topics or start a new session.
 
 The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
+PostHog is configured so this app repo can share the correct
+environment-specific PostHog project with the separate website repo.
 
 ## Tech Stack
 
@@ -56,6 +58,12 @@ VITE_POSTHOG_UI_HOST=https://eu.posthog.com
 
 Tip: start from `.env.example` and keep canonical names (`VITE_POSTHOG_*`).
 
+Recommended PostHog project layout:
+
+- development: one shared PostHog project for local website + local app
+- preview: one shared PostHog project for website previews + app previews
+- production: one shared PostHog project for `smartnotes.tech` + `app.smartnotes.tech`
+
 PostHog frontend routing notes:
 
 - `/snph` is the recommended setting. In production, Vercel rewrites that path to the EU PostHog hosts.
@@ -88,6 +96,8 @@ pnpm exec convex env set RETENTION_DAYS_ANALYTICS 180
 pnpm exec convex env set POSTHOG_ENABLED true
 pnpm exec convex env set POSTHOG_PROJECT_KEY <your-posthog-project-key>
 pnpm exec convex env set POSTHOG_HOST https://eu.i.posthog.com
+# optional explicit backend environment tag
+pnpm exec convex env set POSTHOG_APP_ENV production
 ```
 
 Important:
@@ -120,9 +130,10 @@ pnpm dev
 
 ## Access Codes
 
-- The app is anonymous: no user accounts.
-- Users enter a one-time code to receive a temporary grant token.
-- Codes are consumed on the first successful redemption.
+- The app has no classic account system, but access is no longer anonymous.
+- Access codes and magic links are intended to be tied to an identifiable person.
+- Users enter a one-time code or magic link to receive a temporary grant token.
+- Redeemed codes remain administratively traceable through the stored access-code record and linked grant.
 
 For local development, `SMARTNOTES-DEMO-2026` auto-seeds if no code exists yet.
 
@@ -173,7 +184,11 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 ### Frontend capture behavior
 
 - Sensitive UI fields are marked with `ph-no-capture` and `data-ph-sensitive="true"`.
-- PostHog frontend starts with `persistence: 'memory'` (consent rollout in PR #24).
+- PostHog frontend starts as early as possible and uses `persistence: 'localStorage+cookie'`.
+- Production uses `.smartnotes.tech` as the cookie domain so `smartnotes.tech` and `app.smartnotes.tech` can share the anonymous browser journey.
+- Local development stays on `localhost` only. Do not mix `localhost` and `127.0.0.1` if you expect one shared local browser identity across repos.
+- Preview deployments on separate Vercel-generated hosts keep full per-repo PostHog functionality, but they do not share anonymous browser continuity across repos. This is intentional; later person-level merging still happens through the same normalized email.
+- Base frontend properties are registered automatically: `app_area`, `environment`, `source_surface`, `host`, `path`, `referrer`, `landing_url`, `utm_*`, `identity_quality`.
 - Session replay masking is configured via `blockSelector`, `maskTextSelector`, `maskAllInputs`, `maskInputFn` and `maskTextFn`.
 - There is no frontend `before_send` scrubber anymore. Frontend events are sent to PostHog without property-level sanitization or client-side sampling.
 
@@ -183,6 +198,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `api_host: '/snph'` by default unless `VITE_POSTHOG_HOST` overrides it
 - `ui_host: 'https://eu.posthog.com'` by default unless `VITE_POSTHOG_UI_HOST` overrides it
 - `person_profiles: 'identified_only'`
+- `persistence: 'localStorage+cookie'`
 - `capture_pageview: 'history_change'`
 - `capture_pageleave: true`
 - `capture_dead_clicks: true`

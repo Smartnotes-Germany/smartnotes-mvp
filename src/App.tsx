@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
@@ -21,6 +21,7 @@ import {
 } from "./features/study/hooks";
 import Page from "./admin/page.tsx";
 import {
+  registerBaseContext,
   trackConsentUpdated,
   trackStudyStageViewed,
   trackThemeChanged,
@@ -308,12 +309,25 @@ function StudyApp() {
   );
 }
 
+function AnalyticsContextSync() {
+  const location = useLocation();
+
+  useEffect(() => {
+    registerBaseContext();
+  }, [location.hash, location.pathname, location.search]);
+
+  return null;
+}
+
 function App() {
   return (
-    <Routes>
-      <Route path="/admin" element={<Page />} />
-      <Route path="*" element={<StudyApp />} />
-    </Routes>
+    <>
+      <AnalyticsContextSync />
+      <Routes>
+        <Route path="/admin" element={<Page />} />
+        <Route path="*" element={<StudyApp />} />
+      </Routes>
+    </>
   );
 }
 

@@ -5,7 +5,16 @@ This project uses a dual setup for PostHog:
 - frontend browser traffic should go through a first-party proxy path on our own domain
 - backend Convex traffic and source-map upload continue to use the direct PostHog EU hosts
 
-This is intentional. Vercel rewrites only affect browser requests that hit the deployed frontend domain. They do not apply to Convex functions or to `vite build`.
+This is intentional. Vercel rewrites only affect browser requests that hit the
+deployed frontend domain. They do not apply to Convex functions or to
+`vite build`.
+
+The app also uses an environment-aware persistence model:
+
+- production: `localStorage+cookie` with `.smartnotes.tech`
+- localhost dev: `localStorage+cookie` without explicit cookie domain
+- Vercel preview: `localStorage+cookie` per preview host, with no anonymous
+  cross-repo bridge
 
 ## Current defaults
 
@@ -13,6 +22,7 @@ Frontend defaults:
 
 - `VITE_POSTHOG_HOST=/snph`
 - `VITE_POSTHOG_UI_HOST=https://eu.posthog.com`
+- `persistence=localStorage+cookie`
 - Vercel rewrites:
   - `/snph/static/*` -> `https://eu-assets.i.posthog.com/static/*`
   - `/snph/*` -> `https://eu.i.posthog.com/*`
@@ -41,11 +51,25 @@ The source-map upload runs during `pnpm build`. That also does not run behind Ve
 
 If the SPA rewrite were listed before the PostHog rewrites, PostHog requests could be swallowed by `/index.html`.
 
+Persistence behavior:
+
+- browser traffic uses `localStorage+cookie`
+- the cookie domain is `.smartnotes.tech`
+- this allows the website repo and app repo to share the anonymous browser
+  journey across `smartnotes.tech` and `app.smartnotes.tech`
+
 ### Local `pnpm dev`
 
 1. Browser calls `/snph/...` against the local Vite server.
 2. `server.proxy` in `vite.config.ts` forwards those requests to the EU PostHog hosts.
 3. This mirrors production behavior closely enough that the frontend can use the same `VITE_POSTHOG_HOST=/snph` value locally and in production.
+
+Persistence behavior:
+
+- browser traffic still uses `localStorage+cookie`
+- no explicit cookie domain is set
+- both repos must use `localhost`, not a mix of `localhost` and `127.0.0.1`, if
+  you expect the same browser identity across local app + website sessions
 
 ### Local `pnpm preview`
 
@@ -53,6 +77,26 @@ If the SPA rewrite were listed before the PostHog rewrites, PostHog requests cou
 2. `preview.proxy` forwards those requests to the EU PostHog hosts.
 
 This keeps `pnpm preview` aligned with Vercel behavior.
+
+Persistence behavior:
+
+- `pnpm preview` behaves like a single-origin preview of this repo only
+- it does not model the separate-host limitation of independent Vercel preview
+  deployments
+
+### Vercel preview deployments
+
+1. Each repo gets its own generated preview hostname.
+2. Browser traffic still uses PostHog normally on each preview host.
+3. Replay, autocapture, feature flags, identify, and backend capture all remain
+   supported.
+
+Accepted limitation:
+
+- anonymous website-preview to app-preview continuity is not guaranteed across
+  two different generated preview hosts
+- once the same normalized email is known in both repos, person-level merging
+  still works in PostHog
 
 ### Convex backend
 
@@ -129,6 +173,10 @@ Result:
 - production uses Vercel rewrites
 - local dev uses Vite proxy
 - local preview uses Vite preview proxy
+- production shares anonymous browser continuity with the website repo via
+  `.smartnotes.tech`
+- Vercel preview keeps full per-repo tracking but intentionally does not bridge
+  anonymous browser state across separate preview hosts
 
 ### Direct-to-PostHog fallback
 
@@ -212,5 +260,6 @@ This project currently does not use a frontend `before_send` scrubber. Replay pr
 - `src/env.ts`
 - `src/features/study/analytics/posthogClient.ts`
 - `shared/posthogProxy.ts`
+- `shared/posthogRuntime.ts`
 
 If behavior changes, update this file together with those files.

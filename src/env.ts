@@ -30,6 +30,7 @@ export const frontendEnv = createEnv({
 
 export const resolvedFrontendEnv = {
   convexUrl: frontendEnv.VITE_CONVEX_URL,
+  appArea: "app" as const,
   posthog: {
     key: frontendEnv.VITE_POSTHOG_KEY,
     host: normalizePostHogHost(

@@ -1,6 +1,10 @@
 "use node";
 
-import { readBooleanEnv, readOptionalEnv } from "./env";
+import {
+  readBooleanEnv,
+  readOptionalEnv,
+  readOptionalEnvFromAliases,
+} from "./env";
 
 const DEFAULT_POSTHOG_HOST = "https://eu.i.posthog.com";
 const CAPTURE_TIMEOUT_MS = 1_500;
@@ -49,6 +53,21 @@ type CaptureAiOperationPayload = {
   extraProperties?: Record<string, PostHogPropertyValue>;
 };
 
+// Backend captures do not go through the browser SDK, so we stamp the same
+// coarse app/environment metadata here directly.
+const getServerBaseProperties = () => {
+  const environment = readOptionalEnvFromAliases([
+    "POSTHOG_APP_ENV",
+    "APP_ENV",
+  ]);
+
+  return {
+    app_area: "app",
+    source_surface: "server",
+    ...(environment ? { environment } : {}),
+  } satisfies Record<string, PostHogPropertyValue>;
+};
+
 const getPostHogConfig = () => {
   if (!readBooleanEnv("POSTHOG_ENABLED")) {
     return null;
@@ -91,6 +110,7 @@ const capture = async (payload: CapturePayload) => {
         event: payload.event,
         distinct_id: payload.distinctId,
         properties: {
+          ...getServerBaseProperties(),
           ...payload.properties,
           ...(payload.personProperties
             ? { $set: payload.personProperties }

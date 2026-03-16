@@ -98,7 +98,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_sessionId", ["sessionId"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_storageProvider_createdAt", ["storageProvider", "createdAt"]),
 
   /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({

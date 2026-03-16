@@ -33,6 +33,12 @@ const getPendingDocumentsRef = makeFunctionReference<
   }>
 >("storageMigration:getPendingConvexToR2Documents");
 
+const getPendingDocumentsLimit = (limit?: number) =>
+  Math.max(1, Math.min(limit ?? DEFAULT_BATCH_SIZE, 100));
+
+const countDocuments = (query: object) =>
+  (query as { count(): Promise<number> }).count();
+
 export const getPendingConvexToR2Documents = query({
   args: {
     adminSecret: v.string(),
@@ -40,19 +46,28 @@ export const getPendingConvexToR2Documents = query({
   },
   handler: async (ctx, args) => {
     assertAdminSecret(args.adminSecret);
+    const limit = getPendingDocumentsLimit(args.limit);
 
-    const documents = await ctx.db
-      .query("sessionDocuments")
-      .withIndex("by_createdAt")
-      .order("asc")
-      .collect();
+    const [convexDocuments, unlabeledDocuments] = await Promise.all([
+      ctx.db
+        .query("sessionDocuments")
+        .withIndex("by_storageProvider_createdAt", (q) =>
+          q.eq("storageProvider", "convex"),
+        )
+        .order("asc")
+        .take(limit),
+      ctx.db
+        .query("sessionDocuments")
+        .withIndex("by_storageProvider_createdAt", (q) =>
+          q.eq("storageProvider", undefined),
+        )
+        .order("asc")
+        .take(limit),
+    ]);
 
-    return documents
-      .filter(
-        (document) =>
-          resolveStorageProvider(document.storageProvider) === "convex",
-      )
-      .slice(0, Math.max(1, Math.min(args.limit ?? DEFAULT_BATCH_SIZE, 100)))
+    return [...convexDocuments, ...unlabeledDocuments]
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .slice(0, limit)
       .map((document) => ({
         _id: document._id,
         sessionId: document.sessionId,
@@ -71,25 +86,31 @@ export const getStorageMigrationStatus = query({
   handler: async (ctx, args) => {
     assertAdminSecret(args.adminSecret);
 
-    const documents = await ctx.db.query("sessionDocuments").collect();
-    const totalDocuments = documents.length;
-    let convexDocuments = 0;
-    let r2Documents = 0;
-    let unlabeledDocuments = 0;
-
-    for (const document of documents) {
-      if (document.storageProvider === undefined) {
-        unlabeledDocuments += 1;
-        continue;
-      }
-
-      if (document.storageProvider === "r2") {
-        r2Documents += 1;
-        continue;
-      }
-
-      convexDocuments += 1;
-    }
+    const [convexDocuments, r2Documents, unlabeledDocuments] =
+      await Promise.all([
+        countDocuments(
+          ctx.db
+            .query("sessionDocuments")
+            .withIndex("by_storageProvider_createdAt", (q) =>
+              q.eq("storageProvider", "convex"),
+            ),
+        ),
+        countDocuments(
+          ctx.db
+            .query("sessionDocuments")
+            .withIndex("by_storageProvider_createdAt", (q) =>
+              q.eq("storageProvider", "r2"),
+            ),
+        ),
+        countDocuments(
+          ctx.db
+            .query("sessionDocuments")
+            .withIndex("by_storageProvider_createdAt", (q) =>
+              q.eq("storageProvider", undefined),
+            ),
+        ),
+      ]);
+    const totalDocuments = convexDocuments + r2Documents + unlabeledDocuments;
 
     return {
       totalDocuments,

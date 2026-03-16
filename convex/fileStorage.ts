@@ -123,6 +123,25 @@ export const createManagedReadUrl = async (
     return createStorageFallbackUrl(ctx, reference.storageId, "direct");
   }
 
+  if (!accessKey && storageProvider === "r2") {
+    const grantErrorDetail = {
+      message: "R2-Lesezugriffe erfordern einen accessKey.",
+    };
+
+    trace?.log("warn", "document_download_grant_access_key_missing", {
+      storageId,
+      storageProvider,
+      grantErrorDetail,
+    });
+
+    return {
+      fileUrl: null,
+      source: "download_grant" as const,
+      status: "missing_access_key",
+      grantErrorDetail,
+    };
+  }
+
   try {
     const r2Config = maybeGetR2Config(storageProvider);
     const downloadGrant = await ctx.runMutation(

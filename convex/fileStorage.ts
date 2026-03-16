@@ -87,27 +87,59 @@ export const getR2ConfigOrThrow = (): R2Config => {
 const maybeGetR2Config = (provider: StorageProvider) =>
   provider === "r2" ? getR2ConfigOrThrow() : undefined;
 
+const appendStorageUrlErrorDetail = (
+  grantErrorDetail: Record<string, unknown> | undefined,
+  error: unknown,
+): Record<string, unknown> => {
+  const storageUrlError =
+    error instanceof Error
+      ? {
+          functionName: "createStorageFallbackUrl",
+          method: "ctx.storage.getUrl",
+          name: error.name,
+          message: error.message,
+        }
+      : {
+          functionName: "createStorageFallbackUrl",
+          method: "ctx.storage.getUrl",
+          type: typeof error,
+        };
+
+  return grantErrorDetail
+    ? { ...grantErrorDetail, storageUrlError }
+    : storageUrlError;
+};
+
 const createStorageFallbackUrl = async (
   ctx: ReadUrlContext,
   storageId: string | Id<"_storage">,
   status: string,
   grantErrorDetail?: Record<string, unknown>,
 ) => {
-  if (!ctx.storage) {
+  try {
+    if (!ctx.storage) {
+      return {
+        fileUrl: null,
+        source: "storage" as const,
+        status,
+        grantErrorDetail,
+      };
+    }
+
     return {
-      fileUrl: null,
+      fileUrl: await ctx.storage.getUrl(storageId as Id<"_storage">),
       source: "storage" as const,
       status,
       grantErrorDetail,
     };
+  } catch (error) {
+    return {
+      fileUrl: null,
+      source: "storage" as const,
+      status,
+      grantErrorDetail: appendStorageUrlErrorDetail(grantErrorDetail, error),
+    };
   }
-
-  return {
-    fileUrl: await ctx.storage.getUrl(storageId as Id<"_storage">),
-    source: "storage" as const,
-    status,
-    grantErrorDetail,
-  };
 };
 
 export const createManagedReadUrl = async (

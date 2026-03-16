@@ -188,23 +188,38 @@ const tryDeleteUploadedFile = async (
   storageProvider: "convex" | "r2" | undefined,
   reason: string,
 ) => {
+  let result:
+    | Awaited<ReturnType<typeof deleteManagedFile>>
+    | { deleted: boolean }
+    | undefined;
+
   try {
     if ("db" in ctx) {
-      await deleteManagedFile(ctx, {
+      result = await deleteManagedFile(ctx, {
         storageId,
         storageProvider,
       });
     } else {
-      await ctx.runMutation(components.convexFilesControl.cleanUp.deleteFile, {
-        storageId,
-        ...(storageProvider === "r2" ? { r2Config: getR2ConfigOrThrow() } : {}),
-      });
+      result = await ctx.runMutation(
+        components.convexFilesControl.cleanUp.deleteFile,
+        {
+          storageId,
+          ...(storageProvider === "r2"
+            ? { r2Config: getR2ConfigOrThrow() }
+            : {}),
+        },
+      );
+    }
+
+    if (!result.deleted) {
+      throw new Error("Upload-Bereinigung konnte Datei nicht löschen.");
     }
   } catch (error) {
     console.warn("Upload-Bereinigung fehlgeschlagen.", {
       reason,
       storageId,
       storageProvider: storageProvider ?? "convex",
+      result,
       error,
     });
   }

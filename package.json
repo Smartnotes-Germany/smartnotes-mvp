@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@ai-sdk/google-vertex": "^4.0.58",
+    "@convex-dev/migrations": "^0.3.1",
     "@gilhrpenner/convex-files-control": "^0.5.1",
     "@langfuse/otel": "^4.6.1",
     "@langfuse/tracing": "^4.6.1",

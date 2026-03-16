@@ -41,6 +41,11 @@ export const registerUploadedDocumentRef = makeFunctionReference<
     fileName: string;
     fileType: string;
     fileSizeBytes: number;
+    metadata?: {
+      size: number;
+      sha256: string;
+      contentType: string | null;
+    };
   },
   string
 >("study:registerUploadedDocument");

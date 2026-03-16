@@ -10,6 +10,12 @@ import {
 } from "./errorTracking";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
+import {
+  createManagedReadUrl,
+  deleteManagedFile,
+  getConfiguredStorageProvider,
+  getR2ConfigOrThrow,
+} from "./fileStorage";
 import { topicsMatchForFocusMode } from "../shared/topicMatching";
 
 const MAX_ANALYSIS_FULL_RESPONSES = 240;
@@ -76,30 +82,6 @@ type GrantDoc = {
 };
 
 const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
-
-const deleteStorageFileWithFallback = async (
-  ctx: MutationCtx,
-  storageId: Id<"_storage">,
-) => {
-  try {
-    const deleted = await ctx.runMutation(
-      components.convexFilesControl.cleanUp.deleteFile,
-      {
-        storageId,
-      },
-    );
-
-    if (!deleted.deleted) {
-      await ctx.storage.delete(storageId);
-    }
-  } catch {
-    try {
-      await ctx.storage.delete(storageId);
-    } catch {
-      // Best-effort cleanup.
-    }
-  }
-};
 
 const parseMetadataJson = (
   raw: string | undefined,
@@ -265,11 +247,13 @@ export const generateUploadUrl = mutation({
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const storageProvider = getConfiguredStorageProvider();
 
     return ctx.runMutation(
       components.convexFilesControl.upload.generateUploadUrl,
       {
-        provider: "convex",
+        provider: storageProvider,
+        ...(storageProvider === "r2" ? { r2Config: getR2ConfigOrThrow() } : {}),
       },
     );
   },
@@ -280,10 +264,17 @@ export const registerUploadedDocument = mutation({
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     uploadToken: v.string(),
-    storageId: v.id("_storage"),
+    storageId: v.string(),
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),
+    metadata: v.optional(
+      v.object({
+        size: v.number(),
+        sha256: v.string(),
+        contentType: v.union(v.string(), v.null()),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
@@ -295,14 +286,10 @@ export const registerUploadedDocument = mutation({
         uploadToken: args.uploadToken,
         storageId: args.storageId,
         accessKeys: [buildGrantAccessKey(grant._id)],
+        ...(args.metadata ? { metadata: args.metadata } : {}),
       },
     );
 
-    if (finalizedUpload.storageProvider !== "convex") {
-      throw new Error(
-        "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
-      );
-    }
     if (finalizedUpload.storageId !== args.storageId) {
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
@@ -311,14 +298,20 @@ export const registerUploadedDocument = mutation({
 
     const trustedMetadata = finalizedUpload.metadata;
     if (!trustedMetadata) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await deleteManagedFile(ctx, {
+        storageId: args.storageId,
+        storageProvider: finalizedUpload.storageProvider,
+      });
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
     }
 
     if (trustedMetadata.storageId !== args.storageId) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await deleteManagedFile(ctx, {
+        storageId: args.storageId,
+        storageProvider: finalizedUpload.storageProvider,
+      });
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
@@ -331,7 +324,10 @@ export const registerUploadedDocument = mutation({
       "application/octet-stream";
 
     if (args.fileSizeBytes !== trustedFileSizeBytes) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await deleteManagedFile(ctx, {
+        storageId: args.storageId,
+        storageProvider: finalizedUpload.storageProvider,
+      });
       throw new Error(
         "Uploadgröße konnte nicht verifiziert werden. Bitte lade die Datei erneut hoch.",
       );
@@ -342,7 +338,10 @@ export const registerUploadedDocument = mutation({
       size: trustedFileSizeBytes,
     });
     if (!uploadValidation.valid) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await deleteManagedFile(ctx, {
+        storageId: args.storageId,
+        storageProvider: finalizedUpload.storageProvider,
+      });
       throw new Error(uploadValidation.message);
     }
 
@@ -350,6 +349,7 @@ export const registerUploadedDocument = mutation({
     const documentId = await ctx.db.insert("sessionDocuments", {
       sessionId: args.sessionId,
       storageId: args.storageId,
+      storageProvider: finalizedUpload.storageProvider,
       fileName: args.fileName,
       fileType: trustedFileType,
       fileSizeBytes: trustedFileSizeBytes,
@@ -377,7 +377,10 @@ export const removeDocument = mutation({
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
-    await deleteStorageFileWithFallback(ctx, document.storageId);
+    await deleteManagedFile(ctx, {
+      storageId: document.storageId,
+      storageProvider: document.storageProvider,
+    });
 
     await ctx.db.delete(args.documentId);
   },
@@ -401,29 +404,21 @@ export const createDocumentDownloadUrl = mutation({
     }
 
     const accessKey = buildGrantAccessKey(grant._id);
-    const downloadGrant = await ctx.runMutation(
-      components.convexFilesControl.download.createDownloadGrant,
+    const consumeResult = await createManagedReadUrl(
+      ctx,
       {
         storageId: document.storageId,
-        maxUses: 1,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        storageProvider: document.storageProvider,
       },
+      accessKey,
     );
 
-    const consumeResult = await ctx.runMutation(
-      components.convexFilesControl.download.consumeDownloadGrantForUrl,
-      {
-        downloadToken: downloadGrant.downloadToken,
-        accessKey,
-      },
-    );
-
-    if (consumeResult.status !== "ok" || !consumeResult.downloadUrl) {
+    if (!consumeResult.fileUrl) {
       throw new Error("Download-Link konnte nicht erstellt werden.");
     }
 
     return {
-      downloadUrl: consumeResult.downloadUrl,
+      downloadUrl: consumeResult.fileUrl,
     };
   },
 });

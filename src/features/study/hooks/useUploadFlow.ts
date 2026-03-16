@@ -9,7 +9,8 @@ import {
   removeDocumentRef,
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
-import { uploadFileToConvexStorage } from "../upload";
+import { computeUploadMetadata } from "../fileMetadata";
+import { uploadFileToManagedStorage } from "../upload";
 import {
   isVertexNativeCandidate,
   MAX_UPLOAD_FILE_BYTES,
@@ -66,15 +67,17 @@ export function useUploadFlow({
 
         try {
           const uploadData = await generateUploadUrl({ grantToken, sessionId });
-          if (uploadData.storageProvider !== "convex") {
-            throw new Error(
-              "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
-            );
-          }
-
-          const uploadResult = await uploadFileToConvexStorage(
+          const metadata =
+            uploadData.storageProvider === "r2"
+              ? await computeUploadMetadata(file)
+              : undefined;
+          const uploadResult = await uploadFileToManagedStorage(
             uploadData.uploadUrl,
             file,
+            {
+              storageProvider: uploadData.storageProvider,
+              presetStorageId: uploadData.storageId,
+            },
           );
           const documentId = await registerUploadedDocument({
             grantToken,
@@ -84,6 +87,7 @@ export function useUploadFlow({
             fileName: file.name,
             fileType: file.type || "application/octet-stream",
             fileSizeBytes: file.size,
+            ...(metadata ? { metadata } : {}),
           });
 
           await extractDocumentContent({

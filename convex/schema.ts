@@ -81,7 +81,8 @@ export default defineSchema({
   /** Dokumente, die einer Sitzung hinzugefügt wurden (PDFs, Texte, etc.) */
   sessionDocuments: defineTable({
     sessionId: v.id("studySessions"),
-    storageId: v.id("_storage"), // Referenz auf den Convex File Storage
+    storageId: v.union(v.id("_storage"), v.string()),
+    storageProvider: v.optional(v.union(v.literal("convex"), v.literal("r2"))),
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),

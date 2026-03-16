@@ -11,6 +11,9 @@ importers:
       '@ai-sdk/google-vertex':
         specifier: ^4.0.58
         version: 4.0.58(zod@4.3.6)
+      '@convex-dev/migrations':
+        specifier: ^0.3.1
+        version: 0.3.1(convex@1.31.7(react@19.2.4))
       '@gilhrpenner/convex-files-control':
         specifier: ^0.5.1
         version: 0.5.1(@standard-schema/spec@1.1.0)(convex@1.31.7(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(zod@4.3.6)
@@ -418,6 +421,11 @@ packages:
 
   '@convex-dev/action-retrier@0.3.0':
     resolution: {integrity: sha512-opBNsgOPSuVY3qSARNub98XqPzSpSS7Jga0oGeWFhO+DcWBMt2gD3ssUeEA1Gi7wTNiZBX+T6OBfBnqMfv6Tuw==}
+    peerDependencies:
+      convex: ^1.24.8
+
+  '@convex-dev/migrations@0.3.1':
+    resolution: {integrity: sha512-dGiN82vWMN415/AGMcVooDOJk8iTousZahBBs27uA03pL74Uo3ksucUW3CiCfPx75rv+x9UnenEakimQYYNIrA==}
     peerDependencies:
       convex: ^1.24.8
 
@@ -3465,6 +3473,10 @@ snapshots:
       '@babel/helper-validator-identifier': 7.28.5
 
   '@convex-dev/action-retrier@0.3.0(convex@1.31.7(react@19.2.4))':
+    dependencies:
+      convex: 1.31.7(react@19.2.4)
+
+  '@convex-dev/migrations@0.3.1(convex@1.31.7(react@19.2.4))':
     dependencies:
       convex: 1.31.7(react@19.2.4)
 

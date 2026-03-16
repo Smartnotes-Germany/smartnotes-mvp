@@ -1,5 +1,4 @@
 import type { Id } from "./_generated/dataModel";
-import { components } from "./_generated/api";
 import {
   mutation,
   query,
@@ -7,22 +6,8 @@ import {
   type QueryCtx,
 } from "./errorTracking";
 import { v } from "convex/values";
-
-// Access token
-const getConfiguredAdminSecret = () => {
-  const secret = process.env.ACCESS_CODE_ADMIN_SECRET;
-  if (!secret) {
-    throw new Error("ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.");
-  }
-  return secret;
-};
-
-const assertAdminSecret = (providedSecret: string) => {
-  const expectedSecret = getConfiguredAdminSecret();
-  if (providedSecret !== expectedSecret) {
-    throw new Error("Ungültiges Admin-Secret.");
-  }
-};
+import { assertAdminSecret } from "./adminAuth";
+import { deleteManagedFile } from "./fileStorage";
 
 const resolveTarget = async (
   ctx: QueryCtx | MutationCtx,
@@ -158,16 +143,10 @@ export const deleteData = mutation({
 
       for (const document of documents) {
         try {
-          const deleted = await ctx.runMutation(
-            components.convexFilesControl.cleanUp.deleteFile,
-            {
-              storageId: document.storageId,
-            },
-          );
-
-          if (!deleted.deleted) {
-            await ctx.storage.delete(document.storageId);
-          }
+          await deleteManagedFile(ctx, {
+            storageId: document.storageId,
+            storageProvider: document.storageProvider,
+          });
 
           deletedStorageFiles += 1;
         } catch {

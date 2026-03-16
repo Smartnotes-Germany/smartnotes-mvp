@@ -128,8 +128,8 @@ export function UploadStage({
               <Sparkles size={20} />
             )}
             {isGeneratingQuiz
-              ? "KI erstellt Fragen..."
-              : "Quizfragen generieren"}
+              ? "Themen werden extrahiert..."
+              : "Themen Auswählen"}
           </button>
         )}
       </div>

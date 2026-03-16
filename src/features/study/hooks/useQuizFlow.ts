@@ -28,6 +28,7 @@ export function useQuizFlow({
     sessionId,
   });
   const latestQuestionRef = useRef(currentQuestion);
+  const lastQuestionIdRef = useRef<string | null>(currentQuestion?.id ?? null);
 
   const evaluateAnswer = useAction(evaluateAnswerRef);
 
@@ -45,6 +46,7 @@ export function useQuizFlow({
   useEffect(() => {
     setAnswerInput("");
     setDisplayQuestion(null);
+    lastQuestionIdRef.current = null;
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);
@@ -59,9 +61,16 @@ export function useQuizFlow({
       return;
     }
 
+    const questionId = currentQuestion?.id ?? null;
+    const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
+
     setDisplayQuestion(currentQuestion);
-    setAnswerInput("");
-    setQuestionStartedAt(Date.now());
+
+    if (hasQuestionChanged) {
+      setAnswerInput("");
+      setQuestionStartedAt(Date.now());
+      lastQuestionIdRef.current = questionId;
+    }
   }, [currentQuestion, feedback, isSubmittingAnswer]);
 
   const submitAnswer = useCallback(

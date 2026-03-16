@@ -223,11 +223,11 @@ export const getSessionSnapshot = query({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(
-      ctx,
-      args.sessionId,
-      grant._id,
-    );
+    const session = await ctx.db.get(args.sessionId);
+
+    if (!session || session.grantId !== grant._id) {
+      return null;
+    }
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -383,6 +383,23 @@ export const removeDocument = mutation({
   },
 });
 
+export const setFocusTopics = mutation({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    focusTopics: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    await ctx.db.patch(args.sessionId, {
+      focusTopics: args.focusTopics,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const createDocumentDownloadUrl = mutation({
   // Not wired in the current UI yet; kept as the download endpoint for planned
   // document preview/export actions without exposing raw storage IDs.
@@ -504,9 +521,16 @@ export const getQuizGenerationContext = internalQuery({
       .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
       .collect();
 
+    const responses = await ctx.db
+      .query("quizResponses")
+      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(50);
+
     return {
       session,
       documents,
+      responses,
       accessKey: buildGrantAccessKey(grant._id),
     };
   },
@@ -519,6 +543,8 @@ export const storeGeneratedQuiz = internalMutation({
     sourceTopics: v.array(v.string()),
     quizQuestions: v.array(quizQuestionValidator),
     currentFocusTopic: v.optional(v.string()),
+    focusTopics: v.optional(v.array(v.string())),
+    replaceExistingQuestions: v.optional(v.boolean()),
     incrementRound: v.boolean(),
   },
   handler: async (ctx, args) => {
@@ -530,15 +556,46 @@ export const storeGeneratedQuiz = internalMutation({
     const nextRound = args.incrementRound ? session.round + 1 : session.round;
     const now = Date.now();
 
+    // Merge source topics to keep all extracted topics throughout the session
+    const updatedSourceTopics = [
+      ...new Set([...session.sourceTopics, ...args.sourceTopics]),
+    ].slice(0, 15);
+
+    // Merge new questions into the existing list, avoiding duplicates by ID or content
+    const existingIds = new Set(session.quizQuestions.map((q) => q.id));
+    const existingPrompts = new Set(
+      session.quizQuestions.map((q) => q.prompt.trim().toLowerCase()),
+    );
+
+    const newUniqueQuestions = args.quizQuestions.filter((q) => {
+      const isDuplicateId = existingIds.has(q.id);
+      const normalizedPrompt = q.prompt.trim().toLowerCase();
+      const isDuplicateContent = existingPrompts.has(normalizedPrompt);
+
+      if (isDuplicateId || isDuplicateContent) {
+        return false;
+      }
+
+      // Add to set to catch duplicates within the new batch itself
+      existingPrompts.add(normalizedPrompt);
+      return true;
+    });
+
+    const updatedQuestions = args.replaceExistingQuestions
+      ? newUniqueQuestions
+      : [...session.quizQuestions, ...newUniqueQuestions];
+
     await ctx.db.patch(args.sessionId, {
       stage: "quiz",
       round: nextRound,
       sourceSummary: args.sourceSummary,
-      sourceTopics: args.sourceTopics,
-      quizQuestions: args.quizQuestions,
-      ...(args.currentFocusTopic
-        ? { currentFocusTopic: args.currentFocusTopic }
-        : {}),
+      sourceTopics: updatedSourceTopics,
+      quizQuestions: updatedQuestions,
+      ...(args.focusTopics
+        ? { focusTopics: args.focusTopics }
+        : args.currentFocusTopic
+          ? { focusTopics: [args.currentFocusTopic] }
+          : {}),
       updatedAt: now,
     });
   },
@@ -651,7 +708,7 @@ export const getAnalysisContext = internalQuery({
 
     const mode = args.mode ?? "full";
     const resolvedFocusTopic =
-      args.focusTopic?.trim() || session.currentFocusTopic?.trim() || "";
+      args.focusTopic?.trim() || (session.focusTopics?.[0] ?? "").trim() || "";
     const responseLimit = clampAnalysisResponseLimit(
       args.maxResponses ??
         (mode === "focus"

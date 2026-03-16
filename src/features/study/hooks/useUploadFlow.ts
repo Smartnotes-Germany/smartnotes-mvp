@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import { useAction, useMutation } from "convex/react";
 import {
   extractDocumentContentRef,
+  generateFocusedQuizRef,
   generateQuizRef,
   generateUploadUrlRef,
   registerUploadedDocumentRef,
@@ -41,6 +42,7 @@ export function useUploadFlow({
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
+  const generateFocusedQuiz = useAction(generateFocusedQuizRef);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
@@ -163,7 +165,7 @@ export function useUploadFlow({
       await generateQuiz({
         grantToken,
         sessionId,
-        questionCount: 30,
+        questionCount: 1,
         clientRequestId,
       });
     } catch (error: unknown) {
@@ -177,6 +179,66 @@ export function useUploadFlow({
       setIsGeneratingQuiz(false);
     }
   }, [documents, generateQuiz, grantToken, sessionId]);
+
+  const generateFocusedQuizQuestions = useCallback(
+    async (focusTopics: string[]) => {
+      if (!grantToken || !sessionId || focusTopics.length === 0) {
+        return;
+      }
+
+      const normalizedTopics = [
+        ...new Set(focusTopics.map((topic) => topic.trim())),
+      ].filter((topic) => topic.length > 0);
+      if (normalizedTopics.length === 0) {
+        return;
+      }
+
+      const oversizedReadyDocuments = documents.filter(
+        (document) =>
+          document.extractionStatus === "ready" &&
+          isVertexNativeCandidate(document.fileType, document.fileName) &&
+          document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
+      );
+
+      if (oversizedReadyDocuments.length > 0) {
+        const names = oversizedReadyDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
+
+        setUploadError(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`,
+        );
+        return;
+      }
+
+      const clientRequestId = createClientRequestId("generateFocusedQuiz");
+      setIsGeneratingQuiz(true);
+      setUploadError(null);
+
+      try {
+        await generateFocusedQuiz({
+          grantToken,
+          sessionId,
+          focusTopics: normalizedTopics,
+          questionsPerTopic: 5,
+          clientRequestId,
+        });
+      } catch (error: unknown) {
+        setUploadError(
+          formatError(error, {
+            fallback:
+              "Die Fragen für die gewählten Themen konnten nicht erstellt werden.",
+            clientRequestId,
+          }),
+        );
+      } finally {
+        setIsGeneratingQuiz(false);
+      }
+    },
+    [documents, generateFocusedQuiz, grantToken, sessionId],
+  );
 
   const removeDocumentById = useCallback(
     async (documentId: string) => {
@@ -208,6 +270,7 @@ export function useUploadFlow({
     setUploadError,
     onFileInputChange,
     generateQuizQuestions,
+    generateFocusedQuizQuestions,
     removeDocumentById,
   };
 }

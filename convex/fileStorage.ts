@@ -120,7 +120,7 @@ export const createManagedReadUrl = async (
   const storageId = normalizeStorageId(reference.storageId);
   const r2Config = maybeGetR2Config(storageProvider);
 
-  if (!accessKey && storageProvider === "convex") {
+  if (!accessKey && storageProvider === "convex" && ctx.storage) {
     return createStorageFallbackUrl(ctx, reference.storageId, "direct");
   }
 

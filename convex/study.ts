@@ -155,6 +155,27 @@ const ensureSessionOwnership = async (
   return session;
 };
 
+const tryDeleteUploadedFile = async (
+  ctx: MutationCtx,
+  storageId: string,
+  storageProvider: "convex" | "r2" | undefined,
+  reason: string,
+) => {
+  try {
+    await deleteManagedFile(ctx, {
+      storageId,
+      storageProvider,
+    });
+  } catch (error) {
+    console.warn("Upload-Bereinigung fehlgeschlagen.", {
+      reason,
+      storageId,
+      storageProvider: storageProvider ?? "convex",
+      error,
+    });
+  }
+};
+
 export const startSession = mutation({
   args: {
     grantToken: v.string(),
@@ -298,20 +319,24 @@ export const registerUploadedDocument = mutation({
 
     const trustedMetadata = finalizedUpload.metadata;
     if (!trustedMetadata) {
-      await deleteManagedFile(ctx, {
-        storageId: args.storageId,
-        storageProvider: finalizedUpload.storageProvider,
-      });
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "missing_metadata",
+      );
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
     }
 
     if (trustedMetadata.storageId !== args.storageId) {
-      await deleteManagedFile(ctx, {
-        storageId: args.storageId,
-        storageProvider: finalizedUpload.storageProvider,
-      });
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "storage_id_mismatch",
+      );
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
@@ -324,10 +349,12 @@ export const registerUploadedDocument = mutation({
       "application/octet-stream";
 
     if (args.fileSizeBytes !== trustedFileSizeBytes) {
-      await deleteManagedFile(ctx, {
-        storageId: args.storageId,
-        storageProvider: finalizedUpload.storageProvider,
-      });
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "file_size_mismatch",
+      );
       throw new Error(
         "Uploadgröße konnte nicht verifiziert werden. Bitte lade die Datei erneut hoch.",
       );
@@ -338,10 +365,12 @@ export const registerUploadedDocument = mutation({
       size: trustedFileSizeBytes,
     });
     if (!uploadValidation.valid) {
-      await deleteManagedFile(ctx, {
-        storageId: args.storageId,
-        storageProvider: finalizedUpload.storageProvider,
-      });
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "upload_validation_failed",
+      );
       throw new Error(uploadValidation.message);
     }
 

@@ -132,7 +132,16 @@ const performRedeem = async (
       },
     );
 
-    await queueAndDeliverPostHogEvents(ctx, [buildAccessEvent(result, source)]);
+    try {
+      await queueAndDeliverPostHogEvents(ctx, [
+        buildAccessEvent(result, source),
+      ]);
+    } catch (posthogError) {
+      console.warn(
+        "[PostHog] Fehler beim Senden des Redeem-Events.",
+        posthogError,
+      );
+    }
 
     if (!result.ok) {
       throw new Error(buildFailureMessage(source, result.reason));
@@ -151,16 +160,23 @@ const performRedeem = async (
       throw error;
     }
 
-    await queueAndDeliverPostHogEvents(ctx, [
-      buildAccessEvent(
-        {
-          ok: false,
-          reason: "unexpected_error",
-          normalizedCode,
-        },
-        source,
-      ),
-    ]);
+    try {
+      await queueAndDeliverPostHogEvents(ctx, [
+        buildAccessEvent(
+          {
+            ok: false,
+            reason: "unexpected_error",
+            normalizedCode,
+          },
+          source,
+        ),
+      ]);
+    } catch (posthogError) {
+      console.warn(
+        "[PostHog] Fehler beim Senden des Unexpected-Redeem-Events.",
+        posthogError,
+      );
+    }
 
     throw error;
   }

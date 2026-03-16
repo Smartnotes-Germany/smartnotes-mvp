@@ -9,7 +9,6 @@ import {
   removeDocumentRef,
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
-import { computeUploadMetadata } from "../fileMetadata";
 import { uploadFileToManagedStorage } from "../upload";
 import {
   isVertexNativeCandidate,
@@ -38,7 +37,7 @@ export function useUploadFlow({
   );
 
   const generateUploadUrl = useMutation(generateUploadUrlRef);
-  const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
+  const registerUploadedDocument = useAction(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
@@ -67,10 +66,6 @@ export function useUploadFlow({
 
         try {
           const uploadData = await generateUploadUrl({ grantToken, sessionId });
-          const metadata =
-            uploadData.storageProvider === "r2"
-              ? await computeUploadMetadata(file)
-              : undefined;
           const uploadResult = await uploadFileToManagedStorage(
             uploadData.uploadUrl,
             file,
@@ -87,7 +82,6 @@ export function useUploadFlow({
             fileName: file.name,
             fileType: file.type || "application/octet-stream",
             fileSizeBytes: file.size,
-            ...(metadata ? { metadata } : {}),
           });
 
           await extractDocumentContent({

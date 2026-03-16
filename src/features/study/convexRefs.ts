@@ -32,7 +32,7 @@ export const generateUploadUrlRef = makeFunctionReference<
 >("study:generateUploadUrl");
 
 export const registerUploadedDocumentRef = makeFunctionReference<
-  "mutation",
+  "action",
   {
     grantToken: string;
     sessionId: string;
@@ -41,11 +41,6 @@ export const registerUploadedDocumentRef = makeFunctionReference<
     fileName: string;
     fileType: string;
     fileSizeBytes: number;
-    metadata?: {
-      size: number;
-      sha256: string;
-      contentType: string | null;
-    };
   },
   string
 >("study:registerUploadedDocument");

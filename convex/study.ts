@@ -1,13 +1,16 @@
 import type { Id } from "./_generated/dataModel";
 import { components } from "./_generated/api";
 import {
+  action,
   internalMutation,
   internalQuery,
   mutation,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./errorTracking";
+import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
 import {
@@ -80,6 +83,30 @@ type GrantDoc = {
   _id: Id<"accessGrants">;
   revokedAt?: number;
 };
+
+const getUploadRegistrationContextRef = makeFunctionReference<
+  "query",
+  {
+    grantToken: string;
+    sessionId: Id<"studySessions">;
+  },
+  {
+    grantId: Id<"accessGrants">;
+  }
+>("study:getUploadRegistrationContext");
+
+const storeUploadedDocumentRef = makeFunctionReference<
+  "mutation",
+  {
+    sessionId: Id<"studySessions">;
+    storageId: string;
+    storageProvider: "convex" | "r2";
+    fileName: string;
+    fileType: string;
+    fileSizeBytes: number;
+  },
+  Id<"sessionDocuments">
+>("study:storeUploadedDocument");
 
 const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
 
@@ -156,16 +183,23 @@ const ensureSessionOwnership = async (
 };
 
 const tryDeleteUploadedFile = async (
-  ctx: MutationCtx,
+  ctx: Pick<ActionCtx, "runMutation"> | MutationCtx,
   storageId: string,
   storageProvider: "convex" | "r2" | undefined,
   reason: string,
 ) => {
   try {
-    await deleteManagedFile(ctx, {
-      storageId,
-      storageProvider,
-    });
+    if ("storage" in ctx) {
+      await deleteManagedFile(ctx, {
+        storageId,
+        storageProvider,
+      });
+    } else {
+      await ctx.runMutation(components.convexFilesControl.cleanUp.deleteFile, {
+        storageId,
+        ...(storageProvider === "r2" ? { r2Config: getR2ConfigOrThrow() } : {}),
+      });
+    }
   } catch (error) {
     console.warn("Upload-Bereinigung fehlgeschlagen.", {
       reason,
@@ -175,6 +209,47 @@ const tryDeleteUploadedFile = async (
     });
   }
 };
+
+export const getUploadRegistrationContext = internalQuery({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    return {
+      grantId: grant._id,
+    };
+  },
+});
+
+export const storeUploadedDocument = internalMutation({
+  args: {
+    sessionId: v.id("studySessions"),
+    storageId: v.string(),
+    storageProvider: v.union(v.literal("convex"), v.literal("r2")),
+    fileName: v.string(),
+    fileType: v.string(),
+    fileSizeBytes: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    return ctx.db.insert("sessionDocuments", {
+      sessionId: args.sessionId,
+      storageId: args.storageId,
+      storageProvider: args.storageProvider,
+      fileName: args.fileName,
+      fileType: args.fileType,
+      fileSizeBytes: args.fileSizeBytes,
+      extractionStatus: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
 
 export const startSession = mutation({
   args: {
@@ -280,7 +355,7 @@ export const generateUploadUrl = mutation({
   },
 });
 
-export const registerUploadedDocument = mutation({
+export const registerUploadedDocument = action({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
@@ -289,25 +364,19 @@ export const registerUploadedDocument = mutation({
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),
-    metadata: v.optional(
-      v.object({
-        size: v.number(),
-        sha256: v.string(),
-        contentType: v.union(v.string(), v.null()),
-      }),
-    ),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const { grantId } = await ctx.runQuery(getUploadRegistrationContextRef, {
+      grantToken: args.grantToken,
+      sessionId: args.sessionId,
+    });
 
     const finalizedUpload = await ctx.runMutation(
       components.convexFilesControl.upload.finalizeUpload,
       {
         uploadToken: args.uploadToken,
         storageId: args.storageId,
-        accessKeys: [buildGrantAccessKey(grant._id)],
-        ...(args.metadata ? { metadata: args.metadata } : {}),
+        accessKeys: [buildGrantAccessKey(grantId)],
       },
     );
 
@@ -317,7 +386,16 @@ export const registerUploadedDocument = mutation({
       );
     }
 
-    const trustedMetadata = finalizedUpload.metadata;
+    const trustedMetadata =
+      finalizedUpload.storageProvider === "r2"
+        ? await ctx.runAction(
+            components.convexFilesControl.upload.computeR2Metadata,
+            {
+              storageId: args.storageId,
+              r2Config: getR2ConfigOrThrow(),
+            },
+          )
+        : finalizedUpload.metadata;
     if (!trustedMetadata) {
       await tryDeleteUploadedFile(
         ctx,
@@ -374,20 +452,14 @@ export const registerUploadedDocument = mutation({
       throw new Error(uploadValidation.message);
     }
 
-    const now = Date.now();
-    const documentId = await ctx.db.insert("sessionDocuments", {
+    return ctx.runMutation(storeUploadedDocumentRef, {
       sessionId: args.sessionId,
       storageId: args.storageId,
       storageProvider: finalizedUpload.storageProvider,
       fileName: args.fileName,
       fileType: trustedFileType,
       fileSizeBytes: trustedFileSizeBytes,
-      extractionStatus: "pending",
-      createdAt: now,
-      updatedAt: now,
     });
-
-    return documentId;
   },
 });
 

@@ -249,9 +249,9 @@ This project currently does not use a frontend `before_send` scrubber. Replay pr
 
 - `blockSelector`
 - `maskTextSelector`
-- `maskAllInputs`
-- `maskInputFn`
 - `maskTextFn`
+
+Only elements explicitly marked with `ph-no-capture` or `data-ph-sensitive="true"` are masked in replay.
 
 ## Files that define the behavior
 

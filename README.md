@@ -189,7 +189,8 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - Local development stays on `localhost` only. Do not mix `localhost` and `127.0.0.1` if you expect one shared local browser identity across repos.
 - Preview deployments on separate Vercel-generated hosts keep full per-repo PostHog functionality, but they do not share anonymous browser continuity across repos. This is intentional; later person-level merging still happens through the same normalized email.
 - Base frontend properties are registered automatically: `app_area`, `environment`, `source_surface`, `host`, `path`, `referrer`, `landing_url`, `utm_*`, `identity_quality`.
-- Session replay masking is configured via `blockSelector`, `maskTextSelector`, `maskAllInputs`, `maskInputFn` and `maskTextFn`.
+- Session replay masking is configured selectively via `blockSelector`, `maskTextSelector` and `maskTextFn`.
+- Only elements explicitly marked with `ph-no-capture` or `data-ph-sensitive="true"` are masked in replay.
 - There is no frontend `before_send` scrubber anymore. Frontend events are sent to PostHog without property-level sanitization or client-side sampling.
 
 ### Frontend SDK defaults

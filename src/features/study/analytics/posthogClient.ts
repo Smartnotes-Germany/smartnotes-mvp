@@ -151,8 +151,6 @@ const buildPostHogOptions = (): Partial<PostHogConfig> => {
     session_recording: {
       blockSelector: SENSITIVE_SELECTOR,
       maskTextSelector: SENSITIVE_SELECTOR,
-      maskAllInputs: true,
-      maskInputFn: () => "[MASKIERT]",
       maskTextFn: () => "[MASKIERT]",
     },
   };

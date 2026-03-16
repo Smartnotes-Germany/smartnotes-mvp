@@ -33,7 +33,10 @@ import {
   hashIdentifier,
   redactTextForLog,
 } from "./observability";
-import { captureAiOperationCompleted } from "./posthog";
+import {
+  buildPostHogEvent,
+  queueAndDeliverPostHogEvents,
+} from "./analyticsPosthog";
 import { readOptionalEnv, readRequiredEnv } from "./env";
 import { buildPostHogDistinctId } from "../shared/identity";
 
@@ -1796,13 +1799,12 @@ const persistAiAnalyticsEvent = async (
       metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
     });
 
-    await captureAiOperationCompleted({
-      distinctId:
-        payload.posthogDistinctId ??
-        buildPostHogDistinctId(
-          `session-fallback:${hashIdentifier(payload.sessionId)}`,
-        ),
-      personProperties: payload.posthogPersonProperties,
+    const distinctId =
+      payload.posthogDistinctId ??
+      buildPostHogDistinctId(
+        `session-fallback:${hashIdentifier(payload.sessionId)}`,
+      );
+    const commonProperties = {
       traceId: payload.traceId,
       scope: payload.scope,
       status: payload.status,
@@ -1841,12 +1843,31 @@ const persistAiAnalyticsEvent = async (
           ? errorRecord.stack
           : undefined,
       contentCaptured,
-      input: payload.posthogInput,
-      output: payload.posthogOutput,
       documentIds: toStringArray(payload.metadata?.documentIds),
       readyDocumentIds: toStringArray(payload.metadata?.readyDocumentIds),
-      extraProperties: payload.posthogProperties,
-    });
+      ...payload.posthogProperties,
+    };
+
+    await queueAndDeliverPostHogEvents(ctx, [
+      buildPostHogEvent({
+        scope: "ai",
+        event: "ai_operation_completed",
+        distinctId,
+        personProperties: payload.posthogPersonProperties,
+        properties: commonProperties,
+      }),
+      buildPostHogEvent({
+        scope: "ai",
+        event: "$ai_generation",
+        distinctId,
+        personProperties: payload.posthogPersonProperties,
+        properties: {
+          ...commonProperties,
+          input: payload.posthogInput,
+          output: payload.posthogOutput,
+        },
+      }),
+    ]);
   } catch (error) {
     console.warn("[KI-Monitoring]", {
       event: "analytics_persist_failed",
@@ -2990,14 +3011,20 @@ export const analyzePerformance = action({
         requestedMode: args.mode ?? "full",
         totalDocuments: documents.length,
         readyDocuments: documents.filter(
-          (document) => document.extractionStatus === "ready",
+          (document: SessionDocumentInput) =>
+            document.extractionStatus === "ready",
         ).length,
       });
       responseCount = responses.length;
-      documentIds = documents.map((document) => String(document._id));
+      documentIds = documents.map((document: SessionDocumentInput) =>
+        String(document._id),
+      );
       readyDocumentIds = documents
-        .filter((document) => document.extractionStatus === "ready")
-        .map((document) => String(document._id));
+        .filter(
+          (document: SessionDocumentInput) =>
+            document.extractionStatus === "ready",
+        )
+        .map((document: SessionDocumentInput) => String(document._id));
       documentCorrelationMetadata = buildDocumentCorrelationMetadata(
         documentIds,
         readyDocumentIds,
@@ -3008,7 +3035,7 @@ export const analyzePerformance = action({
 
       let focusTopicInsight =
         analysisMode === "focus" && session.analysis && resolvedFocusTopic
-          ? (session.analysis.topics.find((topic) =>
+          ? (session.analysis.topics.find((topic: AnalysisTopicInsight) =>
               topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
             ) ?? null)
           : null;
@@ -3062,8 +3089,9 @@ export const analyzePerformance = action({
       );
 
       if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
-        const topicResponses = responses.filter((response) =>
-          topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
+        const topicResponses = responses.filter(
+          (response: FullModeResponseContextInput) =>
+            topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
         );
 
         if (topicResponses.length === 0) {
@@ -3076,7 +3104,8 @@ export const analyzePerformance = action({
         } else {
           const fallbackAverage =
             topicResponses.reduce(
-              (total, response) => total + response.score,
+              (total: number, response: FullModeResponseContextInput) =>
+                total + response.score,
               0,
             ) / topicResponses.length;
           const fallbackTopicInsight = buildTopicInsightFromScore(
@@ -3257,7 +3286,11 @@ Pflichtregeln:
 
         try {
           const coveredTopics = [
-            ...new Set(responses.map((response) => response.topic)),
+            ...new Set(
+              responses.map(
+                (response: FullModeResponseContextInput) => response.topic,
+              ),
+            ),
           ];
           const fullModePromptContext =
             buildFullModePromptResponseContext(responses);

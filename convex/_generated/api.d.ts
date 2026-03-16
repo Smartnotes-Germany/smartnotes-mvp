@@ -9,13 +9,15 @@
  */
 
 import type * as access from "../access.js";
+import type * as accessActions from "../accessActions.js";
 import type * as admin from "../admin.js";
 import type * as ai from "../ai.js";
+import type * as analyticsOutbox from "../analyticsOutbox.js";
+import type * as analyticsPosthog from "../analyticsPosthog.js";
 import type * as crons from "../crons.js";
 import type * as env from "../env.js";
 import type * as errorTracking from "../errorTracking.js";
 import type * as observability from "../observability.js";
-import type * as posthog from "../posthog.js";
 import type * as retention from "../retention.js";
 import type * as study from "../study.js";
 
@@ -27,13 +29,15 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  accessActions: typeof accessActions;
   admin: typeof admin;
   ai: typeof ai;
+  analyticsOutbox: typeof analyticsOutbox;
+  analyticsPosthog: typeof analyticsPosthog;
   crons: typeof crons;
   env: typeof env;
   errorTracking: typeof errorTracking;
   observability: typeof observability;
-  posthog: typeof posthog;
   retention: typeof retention;
   study: typeof study;
 }>;

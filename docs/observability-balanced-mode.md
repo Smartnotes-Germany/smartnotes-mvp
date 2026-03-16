@@ -18,8 +18,10 @@ For frontend PostHog proxy routing behavior across prod and dev, see `docs/posth
 
 ## PostHog Bridge
 
+- Access-redemption events and AI backend events are first persisted to the Convex `posthogEventOutbox`.
+- Node actions perform the actual PostHog delivery, including retries and dead-letter handling.
 - Backend emits `ai_operation_completed` and `$ai_generation` with unredacted AI payloads to PostHog.
-- Capture is gated by Convex env vars and no-ops when disabled.
+- Capture is gated by Convex env vars and drains the outbox without HTTP delivery when disabled.
 - This backend bridge sends directly to the configured absolute PostHog host. It does not use the frontend `/snph` proxy path.
 - Backend PostHog events also stamp `app_area="app"` and `source_surface="server"`.
 - If `POSTHOG_APP_ENV` (or `APP_ENV`) is set in Convex, backend events include
@@ -92,6 +94,7 @@ Tradeoff:
 Operational expectation:
 
 - Convex analytics events are persisted synchronously in the action transaction path.
+- Backend PostHog events are also persisted synchronously first and then delivered via the outbox worker.
 - Langfuse export is still network-dependent and asynchronous.
 - A brief ingestion delay is normal; compare parity after 60-120 seconds.
 
@@ -107,10 +110,12 @@ Troubleshooting Convex count != Langfuse count:
 ## Retention Automation
 
 - `convex/crons.ts` schedules `retention:runDailyRetention` once daily.
+- `convex/crons.ts` also schedules `analyticsPosthog:processPostHogOutbox` every minute.
 - `retention:runRetentionBatch` applies data lifecycle rules:
   - Redacts old `sessionDocuments.extractedText`.
   - Redacts old `quizResponses.userAnswer`.
   - Deletes old `aiAnalyticsEvents`.
+  - Deletes old delivered or dead-lettered `posthogEventOutbox` rows.
 
 ## Admin Operations
 

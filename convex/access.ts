@@ -1,19 +1,43 @@
 import type { MutationCtx } from "./errorTracking";
 import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { mutation, query } from "./errorTracking";
+import { internalMutation, mutation, query } from "./errorTracking";
 import { readRequiredEnv } from "./env";
 import {
   buildIdentityKey,
-  buildPostHogDistinctId,
   normalizeIdentityEmail,
   normalizeIdentityLabel,
 } from "../shared/identity";
-import { captureEvent } from "./posthog";
 
 /** Constants for access management */
 const DEMO_ACCESS_CODE = "SMARTNOTES-DEMO-2026";
 const ACCESS_GRANT_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours
+export const redeemSourceValidator = v.union(
+  v.literal("manual_code"),
+  v.literal("magic_link"),
+);
+
+type AccessIdentity = {
+  identityKey: string;
+  identityLabel: string;
+  identityEmail?: string;
+  note?: string;
+};
+
+type RedeemFailureReason = "unknown_code" | "already_used" | "missing_identity";
+
+export type RedeemAccessCodeTransactionResult =
+  | ({
+      ok: true;
+      normalizedCode: string;
+      grantToken: string;
+      expiresAt: number;
+    } & AccessIdentity)
+  | ({
+      ok: false;
+      normalizedCode: string;
+      reason: RedeemFailureReason;
+    } & Partial<AccessIdentity>);
 
 /**
  * Helper to generate a random token/UUID-like string.
@@ -37,17 +61,10 @@ const generateToken = () => {
 };
 
 /** Normalizes user-entered codes for consistent lookups */
-const normalizeCode = (rawCode: string) =>
+export const normalizeAccessCode = (rawCode: string) =>
   rawCode.trim().replace(/\s+/g, "-").toUpperCase();
 
-const getAccessCodeIdentity = (
-  accessCode: Doc<"accessCodes">,
-): {
-  identityKey: string;
-  identityLabel: string;
-  identityEmail?: string;
-  note?: string;
-} => {
+const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
   const identityLabel = accessCode.identityLabel
     ? normalizeIdentityLabel(accessCode.identityLabel)
     : accessCode.note
@@ -59,9 +76,7 @@ const getAccessCodeIdentity = (
   const note = accessCode.note?.trim();
 
   if (!identityLabel) {
-    throw new Error(
-      "Dieser Zugangscode ist keiner identifizierten Person zugeordnet.",
-    );
+    return null;
   }
 
   const identityKey =
@@ -76,7 +91,7 @@ const getAccessCodeIdentity = (
     identityLabel,
     ...(identityEmail ? { identityEmail } : {}),
     ...(note ? { note } : {}),
-  };
+  } satisfies AccessIdentity;
 };
 
 const findAccessCode = async (
@@ -113,10 +128,23 @@ const redeemStoredAccessCode = async (
   now: number,
 ) => {
   if (accessCode.consumedAt) {
-    throw new Error("Dieser Zugangscode wurde bereits verwendet.");
+    return {
+      ok: false,
+      reason: "already_used",
+      normalizedCode: accessCode.normalizedCode,
+      ...(getAccessCodeIdentity(accessCode) ?? {}),
+    } satisfies RedeemAccessCodeTransactionResult;
   }
 
   const identity = getAccessCodeIdentity(accessCode);
+  if (!identity) {
+    return {
+      ok: false,
+      reason: "missing_identity",
+      normalizedCode: accessCode.normalizedCode,
+    } satisfies RedeemAccessCodeTransactionResult;
+  }
+
   const grantToken = generateToken();
   const expiresAt = now + ACCESS_GRANT_TTL_MS;
 
@@ -138,111 +166,32 @@ const redeemStoredAccessCode = async (
   });
 
   return {
+    ok: true,
+    normalizedCode: accessCode.normalizedCode,
     grantToken,
     expiresAt,
     ...identity,
-  };
+  } satisfies RedeemAccessCodeTransactionResult;
 };
 
 /**
- * Redeems a specific access code to create an access grant.
+ * Executes the DB transaction for redeeming an access code without side effects.
  */
-export const redeemAccessCode = mutation({
-  args: {
-    code: v.string(),
-    source: v.optional(
-      v.union(v.literal("manual_code"), v.literal("magic_link")),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const normalizedCode = normalizeCode(args.code);
-    const source = args.source ?? "manual_code";
-    const accessCode = await findAccessCode(ctx, normalizedCode, now);
-
-    if (!accessCode) {
-      await captureEvent({
-        event: "auth_code_redeem_failed",
-        distinctId: "smartnotes-anonymous-auth",
-        properties: {
-          status: "failed",
-          source,
-          failureReason: "unknown_code",
-          normalizedCode,
-          attribution: "anonymous_client_or_server",
-        },
-      });
-      throw new Error("Zugangscode wurde nicht erkannt.");
-    }
-
-    try {
-      const result = await redeemStoredAccessCode(ctx, accessCode, now);
-
-      await captureEvent({
-        event: "auth_code_redeem_succeeded",
-        distinctId: buildPostHogDistinctId(result.identityKey),
-        properties: {
-          status: "succeeded",
-          source,
-          attribution: "identified_server",
-          identityKey: result.identityKey,
-        },
-        personProperties: {
-          identityKey: result.identityKey,
-          identityLabel: result.identityLabel,
-          ...(result.identityEmail
-            ? { identityEmail: result.identityEmail }
-            : {}),
-          ...(result.note ? { note: result.note } : {}),
-        },
-      });
-
-      return result;
-    } catch (error) {
-      if (accessCode.consumedAt) {
-        const identity = getAccessCodeIdentity(accessCode);
-        await captureEvent({
-          event: "auth_code_redeem_failed",
-          distinctId: buildPostHogDistinctId(identity.identityKey),
-          properties: {
-            status: "failed",
-            source,
-            failureReason: "already_used",
-            normalizedCode,
-            attribution: "identified_server",
-            identityKey: identity.identityKey,
-          },
-          personProperties: {
-            identityKey: identity.identityKey,
-            identityLabel: identity.identityLabel,
-            ...(identity.identityEmail
-              ? { identityEmail: identity.identityEmail }
-              : {}),
-            ...(identity.note ? { note: identity.note } : {}),
-          },
-        });
-      }
-
-      throw error;
-    }
-  },
-});
-
-/**
- * Consumes a magic link using the same redeem flow as manual code entry so
- * access-code metadata remains available for admin workflows.
- */
-export const consumeMagicLink = mutation({
+export const redeemAccessCodeTransaction = internalMutation({
   args: {
     code: v.string(),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const normalizedCode = normalizeCode(args.code);
+    const normalizedCode = normalizeAccessCode(args.code);
     const accessCode = await findAccessCode(ctx, normalizedCode, now);
 
     if (!accessCode) {
-      throw new Error("Der Link ist ungültig oder abgelaufen.");
+      return {
+        ok: false,
+        reason: "unknown_code",
+        normalizedCode,
+      } satisfies RedeemAccessCodeTransactionResult;
     }
 
     return redeemStoredAccessCode(ctx, accessCode, now);
@@ -316,7 +265,7 @@ export const createAccessCodes = mutation({
       : undefined;
 
     for (const code of args.codes) {
-      const normalizedCode = normalizeCode(code);
+      const normalizedCode = normalizeAccessCode(code);
       if (!normalizedCode) {
         continue;
       }

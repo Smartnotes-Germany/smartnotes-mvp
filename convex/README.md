@@ -5,7 +5,9 @@ This folder contains the Smartnotes backend, not the default Convex starter.
 Important current assumptions:
 
 - Access is grant-based and tied to an identifiable person when possible.
-- Backend PostHog capture uses the direct ingest host, never the frontend
+- Backend PostHog capture is persisted to a Convex outbox first and only sent
+  from Node actions, never from queries or mutations.
+- Backend PostHog delivery uses the direct ingest host, never the frontend
   `/snph` proxy path.
 - Backend PostHog events automatically attach `app_area="app"` and
   `source_surface="server"`.

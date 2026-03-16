@@ -17,6 +17,7 @@ const runRetentionBatchRef = makeFunctionReference<
     redactedDocuments: number;
     redactedResponses: number;
     deletedAnalyticsEvents: number;
+    deletedPostHogOutboxEvents: number;
   }
 >("retention:runRetentionBatch");
 
@@ -97,16 +98,37 @@ export const runRetentionBatch = internalMutation({
       await ctx.db.delete(event._id);
     }
 
+    const outboxEvents = await ctx.db
+      .query("posthogEventOutbox")
+      .withIndex("by_createdAt", (q) => q.lt("createdAt", analyticsCutoff))
+      .order("asc")
+      .take(args.batchSize);
+
+    let deletedPostHogOutboxEvents = 0;
+    for (const event of outboxEvents) {
+      if (
+        event.deliveryStatus !== "delivered" &&
+        event.deliveryStatus !== "dead_letter"
+      ) {
+        continue;
+      }
+
+      await ctx.db.delete(event._id);
+      deletedPostHogOutboxEvents += 1;
+    }
+
     const done =
       documents.length < args.batchSize &&
       responses.length < args.batchSize &&
-      analyticsEvents.length < args.batchSize;
+      analyticsEvents.length < args.batchSize &&
+      outboxEvents.length < args.batchSize;
 
     return {
       done,
       redactedDocuments,
       redactedResponses,
       deletedAnalyticsEvents: analyticsEvents.length,
+      deletedPostHogOutboxEvents,
     };
   },
 });
@@ -119,6 +141,7 @@ export const runDailyRetention = internalAction({
       redactedDocuments: 0,
       redactedResponses: 0,
       deletedAnalyticsEvents: 0,
+      deletedPostHogOutboxEvents: 0,
       deletedManagedFiles: 0,
       batches: 0,
     };
@@ -133,6 +156,7 @@ export const runDailyRetention = internalAction({
       totals.redactedDocuments += result.redactedDocuments;
       totals.redactedResponses += result.redactedResponses;
       totals.deletedAnalyticsEvents += result.deletedAnalyticsEvents;
+      totals.deletedPostHogOutboxEvents += result.deletedPostHogOutboxEvents;
       totals.batches += 1;
 
       if (result.done) {

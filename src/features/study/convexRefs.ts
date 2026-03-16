@@ -2,7 +2,7 @@ import { makeFunctionReference } from "convex/server";
 import type { FeedbackState, GrantStatus, SessionSnapshot } from "./types";
 
 export const redeemAccessCodeRef = makeFunctionReference<
-  "mutation",
+  "action",
   { code: string; source?: "manual_code" | "magic_link" },
   {
     grantToken: string;
@@ -12,7 +12,7 @@ export const redeemAccessCodeRef = makeFunctionReference<
     identityEmail?: string;
     note?: string;
   }
->("access:redeemAccessCode");
+>("accessActions:redeemAccessCode");
 
 export const startSessionRef = makeFunctionReference<
   "mutation",

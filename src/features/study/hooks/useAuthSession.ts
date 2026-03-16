@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   latestSessionIdRef,
   redeemAccessCodeRef,
@@ -87,7 +87,7 @@ export function useAuthSession(): AuthSessionReturn {
     trackSessionResumed();
   }, []);
 
-  const redeemAccessCode = useMutation(redeemAccessCodeRef);
+  const redeemAccessCode = useAction(redeemAccessCodeRef);
   const startSession = useMutation(startSessionRef);
 
   const grantStatus = useQuery(

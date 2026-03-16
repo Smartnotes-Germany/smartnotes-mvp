@@ -118,13 +118,13 @@ export const createManagedReadUrl = async (
 ) => {
   const storageProvider = resolveStorageProvider(reference.storageProvider);
   const storageId = normalizeStorageId(reference.storageId);
-  const r2Config = maybeGetR2Config(storageProvider);
 
   if (!accessKey && storageProvider === "convex" && ctx.storage) {
     return createStorageFallbackUrl(ctx, reference.storageId, "direct");
   }
 
   try {
+    const r2Config = maybeGetR2Config(storageProvider);
     const downloadGrant = await ctx.runMutation(
       components.convexFilesControl.download.createDownloadGrant,
       {
@@ -205,9 +205,9 @@ export const deleteManagedFile = async (
 ) => {
   const storageProvider = resolveStorageProvider(reference.storageProvider);
   const storageId = normalizeStorageId(reference.storageId);
-  const r2Config = maybeGetR2Config(storageProvider);
 
   try {
+    const r2Config = maybeGetR2Config(storageProvider);
     const deleted = await ctx.runMutation(
       components.convexFilesControl.cleanUp.deleteFile,
       {

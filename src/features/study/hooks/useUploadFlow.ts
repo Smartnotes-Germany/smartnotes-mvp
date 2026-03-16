@@ -16,11 +16,11 @@ import {
   MAX_UPLOAD_FILE_LABEL,
   validateUploadFile,
 } from "../../../../shared/uploadPolicy";
-import type { StudyDocument } from "../types";
+import type { StudyDocument, StudyDocumentId, StudySessionId } from "../types";
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   documents: StudyDocument[];
 };
 
@@ -32,9 +32,8 @@ export function useUploadFlow({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
-  const [isRemovingDocument, setIsRemovingDocument] = useState<string | null>(
-    null,
-  );
+  const [isRemovingDocument, setIsRemovingDocument] =
+    useState<StudyDocumentId | null>(null);
 
   const generateUploadUrl = useMutation(generateUploadUrlRef);
   const registerUploadedDocument = useAction(registerUploadedDocumentRef);
@@ -177,7 +176,7 @@ export function useUploadFlow({
   }, [documents, generateQuiz, grantToken, sessionId]);
 
   const removeDocumentById = useCallback(
-    async (documentId: string) => {
+    async (documentId: StudyDocumentId) => {
       if (!grantToken || !sessionId) {
         return;
       }

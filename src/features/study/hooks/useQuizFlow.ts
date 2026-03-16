@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { evaluateAnswerRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
-import type { FeedbackState, QuizQuestion } from "../types";
+import type { FeedbackState, QuizQuestion, StudySessionId } from "../types";
 
 type UseQuizFlowArgs = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   currentQuestion: QuizQuestion | null;
 };
 

@@ -10,11 +10,15 @@
 
 import type * as access from "../access.js";
 import type * as admin from "../admin.js";
+import type * as adminAuth from "../adminAuth.js";
 import type * as ai from "../ai.js";
 import type * as crons from "../crons.js";
 import type * as errorTracking from "../errorTracking.js";
+import type * as fileStorage from "../fileStorage.js";
+import type * as migrations from "../migrations.js";
 import type * as observability from "../observability.js";
 import type * as retention from "../retention.js";
+import type * as storageMigration from "../storageMigration.js";
 import type * as study from "../study.js";
 
 import type {
@@ -26,11 +30,15 @@ import type {
 declare const fullApi: ApiFromModules<{
   access: typeof access;
   admin: typeof admin;
+  adminAuth: typeof adminAuth;
   ai: typeof ai;
   crons: typeof crons;
   errorTracking: typeof errorTracking;
+  fileStorage: typeof fileStorage;
+  migrations: typeof migrations;
   observability: typeof observability;
   retention: typeof retention;
+  storageMigration: typeof storageMigration;
   study: typeof study;
 }>;
 
@@ -429,6 +437,92 @@ export declare const components: {
           storageId: string;
           storageProvider: "convex" | "r2";
           virtualPath: string | null;
+        }
+      >;
+    };
+  };
+  migrations: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        { name: string },
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        { sinceTs?: number },
+        Array<{
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }>
+      >;
+      clearAll: FunctionReference<
+        "mutation",
+        "internal",
+        { before?: number },
+        null
+      >;
+      getStatus: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; names?: Array<string> },
+        Array<{
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }>
+      >;
+      migrate: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun: boolean;
+          fnHandle: string;
+          name: string;
+          next?: Array<{ fnHandle: string; name: string }>;
+          oneBatchOnly?: boolean;
+        },
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
         }
       >;
     };

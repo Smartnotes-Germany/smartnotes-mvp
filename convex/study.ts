@@ -189,7 +189,7 @@ const tryDeleteUploadedFile = async (
   reason: string,
 ) => {
   try {
-    if ("storage" in ctx) {
+    if ("db" in ctx) {
       await deleteManagedFile(ctx, {
         storageId,
         storageProvider,
@@ -386,16 +386,27 @@ export const registerUploadedDocument = action({
       );
     }
 
-    const trustedMetadata =
-      finalizedUpload.storageProvider === "r2"
-        ? await ctx.runAction(
-            components.convexFilesControl.upload.computeR2Metadata,
-            {
-              storageId: args.storageId,
-              r2Config: getR2ConfigOrThrow(),
-            },
-          )
-        : finalizedUpload.metadata;
+    let trustedMetadata;
+    try {
+      trustedMetadata =
+        finalizedUpload.storageProvider === "r2"
+          ? await ctx.runAction(
+              components.convexFilesControl.upload.computeR2Metadata,
+              {
+                storageId: args.storageId,
+                r2Config: getR2ConfigOrThrow(),
+              },
+            )
+          : finalizedUpload.metadata;
+    } catch (error) {
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "r2_metadata_failed",
+      );
+      throw error;
+    }
     if (!trustedMetadata) {
       await tryDeleteUploadedFile(
         ctx,
@@ -452,14 +463,24 @@ export const registerUploadedDocument = action({
       throw new Error(uploadValidation.message);
     }
 
-    return ctx.runMutation(storeUploadedDocumentRef, {
-      sessionId: args.sessionId,
-      storageId: args.storageId,
-      storageProvider: finalizedUpload.storageProvider,
-      fileName: args.fileName,
-      fileType: trustedFileType,
-      fileSizeBytes: trustedFileSizeBytes,
-    });
+    try {
+      return await ctx.runMutation(storeUploadedDocumentRef, {
+        sessionId: args.sessionId,
+        storageId: args.storageId,
+        storageProvider: finalizedUpload.storageProvider,
+        fileName: args.fileName,
+        fileType: trustedFileType,
+        fileSizeBytes: trustedFileSizeBytes,
+      });
+    } catch (error) {
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "store_document_failed",
+      );
+      throw error;
+    }
   },
 });
 

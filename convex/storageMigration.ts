@@ -1,5 +1,3 @@
-"use node";
-
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";

@@ -143,12 +143,17 @@ export const deleteData = mutation({
 
       for (const document of documents) {
         try {
-          await deleteManagedFile(ctx, {
+          const deleteResult = await deleteManagedFile(ctx, {
             storageId: document.storageId,
             storageProvider: document.storageProvider,
           });
 
-          deletedStorageFiles += 1;
+          if (deleteResult.deleted) {
+            deletedStorageFiles += 1;
+          } else {
+            // Treat an unsuccessful deletion as a failure to keep counts accurate.
+            throw new Error("Failed to delete managed file");
+          }
         } catch {
           // Continue deleting DB records even if storage deletion fails.
         }

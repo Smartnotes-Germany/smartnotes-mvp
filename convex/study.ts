@@ -514,10 +514,16 @@ export const removeDocument = mutation({
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
-    await deleteManagedFile(ctx, {
+    const deleteResult = await deleteManagedFile(ctx, {
       storageId: document.storageId,
       storageProvider: document.storageProvider,
     });
+
+    if (!deleteResult.deleted) {
+      throw new Error(
+        "Dokument konnte nicht gelöscht werden. Bitte versuche es erneut.",
+      );
+    }
 
     await ctx.db.delete(args.documentId);
   },

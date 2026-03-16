@@ -51,6 +51,12 @@ export const removeDocumentRef = makeFunctionReference<
   void
 >("study:removeDocument");
 
+export const setFocusTopicsRef = makeFunctionReference<
+  "mutation",
+  { grantToken: string; sessionId: string; focusTopics: string[] },
+  void
+>("study:setFocusTopics");
+
 export const validateGrantRef = makeFunctionReference<
   "query",
   { grantToken: string },
@@ -90,6 +96,18 @@ export const generateQuizRef = makeFunctionReference<
   },
   unknown
 >("ai:generateQuiz");
+
+export const generateFocusedQuizRef = makeFunctionReference<
+  "action",
+  {
+    grantToken: string;
+    sessionId: string;
+    focusTopics: string[];
+    questionsPerTopic?: number;
+    clientRequestId?: string;
+  },
+  unknown
+>("ai:generateFocusedQuiz");
 
 export const evaluateAnswerRef = makeFunctionReference<
   "action",

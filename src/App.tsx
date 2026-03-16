@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { Routes, Route } from "react-router-dom";
 import logoImage from "./assets/images/logo.png";
@@ -20,6 +20,7 @@ import {
   useUploadFlow,
 } from "./features/study/hooks";
 import Page from "./admin/page.tsx";
+import { topicsMatchForFocusMode } from "../shared/topicMatching";
 
 function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
@@ -60,22 +61,113 @@ function StudyApp() {
   const responses = snapshot?.responses;
   const stats = snapshot?.stats ?? null;
 
+  useEffect(() => {
+    if (snapshot === null && sessionId) {
+      localStorage.removeItem("smartnotes.sessionId");
+      window.location.reload();
+    }
+  }, [snapshot, sessionId]);
+
   const responseByQuestionId = useMemo(() => {
     return new Map(
       (responses ?? []).map((response) => [response.questionId, response]),
     );
   }, [responses]);
 
-  const currentQuestion = useMemo(() => {
-    if (!session) {
+  const minQuestionsRequired = useMemo(() => {
+    if (!session || !session.focusTopics || session.focusTopics.length === 0) {
+      return 5;
+    }
+
+    // Determine the base goal (minimum required questions)
+    // 10 for "all", or 5 per specific topic.
+    const baseGoal = session.focusTopics.includes("all")
+      ? 10
+      : session.focusTopics.length * 5;
+
+    // Determine the total available matching questions in the pool.
+    // If we have generated more questions (e.g. via Deep Dive), we want to include them in the goal.
+    const matchingQuestionsCount = session.quizQuestions.filter((q) => {
+      if (session.focusTopics?.includes("all")) return true;
+      return session.focusTopics?.some((ft) =>
+        topicsMatchForFocusMode(q.topic, ft),
+      );
+    }).length;
+
+    // The goal is the maximum of the base requirement and the actual available questions.
+    // This ensures that after a deep dive (adding 10 questions), the progress bar extends.
+    return Math.max(baseGoal, matchingQuestionsCount);
+  }, [session]);
+
+  const answeredQuestionsInFocus = useMemo(() => {
+    if (!session || !responses) {
+      return 0;
+    }
+    const focusTopics = session.focusTopics ?? [];
+    if (focusTopics.length === 0 || focusTopics.includes("all")) {
+      return responses.length;
+    }
+    return responses.filter((r) =>
+      focusTopics.some((ft) => topicsMatchForFocusMode(r.topic, ft)),
+    ).length;
+  }, [responses, session]);
+
+  const activeTopic = useMemo(() => {
+    if (!session || !session.focusTopics || session.focusTopics.length === 0) {
       return null;
     }
+    if (session.focusTopics.includes("all")) {
+      return "all";
+    }
+
+    // Find the first topic in the list that has ANY unanswered questions
+    // This allows continuing after a Deep Dive even if > 5 questions were answered before.
+    for (const topic of session.focusTopics) {
+      const hasUnanswered = session.quizQuestions.some(
+        (q) =>
+          topicsMatchForFocusMode(q.topic, topic) &&
+          !responseByQuestionId.has(q.id),
+      );
+
+      if (hasUnanswered) {
+        return topic;
+      }
+    }
+
+    // If all topics are complete, there's no active topic
+    return null;
+  }, [session, responseByQuestionId]);
+
+  const currentQuestion = useMemo(() => {
+    if (!session || !activeTopic) {
+      return null;
+    }
+
+    // Stop after reaching the required question count to trigger automatic analysis
+    if (answeredQuestionsInFocus >= minQuestionsRequired) {
+      return null;
+    }
+
     return (
-      session.quizQuestions.find(
-        (question) => !responseByQuestionId.has(question.id),
-      ) ?? null
+      session.quizQuestions.find((question) => {
+        if (responseByQuestionId.has(question.id)) {
+          return false;
+        }
+
+        if (activeTopic === "all") {
+          return true;
+        }
+
+        return topicsMatchForFocusMode(question.topic, activeTopic);
+      }) ?? null
     );
-  }, [responseByQuestionId, session]);
+  }, [
+    activeTopic,
+    answeredQuestionsInFocus,
+    minQuestionsRequired,
+    responseByQuestionId,
+    session,
+  ]);
 
   const uploadFlow = useUploadFlow({ grantToken, sessionId, documents });
   const analysisFlow = useAnalysisFlow({
@@ -83,13 +175,17 @@ function StudyApp() {
     sessionId,
     documents,
     quizQuestions: session?.quizQuestions ?? [],
-    currentFocusTopic: session?.currentFocusTopic ?? null,
+    currentFocusTopic: activeTopic,
     hasExistingAnalysis: Boolean(session?.analysis),
   });
   const quizFlow = useQuizFlow({ grantToken, sessionId, currentQuestion });
   const [sessionActionError, setSessionActionError] = useState<string | null>(
     null,
   );
+  const shouldContinueToAnalysis =
+    session?.stage === "quiz" &&
+    answeredQuestionsInFocus >= minQuestionsRequired &&
+    !session?.analysis;
 
   const handleStartFreshSession = async () => {
     setSessionActionError(null);
@@ -100,6 +196,27 @@ function StudyApp() {
       setSessionActionError(startError);
     }
   };
+
+  const handleSetFocusTopics = async (topics: string[]) => {
+    try {
+      await uploadFlow.generateFocusedQuizQuestions(topics);
+    } catch (error) {
+      console.error("Themenwahl fehlgeschlagen:", error);
+    }
+  };
+
+  const handleContinueAfterFeedback = async () => {
+    if (shouldContinueToAnalysis) {
+      await analysisFlow.analyzeSession();
+      return;
+    }
+
+    quizFlow.continueAfterFeedback();
+  };
+
+  if (snapshot === null && sessionId) {
+    return <LoadingScreen />;
+  }
 
   if (!grantToken) {
     return (
@@ -166,18 +283,23 @@ function StudyApp() {
       {session.stage === "quiz" && (
         <QuizStage
           currentQuestion={quizFlow.displayQuestion}
-          stats={stats}
           feedback={quizFlow.feedback}
           answerInput={quizFlow.answerInput}
           onAnswerInputChange={quizFlow.setAnswerInput}
           onSubmitAnswer={quizFlow.submitAnswer}
           isSubmittingAnswer={quizFlow.isSubmittingAnswer}
-          quizError={quizFlow.quizError}
-          onAnalyzeSession={analysisFlow.analyzeSession}
-          isAnalyzing={analysisFlow.isAnalyzing}
-          onGenerateQuiz={uploadFlow.generateQuizQuestions}
+          quizError={quizFlow.quizError || analysisFlow.analysisError}
           isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
-          onContinueAfterFeedback={quizFlow.continueAfterFeedback}
+          onContinueAfterFeedback={handleContinueAfterFeedback}
+          sourceTopics={session.sourceTopics}
+          focusTopics={session.focusTopics ?? []}
+          activeTopic={activeTopic}
+          onSetFocusTopics={handleSetFocusTopics}
+          answeredQuestionsInFocus={answeredQuestionsInFocus}
+          minQuestionsRequired={minQuestionsRequired}
+          topicLoading={analysisFlow.topicLoading}
+          isAnalyzing={analysisFlow.isAnalyzing}
+          shouldContinueToAnalysis={shouldContinueToAnalysis}
         />
       )}
 

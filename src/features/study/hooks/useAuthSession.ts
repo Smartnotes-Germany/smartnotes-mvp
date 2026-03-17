@@ -9,11 +9,11 @@ import {
 } from "../convexRefs";
 import { STORAGE_KEYS } from "../constants";
 import { formatError } from "../errorUtils";
-import type { GrantStatus } from "../types";
+import type { GrantStatus, StudySessionId } from "../types";
 
 export type AuthSessionReturn = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   grantStatus: GrantStatus | undefined;
   latestSessionId: string | null | undefined;
   accessCodeInput: string;
@@ -36,9 +36,11 @@ export function useAuthSession(): AuthSessionReturn {
   const [grantToken, setGrantToken] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEYS.grantToken),
   );
-  const [sessionId, setSessionId] = useState<string | null>(() =>
-    localStorage.getItem(STORAGE_KEYS.sessionId),
-  );
+  const [sessionId, setSessionId] = useState<StudySessionId | null>(() => {
+    return localStorage.getItem(
+      STORAGE_KEYS.sessionId,
+    ) as StudySessionId | null;
+  });
   const [hasAcceptedPrivacy, setHasAcceptedPrivacy] = useState<boolean>(() => {
     return localStorage.getItem("smartnotes.privacy-accepted") === "true";
   });

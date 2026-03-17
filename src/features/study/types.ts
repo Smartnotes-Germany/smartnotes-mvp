@@ -1,4 +1,8 @@
+import type { Id } from "../../../convex/_generated/dataModel";
+
 export type ThemePreference = "light" | "dark" | "system";
+export type StudySessionId = Id<"studySessions">;
+export type StudyDocumentId = Id<"sessionDocuments">;
 
 export type StudyStage =
   | "upload"
@@ -71,7 +75,7 @@ export type StudySession = {
 };
 
 export type StudyDocument = {
-  _id: string;
+  _id: StudyDocumentId;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;

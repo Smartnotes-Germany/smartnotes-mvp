@@ -5,17 +5,21 @@ import {
   ACCEPTED_FILE_TYPES_LABEL,
   MAX_UPLOAD_FILE_LABEL,
 } from "../constants";
-import type { ExtractionStatus, StudyDocument } from "../types";
+import type {
+  ExtractionStatus,
+  StudyDocument,
+  StudyDocumentId,
+} from "../types";
 
 type UploadStageProps = {
   documents: StudyDocument[];
   isUploading: boolean;
   uploadError: string | null;
   isGeneratingQuiz: boolean;
-  isRemovingDocument: string | null;
+  isRemovingDocument: StudyDocumentId | null;
   onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onGenerateQuiz: () => Promise<void>;
-  onRemoveDocument: (documentId: string) => Promise<void>;
+  onRemoveDocument: (documentId: StudyDocumentId) => Promise<void>;
 };
 
 export function UploadStage({

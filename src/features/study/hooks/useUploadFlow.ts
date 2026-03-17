@@ -10,18 +10,18 @@ import {
   removeDocumentRef,
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
-import { uploadFileToConvexStorage } from "../upload";
+import { uploadFileToManagedStorage } from "../upload";
 import {
   isVertexNativeCandidate,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
   validateUploadFile,
 } from "../../../../shared/uploadPolicy";
-import type { StudyDocument } from "../types";
+import type { StudyDocument, StudyDocumentId, StudySessionId } from "../types";
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   documents: StudyDocument[];
 };
 
@@ -33,12 +33,11 @@ export function useUploadFlow({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
-  const [isRemovingDocument, setIsRemovingDocument] = useState<string | null>(
-    null,
-  );
+  const [isRemovingDocument, setIsRemovingDocument] =
+    useState<StudyDocumentId | null>(null);
 
   const generateUploadUrl = useMutation(generateUploadUrlRef);
-  const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
+  const registerUploadedDocument = useAction(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
@@ -68,15 +67,13 @@ export function useUploadFlow({
 
         try {
           const uploadData = await generateUploadUrl({ grantToken, sessionId });
-          if (uploadData.storageProvider !== "convex") {
-            throw new Error(
-              "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
-            );
-          }
-
-          const uploadResult = await uploadFileToConvexStorage(
+          const uploadResult = await uploadFileToManagedStorage(
             uploadData.uploadUrl,
             file,
+            {
+              storageProvider: uploadData.storageProvider,
+              presetStorageId: uploadData.storageId,
+            },
           );
           const documentId = await registerUploadedDocument({
             grantToken,
@@ -241,7 +238,7 @@ export function useUploadFlow({
   );
 
   const removeDocumentById = useCallback(
-    async (documentId: string) => {
+    async (documentId: StudyDocumentId) => {
       if (!grantToken || !sessionId) {
         return;
       }

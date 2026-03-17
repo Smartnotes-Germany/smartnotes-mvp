@@ -82,8 +82,8 @@ export default defineSchema({
   /** Dokumente, die einer Sitzung hinzugefügt wurden (PDFs, Texte, etc.) */
   sessionDocuments: defineTable({
     sessionId: v.id("studySessions"),
-    storageId: v.id("_storage"), // Referenz auf den Convex File Storage
-    storageProvider: v.optional(v.union(v.literal("convex"), v.literal("r2"))), // Legacy-Feld für bestehende Dokumente; neue Logik nutzt nur storageId.
+    storageId: v.union(v.id("_storage"), v.string()),
+    storageProvider: v.optional(v.union(v.literal("convex"), v.literal("r2"))),
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),
@@ -99,7 +99,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_sessionId", ["sessionId"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_storageProvider_createdAt", ["storageProvider", "createdAt"]),
 
   /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({

@@ -6,7 +6,7 @@ import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
 import { action, type ActionCtx } from "./errorTracking";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
   MAX_UPLOAD_FILE_BYTES,
@@ -34,14 +34,13 @@ import {
   isSensitiveCaptureEnabled,
   redactTextForLog,
 } from "./observability";
+import { createManagedReadUrl, type StorageProvider } from "./fileStorage";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
 const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
-const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
-
 const vertexProviderOptions = {
   google: {
     thinkingConfig: {
@@ -159,6 +158,7 @@ const deepDiveSchema = z.object({
 
 type SessionDocumentInput = {
   storageId: string;
+  storageProvider?: StorageProvider;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;
@@ -310,9 +310,12 @@ const resolveMediaType = (fileType: string, fileName: string) => {
 const createDocumentReadUrl = async (
   ctx: {
     runMutation: ActionCtx["runMutation"];
-    storage: { getUrl: (storageId: string) => Promise<string | null> };
+    storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> };
   },
-  storageId: string,
+  document: {
+    storageId: string;
+    storageProvider?: StorageProvider;
+  },
   accessKey?: string,
   trace?: {
     log: (
@@ -321,70 +324,16 @@ const createDocumentReadUrl = async (
       details?: Record<string, unknown>,
     ) => void;
   },
-) => {
-  if (accessKey) {
-    try {
-      const downloadGrant = await ctx.runMutation(
-        components.convexFilesControl.download.createDownloadGrant,
-        {
-          storageId,
-          maxUses: 1,
-          expiresAt: Date.now() + DOWNLOAD_GRANT_TTL_MS,
-        },
-      );
-
-      const consumeResult = await ctx.runMutation(
-        components.convexFilesControl.download.consumeDownloadGrantForUrl,
-        {
-          downloadToken: downloadGrant.downloadToken,
-          accessKey,
-        },
-      );
-
-      if (consumeResult.status === "ok" && consumeResult.downloadUrl) {
-        return {
-          fileUrl: consumeResult.downloadUrl,
-          source: "download_grant" as const,
-          status: consumeResult.status,
-        };
-      }
-
-      return {
-        fileUrl: await ctx.storage.getUrl(storageId),
-        source: "storage" as const,
-        status: consumeResult.status,
-      };
-    } catch (error) {
-      const grantErrorDetail =
-        error instanceof Error
-          ? {
-              name: error.name,
-              message: error.message,
-            }
-          : {
-              type: typeof error,
-            };
-
-      trace?.log("warn", "document_download_grant_url_failed", {
-        storageId,
-        grantErrorDetail,
-      });
-
-      return {
-        fileUrl: await ctx.storage.getUrl(storageId),
-        source: "storage" as const,
-        status: "grant_error",
-        grantErrorDetail,
-      };
-    }
-  }
-
-  return {
-    fileUrl: await ctx.storage.getUrl(storageId),
-    source: "storage" as const,
-    status: "direct",
-  };
-};
+) =>
+  createManagedReadUrl(
+    ctx,
+    {
+      storageId: document.storageId,
+      storageProvider: document.storageProvider,
+    },
+    accessKey,
+    trace,
+  );
 
 const createVertexModel = () => {
   const apiKey = process.env.GOOGLE_VERTEX_API_KEY;
@@ -442,10 +391,11 @@ const buildSourceContext = (
 const buildModelInputFromDocuments = async (
   ctx: {
     runMutation: ActionCtx["runMutation"];
-    storage: { getUrl: (storageId: string) => Promise<string | null> };
+    storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> };
   },
   documents: Array<{
     storageId: string;
+    storageProvider?: StorageProvider;
     fileName: string;
     fileType: string;
     fileSizeBytes?: number;
@@ -494,7 +444,7 @@ const buildModelInputFromDocuments = async (
       }
 
       const { fileUrl, source, status, grantErrorDetail } =
-        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
+        await createDocumentReadUrl(ctx, document, accessKey, trace);
       if (!fileUrl) {
         if (document.extractedText) {
           textOnlyDocuments.push({
@@ -607,7 +557,7 @@ const buildModelInputFromDocuments = async (
     });
 
     const { fileUrl, source, status, grantErrorDetail } =
-      await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
+      await createDocumentReadUrl(ctx, document, accessKey, trace);
     if (!fileUrl) {
       throw new Error(
         `Datei konnte nicht gelesen werden: ${document.fileName}`,
@@ -2014,7 +1964,7 @@ export const extractDocumentContent = action({
 
     try {
       const { fileUrl, source, status, grantErrorDetail } =
-        await createDocumentReadUrl(ctx, document.storageId, accessKey, trace);
+        await createDocumentReadUrl(ctx, document, accessKey, trace);
       if (!fileUrl) {
         throw new Error(
           "Auf das hochgeladene Dokument kann nicht zugegriffen werden.",

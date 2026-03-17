@@ -2164,6 +2164,7 @@ Anforderungen:
           ctx,
           readyDocuments.map((document: SessionDocumentInput) => ({
             storageId: document.storageId,
+            storageProvider: document.storageProvider,
             fileName: document.fileName,
             fileType: document.fileType,
             fileSizeBytes: document.fileSizeBytes,
@@ -2682,6 +2683,7 @@ Anforderungen:
           ctx,
           readyDocuments.map((document: SessionDocumentInput) => ({
             storageId: document.storageId,
+            storageProvider: document.storageProvider,
             fileName: document.fileName,
             fileType: document.fileType,
             fileSizeBytes: document.fileSizeBytes,
@@ -3813,6 +3815,7 @@ export const generateTopicDeepDive = action({
           ctx,
           readyDocuments.map((document: SessionDocumentInput) => ({
             storageId: document.storageId,
+            storageProvider: document.storageProvider,
             fileName: document.fileName,
             fileType: document.fileType,
             fileSizeBytes: document.fileSizeBytes,

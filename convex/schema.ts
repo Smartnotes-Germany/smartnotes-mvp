@@ -69,6 +69,7 @@ export default defineSchema({
       v.literal("analysis"),
     ),
     round: v.number(), // Aktiver Quiz-Batch der Sitzung; Deep Dives erhöhen diesen Wert.
+    currentFocusTopic: v.optional(v.string()), // Legacy-Feld für bestehende Sitzungen; neue Logik nutzt focusTopics.
     focusTopics: v.optional(v.array(v.string())),
     sourceSummary: v.optional(v.string()), // KI-Zusammenfassung aller Quellen
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
@@ -82,6 +83,7 @@ export default defineSchema({
   sessionDocuments: defineTable({
     sessionId: v.id("studySessions"),
     storageId: v.id("_storage"), // Referenz auf den Convex File Storage
+    storageProvider: v.optional(v.union(v.literal("convex"), v.literal("r2"))), // Legacy-Feld für bestehende Dokumente; neue Logik nutzt nur storageId.
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),

@@ -1829,6 +1829,68 @@ const normalizeQuizGenerationOutput = (
   };
 };
 
+const collectFocusedQuizQuestions = (
+  questions: QuizGenerationResult["questions"],
+  focusTopics: string[],
+  questionsPerTopic: number,
+) => {
+  const selectedQuestions: QuizGenerationResult["questions"] = [];
+  const topicBreakdown = focusTopics.map((topic) => {
+    const matchingQuestions = questions.filter((question) =>
+      topicsMatchForFocusMode(question.topic, topic),
+    );
+
+    return {
+      topic,
+      matchingQuestions,
+    };
+  });
+
+  const missingTopics = topicBreakdown
+    .filter(
+      ({ matchingQuestions }) => matchingQuestions.length < questionsPerTopic,
+    )
+    .map(({ topic, matchingQuestions }) => ({
+      topic,
+      foundCount: matchingQuestions.length,
+    }));
+
+  if (missingTopics.length > 0) {
+    return {
+      ok: false as const,
+      missingTopics,
+      selectedQuestions,
+    };
+  }
+
+  for (const { matchingQuestions } of topicBreakdown) {
+    selectedQuestions.push(...matchingQuestions.slice(0, questionsPerTopic));
+  }
+
+  return {
+    ok: true as const,
+    missingTopics: [],
+    selectedQuestions,
+  };
+};
+
+const describeFocusedQuizShortfall = (
+  focusTopics: string[],
+  questionsPerTopic: number,
+  foundQuestions: QuizGenerationResult["questions"],
+) => {
+  const details = focusTopics
+    .map((topic) => {
+      const count = foundQuestions.filter((question) =>
+        topicsMatchForFocusMode(question.topic, topic),
+      ).length;
+      return `${topic}: ${count}/${questionsPerTopic}`;
+    })
+    .join(", ");
+
+  return `Die Themenverteilung war unvollständig. Erforderlich sind exakt ${questionsPerTopic} Fragen pro Thema. Aktuelle Verteilung: ${details}.`;
+};
+
 const isNoOutputGeneratedError = (error: unknown) =>
   NoOutputGeneratedError.isInstance(error) ||
   (typeof error === "object" &&
@@ -2008,12 +2070,13 @@ export const generateQuiz = action({
 
     try {
       const desiredCount = Math.max(
-        3,
-        Math.min(10, Math.floor(args.questionCount ?? 6)),
+        1,
+        Math.min(30, Math.floor(args.questionCount ?? 15)),
       );
       const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
 
 Anforderungen:
+- Analysiere alle im Material vorkommenden Themen und erstelle zu jedem Thema mindestens 2-3 Fragen.
 - Fragen sollen zu wahrscheinlichen Klausur-/Testfragen passen.
 - Mische konzeptionelles Verständnis und Faktenabfrage.
 - Antworthinweise müssen fachlich korrekt und konkret sein.
@@ -2165,8 +2228,8 @@ Anforderungen:
       try {
         trace.log("info", "llm_primary_request", {
           strategy: "structured_messages",
-          temperature: 0.3,
-          maxOutputTokens: 2_000,
+          temperature: 0.1,
+          maxOutputTokens: 3_000,
           thinkingBudget: 0,
           sourceContextLength: sourceContext.length,
           filePartCount: fileParts.length,
@@ -2176,8 +2239,8 @@ Anforderungen:
 
         const result = await generateText({
           model: model("gemini-3-flash-preview"),
-          temperature: 0.3,
-          maxOutputTokens: 2_000,
+          temperature: 0.1,
+          maxOutputTokens: 3_000,
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: quizGenerationSchema,
@@ -2249,8 +2312,8 @@ Anforderungen:
 
             const fallbackResult = await generateText({
               model: model("gemini-3-flash-preview"),
-              temperature: 0.2,
-              maxOutputTokens: 2_000,
+              temperature: 0.1,
+              maxOutputTokens: 3_000,
               providerOptions: vertexProviderOptions,
               output: Output.object({
                 schema: quizGenerationSchema,
@@ -2298,8 +2361,8 @@ Anforderungen:
           } else {
             trace.log("info", "llm_fallback_request", {
               strategy: "json_messages",
-              temperature: 0.2,
-              maxOutputTokens: 2_200,
+              temperature: 0.1,
+              maxOutputTokens: 3_000,
               thinkingBudget: 0,
               sourceContextLength: 0,
             });
@@ -2308,8 +2371,8 @@ Anforderungen:
 
             const fallbackResult = await generateText({
               model: model("gemini-3-flash-preview"),
-              temperature: 0.2,
-              maxOutputTokens: 2_200,
+              temperature: 0.1,
+              maxOutputTokens: 3_000,
               providerOptions: vertexProviderOptions,
               output: Output.json(),
               experimental_telemetry: buildAiSdkTelemetry(
@@ -2449,6 +2512,460 @@ Anforderungen:
       await flushTelemetry({
         traceId: trace.traceId,
         appScope: "generateQuiz",
+      });
+    }
+  },
+});
+
+export const generateFocusedQuiz = action({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    focusTopics: v.array(v.string()),
+    questionsPerTopic: v.optional(v.number()),
+    clientRequestId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const trace = createAiTraceLogger(
+      "generateFocusedQuiz",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const analyticsModelId = "gemini-3-flash-preview";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let fallbackUsed = false;
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let totalDocuments = 0;
+    let readyDocumentsCount = 0;
+    let filePartCount = 0;
+    let sourceContextLength = 0;
+    let outputQuestionCount: number | undefined;
+    let analyticsError: unknown;
+    let analyticsFocusTopics: string[] = [];
+    let analyticsQuestionsPerTopic: number | undefined;
+
+    try {
+      const requestedTopics = [
+        ...new Set(
+          args.focusTopics
+            .map((topic) => topic.trim())
+            .filter((topic) => topic.length > 0),
+        ),
+      ];
+      const includesAll = requestedTopics.includes("all");
+      const normalizedFocusTopics = includesAll
+        ? ["all"]
+        : requestedTopics.filter((topic) => topic !== "all");
+      analyticsFocusTopics = normalizedFocusTopics;
+
+      if (normalizedFocusTopics.length === 0) {
+        throw new Error("Wähle mindestens ein Thema aus.");
+      }
+
+      const questionsPerTopic = Math.max(
+        1,
+        Math.min(10, Math.floor(args.questionsPerTopic ?? 5)),
+      );
+      analyticsQuestionsPerTopic = questionsPerTopic;
+      const desiredCount = includesAll
+        ? 10
+        : normalizedFocusTopics.length * questionsPerTopic;
+
+      if (!includesAll && desiredCount > 30) {
+        throw new Error("Bitte wähle maximal 6 Themen gleichzeitig aus.");
+      }
+
+      const quizInstruction = includesAll
+        ? `Erstelle genau ${desiredCount} verschiedene, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
+
+Anforderungen:
+- Decke die wichtigsten klausurrelevanten Themen ausgewogen ab.
+- Fragen sollen realistisch für eine Klassenarbeit oder Klausur sein.
+- Mische Faktenabfrage, Verständnis und Transfer.
+- Antworthinweise müssen fachlich korrekt und konkret sein.
+- Gib eine kurze Hilfezeile für den Fall einer falschen Antwort.`
+        : `Erstelle exakt ${questionsPerTopic} verschiedene, prüfungsnahe Fragen zu jedem der folgenden Themen:
+${normalizedFocusTopics.map((topic) => `- ${topic}`).join("\n")}
+
+Anforderungen:
+- Liefere insgesamt genau ${desiredCount} Fragen.
+- Jedes ausgewählte Thema muss exakt ${questionsPerTopic} Fragen erhalten.
+- Im Feld "topic" muss exakt eines der ausgewählten Themen stehen.
+- Fragen sollen realistisch für eine Klassenarbeit oder Klausur sein.
+- Mische Faktenabfrage, Verständnis und Transfer.
+- Antworthinweise müssen fachlich korrekt und konkret sein.
+- Gib eine kurze Hilfezeile für den Fall einer falschen Antwort.`;
+
+      trace.log("info", "start", {
+        focusTopics: normalizedFocusTopics,
+        includesAll,
+        questionsPerTopic,
+        desiredCount,
+        instructionLength: quizInstruction.length,
+      });
+
+      const quizContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
+
+      const documents = quizContext.documents;
+      const accessKey = quizContext.accessKey;
+      totalDocuments = documents.length;
+
+      const readyDocuments = documents.filter(
+        (document: SessionDocumentInput) =>
+          document.extractionStatus === "ready",
+      );
+      readyDocumentsCount = readyDocuments.length;
+
+      trace.log("info", "documents_loaded", {
+        totalDocuments: documents.length,
+        readyDocuments: readyDocuments.length,
+        documents: documents.map((document) => ({
+          fileName: document.fileName,
+          fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
+          extractionStatus: document.extractionStatus,
+          extractedTextLength: document.extractedText?.length ?? 0,
+        })),
+      });
+
+      if (readyDocuments.length === 0) {
+        trace.log("warn", "no_ready_documents");
+        throw new Error(
+          "Lade mindestens ein Dokument hoch und verarbeite es, bevor du Fragen generierst.",
+        );
+      }
+
+      const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
+      if (oversizedDocuments.length > 0) {
+        trace.log("warn", "oversized_documents_blocked", {
+          oversizedCount: oversizedDocuments.length,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          files: oversizedDocuments.map((document) => ({
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+          })),
+        });
+
+        const filesPreview = oversizedDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedDocuments.length > 3 ? " ..." : "";
+
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${filesPreview}${suffix}`,
+        );
+      }
+
+      const model = createVertexModel();
+      trace.log("info", "vertex_model_initialized", {
+        modelId: "gemini-3-flash-preview",
+      });
+
+      let fileParts: Array<{
+        type: "file";
+        data: Buffer;
+        mediaType: string;
+        filename: string;
+      }> = [];
+      let sourceContext = "";
+
+      try {
+        const modelInput = await buildModelInputFromDocuments(
+          ctx,
+          readyDocuments.map((document: SessionDocumentInput) => ({
+            storageId: document.storageId,
+            fileName: document.fileName,
+            fileType: document.fileType,
+            fileSizeBytes: document.fileSizeBytes,
+            extractedText: document.extractedText,
+          })),
+          accessKey,
+          trace,
+        );
+        fileParts = modelInput.fileParts;
+        sourceContext = modelInput.sourceContext;
+      } catch (error) {
+        trace.log("error", "model_input_preparation_failed", {
+          error: extractErrorForLog(error),
+        });
+        throw error;
+      }
+
+      trace.log("info", "model_input_prepared", {
+        sourceContextLength: sourceContext.length,
+        sourceContextStats: redactTextForLog(sourceContext),
+        filePartCount: fileParts.length,
+        fileParts: fileParts.map((part) => ({
+          filename: part.filename,
+          mediaType: part.mediaType,
+          sizeBytes: part.data.byteLength,
+        })),
+      });
+
+      filePartCount = fileParts.length;
+      sourceContextLength = sourceContext.length;
+
+      if (fileParts.length === 0 && !sourceContext) {
+        trace.log("error", "no_usable_input");
+        throw new Error(
+          "Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.",
+        );
+      }
+
+      let generated: QuizGenerationResult | null = null;
+      let selectedQuestions: QuizGenerationResult["questions"] = [];
+      let validationIssue =
+        "Die KI hat keine ausreichende Themenverteilung geliefert.";
+
+      for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+        const attemptInstruction =
+          attemptIndex === 0
+            ? quizInstruction
+            : `${quizInstruction}
+
+Korrektur zur vorherigen Ausgabe:
+${validationIssue}
+
+Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt.`;
+
+        const userContent: Array<
+          | { type: "text"; text: string }
+          | {
+              type: "file";
+              data: Buffer;
+              mediaType: string;
+              filename: string;
+            }
+        > = [
+          {
+            type: "text",
+            text: attemptInstruction,
+          },
+        ];
+
+        if (sourceContext) {
+          userContent.push({
+            type: "text",
+            text: `Zusätzliche Textauszüge aus den Dateien:\n${sourceContext}`,
+          });
+        }
+
+        userContent.push(...fileParts);
+
+        try {
+          trace.log("info", "llm_request", {
+            attemptIndex,
+            desiredCount,
+            questionsPerTopic: includesAll ? undefined : questionsPerTopic,
+            focusTopics: normalizedFocusTopics,
+            temperature: 0.1,
+            maxOutputTokens: 3_000,
+            thinkingBudget: 0,
+            sourceContextLength: sourceContext.length,
+            filePartCount: fileParts.length,
+          });
+
+          llmAttempts += 1;
+
+          const result = await generateText({
+            model: model("gemini-3-flash-preview"),
+            temperature: 0.1,
+            maxOutputTokens: 3_000,
+            providerOptions: vertexProviderOptions,
+            output: Output.object({
+              schema: quizGenerationSchema,
+            }),
+            experimental_telemetry: buildAiSdkTelemetry(
+              "generateFocusedQuiz",
+              args.sessionId,
+              trace.traceId,
+              {
+                appScope: "generateFocusedQuiz",
+                stage: attemptIndex === 0 ? "primary" : "retry",
+                readyDocuments: readyDocuments.length,
+                filePartCount: fileParts.length,
+                sourceContextLength: sourceContext.length,
+                desiredCount,
+                focusTopics: normalizedFocusTopics.join(", "),
+              },
+            ),
+            system:
+              "Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und bleibe klar und präzise.",
+            messages: [{ role: "user", content: userContent }],
+          });
+
+          const resultLog = extractGenerationResultForLog(result);
+          trace.addUsage(resultLog.usage);
+          finishReason = resultLog.details.finishReason;
+          mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+          trace.log("info", "llm_response", {
+            ...resultLog.details,
+            attemptIndex,
+            outputSummary: summarizeGeneratedQuiz(result.output),
+          });
+
+          generated = result.output;
+
+          if (includesAll) {
+            const nextSelectedQuestions = generated.questions.slice(
+              0,
+              desiredCount,
+            );
+            if (nextSelectedQuestions.length < desiredCount) {
+              fallbackUsed = true;
+              validationIssue = `Es wurden nur ${nextSelectedQuestions.length} von ${desiredCount} benötigten Fragen geliefert.`;
+              trace.log("warn", "validation_count_failed", {
+                attemptIndex,
+                desiredCount,
+                actualCount: nextSelectedQuestions.length,
+              });
+              continue;
+            }
+
+            selectedQuestions = nextSelectedQuestions;
+            break;
+          }
+
+          const nextSelectedQuestions = collectFocusedQuizQuestions(
+            generated.questions,
+            normalizedFocusTopics,
+            questionsPerTopic,
+          );
+
+          if (!nextSelectedQuestions.ok) {
+            fallbackUsed = true;
+            validationIssue = describeFocusedQuizShortfall(
+              normalizedFocusTopics,
+              questionsPerTopic,
+              generated.questions,
+            );
+            trace.log("warn", "validation_distribution_failed", {
+              attemptIndex,
+              focusTopics: normalizedFocusTopics,
+              questionsPerTopic,
+              missingTopics: nextSelectedQuestions.missingTopics,
+            });
+            continue;
+          }
+
+          selectedQuestions = nextSelectedQuestions.selectedQuestions;
+          break;
+        } catch (error) {
+          if (attemptIndex === 0 && isNoOutputGeneratedError(error)) {
+            fallbackUsed = true;
+            validationIssue =
+              "Die vorherige Ausgabe war leer. Liefere die vollständige Fragenmenge jetzt erneut.";
+            trace.addUsage(extractUsageFromError(error));
+            trace.log("warn", "llm_no_output_retrying", {
+              error: extractErrorForLog(error),
+            });
+            continue;
+          }
+
+          trace.addUsage(extractUsageFromError(error));
+          trace.log("error", "llm_failed", {
+            error: extractErrorForLog(error),
+            attemptIndex,
+          });
+          throw error;
+        }
+      }
+
+      if (!generated || selectedQuestions.length === 0) {
+        trace.log("error", "validation_no_questions", {
+          outputSummary: summarizeGeneratedQuiz(generated),
+        });
+        throw new Error(
+          "Die KI hat keine Fragen für die ausgewählten Themen erzeugt. Bitte versuche es erneut.",
+        );
+      }
+
+      if (selectedQuestions.length < desiredCount) {
+        trace.log("error", "validation_incomplete_question_batch", {
+          desiredCount,
+          actualCount: selectedQuestions.length,
+          focusTopics: normalizedFocusTopics,
+        });
+        throw new Error(
+          "Die KI konnte nicht genug Fragen für alle ausgewählten Themen erzeugen. Bitte versuche es erneut.",
+        );
+      }
+
+      const normalizedQuestions = selectedQuestions
+        .slice(0, desiredCount)
+        .map((question, index) => ({
+          id: `${Date.now()}-focus-${index + 1}`,
+          topic: question.topic,
+          prompt: question.prompt,
+          idealAnswer: question.idealAnswer,
+          explanationHint: question.explanationHint,
+        }));
+
+      await ctx.runMutation(internal.study.storeGeneratedQuiz, {
+        sessionId: args.sessionId,
+        sourceSummary: generated.sourceSummary,
+        sourceTopics: generated.topics.slice(0, 10),
+        quizQuestions: normalizedQuestions,
+        focusTopics: normalizedFocusTopics,
+        replaceExistingQuestions: true,
+        incrementRound: false,
+      });
+
+      trace.log("info", "completed", {
+        focusTopics: normalizedFocusTopics,
+        desiredCount,
+        normalizedQuestionCount: normalizedQuestions.length,
+        usageTotals: trace.getUsageTotals(),
+      });
+
+      outputQuestionCount = normalizedQuestions.length;
+
+      return {
+        questionCount: normalizedQuestions.length,
+        focusTopics: normalizedFocusTopics,
+      };
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        scope: "generateFocusedQuiz",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        fallbackUsed,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        totalDocuments,
+        readyDocuments: readyDocumentsCount,
+        filePartCount,
+        sourceContextLength,
+        outputQuestionCount,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          clientRequestId: args.clientRequestId,
+          focusTopics: analyticsFocusTopics.join(", "),
+          questionsPerTopic: analyticsQuestionsPerTopic,
+        },
+      });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "generateFocusedQuiz",
       });
     }
   },
@@ -2700,13 +3217,13 @@ export const analyzePerformance = action({
 
       trace.log("info", "context_loaded", {
         responseCount: responses.length,
-        currentFocusTopic: session.currentFocusTopic ?? null,
+        currentFocusTopic: session.focusTopics?.[0] ?? null,
         round: session.round,
         requestedMode: args.mode ?? "full",
       });
       responseCount = responses.length;
       if (!resolvedFocusTopic) {
-        resolvedFocusTopic = toTrimmedString(session.currentFocusTopic);
+        resolvedFocusTopic = toTrimmedString(session.focusTopics?.[0]);
       }
 
       let focusTopicInsight =
@@ -2967,7 +3484,7 @@ Pflichtregeln:
 Die Antworten enthalten mehrere Runden. Beziehe den gesamten Verlauf ein.
 Bewerte alle behandelten Themen ausgewogen und vermeide eine reine Fokussierung auf das aktuelle Fokus-Thema.
 
-Fokus-Thema der Sitzung: ${session.currentFocusTopic ?? "kein spezielles Fokus-Thema"}
+Fokus-Thema der Sitzung: ${session.focusTopics?.[0] ?? "kein spezielles Fokus-Thema"}
 Alle behandelten Themen: ${coveredTopics.join(", ") || "keine"}
 Antwortkontext (kompakt, neueste Antworten + Themenstatistik):
 ${fullModePromptContext.serializedContext}
@@ -3024,7 +3541,7 @@ Pflichtregeln:
                     analysisMode,
                     round: session.round,
                     responseCount: responses.length,
-                    currentFocusTopic: session.currentFocusTopic ?? "",
+                    currentFocusTopic: session.focusTopics?.[0] ?? "",
                     stage: attemptIndex === 0 ? "full_primary" : "full_retry",
                   },
                 ),
@@ -3178,7 +3695,11 @@ export const generateTopicDeepDive = action({
       });
 
       const deepDiveContext: {
+        session: {
+          quizQuestions: Array<{ id: string; topic: string; prompt: string }>;
+        };
         documents: SessionDocumentInput[];
+        responses: Array<{ topic: string; score: number; prompt: string }>;
         accessKey?: string;
       } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
         grantToken: args.grantToken,
@@ -3186,6 +3707,7 @@ export const generateTopicDeepDive = action({
       });
 
       const documents = deepDiveContext.documents;
+      const responses = deepDiveContext.responses;
       const accessKey = deepDiveContext.accessKey;
       totalDocuments = documents.length;
 
@@ -3195,9 +3717,51 @@ export const generateTopicDeepDive = action({
       );
       readyDocumentsCount = readyDocuments.length;
 
+      // Calculate recent performance for adaptive difficulty
+      const topicResponses = (responses ?? [])
+        .filter((r) => topicsMatchForFocusMode(r.topic, args.topic))
+        .slice(0, 5);
+
+      // Collect existing prompts to avoid duplicates
+      const existingPromptsSet = new Set<string>();
+      for (const q of deepDiveContext.session.quizQuestions) {
+        existingPromptsSet.add(q.prompt.trim().toLowerCase());
+      }
+      for (const r of responses ?? []) {
+        existingPromptsSet.add(r.prompt.trim().toLowerCase());
+      }
+
+      const existingPromptsList = [...existingPromptsSet].slice(0, 50); // Limit context size
+      const avoidRepeatsInstruction =
+        existingPromptsList.length > 0
+          ? `WICHTIG: Erstelle KEINE Fragen, die inhaltlich den folgenden bereits gestellten Fragen ähneln:\n- ${existingPromptsList.join("\n- ")}`
+          : "";
+
+      const avgScore =
+        topicResponses.length > 0
+          ? topicResponses.reduce((acc, r) => acc + r.score, 0) /
+            topicResponses.length
+          : 70; // Default to a solid middle if no data
+
+      const difficultyLevel =
+        avgScore < 50
+          ? "Einfach (Grundlagen festigen)"
+          : avgScore > 85
+            ? "Herausfordernd (Fortgeschrittene Details)"
+            : "Mittel (Standard-Niveau)";
+
+      const adaptiveInstruction =
+        avgScore < 50
+          ? "Der Nutzer hat Schwierigkeiten. Erstelle einfachere Fragen, die die Basis-Konzepte klären."
+          : avgScore > 85
+            ? "Der Nutzer ist sehr sicher. Erstelle komplexe, anspruchsvolle Fragen, die tief ins Detail gehen."
+            : "Erstelle ausgewogene Fragen auf normalem Prüfungsniveau.";
+
       trace.log("info", "documents_loaded", {
         totalDocuments: documents.length,
         readyDocuments: readyDocuments.length,
+        avgScore,
+        difficultyLevel,
         documents: documents.map((document) => ({
           fileName: document.fileName,
           fileType: document.fileType,
@@ -3213,7 +3777,7 @@ export const generateTopicDeepDive = action({
           "Es ist kein verarbeitetes Material für die Vertiefung verfügbar.",
         );
       }
-
+      // ... (Rest of the context logic)
       const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
       if (oversizedDocuments.length > 0) {
         trace.log("warn", "oversized_documents_blocked", {
@@ -3294,9 +3858,14 @@ export const generateTopicDeepDive = action({
       > = [
         {
           type: "text",
-          text: `Erstelle 5 kurze Vertiefungsfragen zu folgendem Thema: ${args.topic}
+          text: `Erstelle genau 10 verschiedene Vertiefungsfragen zu folgendem Thema: ${args.topic}
 
-Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsnah.`,
+Schwierigkeitsgrad: ${difficultyLevel}
+Anweisung: ${adaptiveInstruction}
+
+${avoidRepeatsInstruction}
+
+Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhänge und verschiedene Aspekte des Themas ein.`,
         },
       ];
 
@@ -3319,10 +3888,12 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
       try {
         trace.log("info", "llm_request", {
           temperature: 0.25,
-          maxOutputTokens: 1_700,
+          maxOutputTokens: 2_500,
           thinkingBudget: 0,
           sourceContextLength: sourceContext.length,
           filePartCount: fileParts.length,
+          avgScore,
+          difficultyLevel,
         });
 
         llmAttempts += 1;
@@ -3330,7 +3901,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
         const result = await generateText({
           model: model("gemini-3-flash-preview"),
           temperature: 0.25,
-          maxOutputTokens: 1_700,
+          maxOutputTokens: 2_500,
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: deepDiveSchema,
@@ -3345,10 +3916,12 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
               readyDocuments: readyDocuments.length,
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
+              difficultyLevel,
             },
           ),
-          system:
-            "Du bist ein fokussierter Tutor und erstellst anspruchsvolle, aber faire Vertiefungsfragen auf Deutsch.",
+          system: `Du bist ein adaptiver Tutor. Dein Ziel ist es, durch 10 gezielte Fragen sicherzustellen, dass ein Thema auf dem Niveau des Nutzers verstanden wurde. 
+            Aktuelles Niveau: ${difficultyLevel}. 
+            Wichtig: ${adaptiveInstruction}`,
           messages: [{ role: "user", content: userContent }],
         });
 
@@ -3400,7 +3973,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
       }
 
       const deepDiveQuestions = generated.questions
-        .slice(0, 5)
+        .slice(0, 10)
         .map((question, index) => ({
           id: `deep-${Date.now()}-${index + 1}`,
           topic: question.topic,
@@ -3415,7 +3988,7 @@ Nutze nur das bereitgestellte Lernmaterial und formuliere die Fragen prüfungsna
         sourceTopics: generated.topics,
         quizQuestions: deepDiveQuestions,
         currentFocusTopic: args.topic,
-        incrementRound: true,
+        incrementRound: false,
       });
 
       trace.log("info", "completed", {

@@ -69,7 +69,7 @@ export default defineSchema({
       v.literal("analysis"),
     ),
     round: v.number(), // Aktiver Quiz-Batch der Sitzung; Deep Dives erhöhen diesen Wert.
-    currentFocusTopic: v.optional(v.string()),
+    focusTopics: v.optional(v.array(v.string())),
     sourceSummary: v.optional(v.string()), // KI-Zusammenfassung aller Quellen
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),

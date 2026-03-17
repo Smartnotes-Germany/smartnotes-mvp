@@ -22,7 +22,7 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 - `pnpm` (required)
 - A configured Convex project/deployment
 - Google Vertex AI credentials (API key in Express Mode, or project/location auth)
-- Optional for R2 storage: a Cloudflare R2 bucket plus access credentials
+- Cloudflare R2 bucket plus access credentials
 
 ## Setup
 

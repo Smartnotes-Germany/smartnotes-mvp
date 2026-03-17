@@ -55,6 +55,21 @@ const resolveTarget = async (
   };
 };
 
+const normalizeFocusTopics = (
+  focusTopics?: string[],
+  currentFocusTopic?: string,
+) => {
+  const normalizedTopics = [
+    ...(focusTopics ?? []),
+    ...(currentFocusTopic ? [currentFocusTopic] : []),
+  ]
+    .map((topic) => topic.trim())
+    .filter((topic) => topic.length > 0);
+
+  const deduplicatedTopics = [...new Set(normalizedTopics)];
+  return deduplicatedTopics.length > 0 ? deduplicatedTopics : undefined;
+};
+
 export const exportData = query({
   args: {
     adminSecret: v.string(),
@@ -215,6 +230,127 @@ export const verifySecret = query({
     } catch {
       return { valid: false };
     }
+  },
+});
+
+export const migrateLegacySchemaFields = mutation({
+  args: {
+    adminSecret: v.string(),
+    grantToken: v.optional(v.string()),
+    sessionId: v.optional(v.id("studySessions")),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    assertAdminSecret(args.adminSecret);
+
+    const dryRun = args.dryRun ?? false;
+    const targetSessions =
+      args.grantToken || args.sessionId
+        ? (
+            await resolveTarget(ctx, {
+              grantToken: args.grantToken,
+              sessionId: args.sessionId,
+            })
+          ).sessions
+        : await ctx.db.query("studySessions").collect();
+
+    let scannedSessions = 0;
+    let scannedDocuments = 0;
+    let migratedSessions = 0;
+    let migratedDocuments = 0;
+    let normalizedFocusTopics = 0;
+    let removedCurrentFocusTopic = 0;
+    let removedStorageProvider = 0;
+
+    for (const session of targetSessions) {
+      scannedSessions += 1;
+
+      const nextFocusTopics = normalizeFocusTopics(
+        session.focusTopics,
+        session.currentFocusTopic,
+      );
+      const hadLegacyFocusTopic = Boolean(session.currentFocusTopic);
+      const focusTopicsChanged =
+        JSON.stringify(session.focusTopics ?? []) !==
+        JSON.stringify(nextFocusTopics ?? []);
+      const sessionNeedsMigration = hadLegacyFocusTopic || focusTopicsChanged;
+
+      if (sessionNeedsMigration) {
+        migratedSessions += 1;
+        if (hadLegacyFocusTopic) {
+          removedCurrentFocusTopic += 1;
+        }
+        if (focusTopicsChanged) {
+          normalizedFocusTopics += 1;
+        }
+
+        if (!dryRun) {
+          await ctx.db.replace(session._id, {
+            grantId: session.grantId,
+            title: session.title,
+            stage: session.stage,
+            round: session.round,
+            ...(nextFocusTopics ? { focusTopics: nextFocusTopics } : {}),
+            ...(session.sourceSummary
+              ? { sourceSummary: session.sourceSummary }
+              : {}),
+            sourceTopics: session.sourceTopics,
+            quizQuestions: session.quizQuestions,
+            ...(session.analysis ? { analysis: session.analysis } : {}),
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt,
+          });
+        }
+      }
+
+      const documents = await ctx.db
+        .query("sessionDocuments")
+        .withIndex("by_sessionId", (q) => q.eq("sessionId", session._id))
+        .collect();
+
+      for (const document of documents) {
+        scannedDocuments += 1;
+
+        if (!document.storageProvider) {
+          continue;
+        }
+
+        migratedDocuments += 1;
+        removedStorageProvider += 1;
+
+        if (dryRun) {
+          continue;
+        }
+
+        await ctx.db.replace(document._id, {
+          sessionId: document.sessionId,
+          storageId: document.storageId,
+          fileName: document.fileName,
+          fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
+          extractionStatus: document.extractionStatus,
+          ...(document.extractedText
+            ? { extractedText: document.extractedText }
+            : {}),
+          ...(document.extractionError
+            ? { extractionError: document.extractionError }
+            : {}),
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt,
+        });
+      }
+    }
+
+    return {
+      dryRun,
+      scannedSessions,
+      scannedDocuments,
+      migratedSessions,
+      migratedDocuments,
+      normalizedFocusTopics,
+      removedCurrentFocusTopic,
+      removedStorageProvider,
+    };
   },
 });
 

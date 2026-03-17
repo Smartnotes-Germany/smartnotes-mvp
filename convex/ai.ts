@@ -158,7 +158,7 @@ const deepDiveSchema = z.object({
 
 type SessionDocumentInput = {
   storageId: string;
-  storageProvider?: StorageProvider;
+  storageProvider: StorageProvider;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;
@@ -310,11 +310,10 @@ const resolveMediaType = (fileType: string, fileName: string) => {
 const createDocumentReadUrl = async (
   ctx: {
     runMutation: ActionCtx["runMutation"];
-    storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> };
   },
   document: {
     storageId: string;
-    storageProvider?: StorageProvider;
+    storageProvider: StorageProvider;
   },
   accessKey?: string,
   trace?: {
@@ -391,11 +390,10 @@ const buildSourceContext = (
 const buildModelInputFromDocuments = async (
   ctx: {
     runMutation: ActionCtx["runMutation"];
-    storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> };
   },
   documents: Array<{
     storageId: string;
-    storageProvider?: StorageProvider;
+    storageProvider: StorageProvider;
     fileName: string;
     fileType: string;
     fileSizeBytes?: number;

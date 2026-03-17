@@ -170,5 +170,5 @@ export const deleteManagedFile = async (
     },
   );
 
-  return { deleted: deleted.deleted, fallbackUsed: false };
+  return { deleted: deleted.deleted };
 };

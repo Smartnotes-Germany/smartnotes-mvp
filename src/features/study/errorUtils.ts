@@ -189,6 +189,20 @@ export const formatError = (error: unknown, options?: FormatErrorOptions) => {
   }
 
   if (
+    normalizedMessage.includes("resource exhausted") ||
+    normalizedMessage.includes("quota") ||
+    normalizedMessage.includes("rate limit") ||
+    normalizedMessage.includes("ratelimit") ||
+    normalizedMessage.includes("error-code-429") ||
+    normalizedMessage.includes("429")
+  ) {
+    return withErrorReferences(
+      "Die KI ist gerade ausgelastet oder das Anfrage-Limit ist erreicht. Bitte warte kurz und versuche es erneut.",
+      references,
+    );
+  }
+
+  if (
     normalizedMessage.includes("aborted") ||
     normalizedMessage.includes("abgebrochen")
   ) {

@@ -27,9 +27,18 @@ const getPendingDocumentsRef = makeFunctionReference<
     sessionId: string;
     storageId: string;
     storageProvider: "convex" | "r2";
+    storageState?: "orphaned";
     updatedAt: number;
   }>
 >("storageMigration:getPendingConvexToR2Documents");
+
+const markDocumentAsOrphanedRef = makeFunctionReference<
+  "mutation",
+  {
+    documentId: string;
+  },
+  void
+>("storageMigration:markDocumentAsOrphaned");
 
 const getPendingDocumentsLimit = (limit?: number) =>
   Math.max(1, Math.min(limit ?? DEFAULT_BATCH_SIZE, 100));
@@ -49,15 +58,15 @@ export const getPendingConvexToR2Documents = query({
     const [convexDocuments, unlabeledDocuments] = await Promise.all([
       ctx.db
         .query("sessionDocuments")
-        .withIndex("by_storageProvider_createdAt", (q) =>
-          q.eq("storageProvider", "convex"),
+        .withIndex("by_storageProvider_storageState_createdAt", (q) =>
+          q.eq("storageProvider", "convex").eq("storageState", undefined),
         )
         .order("asc")
         .take(limit),
       ctx.db
         .query("sessionDocuments")
-        .withIndex("by_storageProvider_createdAt", (q) =>
-          q.eq("storageProvider", undefined),
+        .withIndex("by_storageProvider_storageState_createdAt", (q) =>
+          q.eq("storageProvider", undefined).eq("storageState", undefined),
         )
         .order("asc")
         .take(limit),
@@ -72,6 +81,7 @@ export const getPendingConvexToR2Documents = query({
         fileName: document.fileName,
         storageId: String(document.storageId),
         storageProvider: resolveStorageProvider(document.storageProvider),
+        storageState: document.storageState,
         updatedAt: document.updatedAt,
       }));
   },
@@ -84,30 +94,41 @@ export const getStorageMigrationStatus = query({
   handler: async (ctx, args) => {
     assertAdminSecret(args.adminSecret);
 
-    const [convexDocuments, r2Documents, unlabeledDocuments] =
-      await Promise.all([
-        countDocuments(
-          ctx.db
-            .query("sessionDocuments")
-            .withIndex("by_storageProvider_createdAt", (q) =>
-              q.eq("storageProvider", "convex"),
-            ),
-        ),
-        countDocuments(
-          ctx.db
-            .query("sessionDocuments")
-            .withIndex("by_storageProvider_createdAt", (q) =>
-              q.eq("storageProvider", "r2"),
-            ),
-        ),
-        countDocuments(
-          ctx.db
-            .query("sessionDocuments")
-            .withIndex("by_storageProvider_createdAt", (q) =>
-              q.eq("storageProvider", undefined),
-            ),
-        ),
-      ]);
+    const [
+      convexDocuments,
+      r2Documents,
+      unlabeledDocuments,
+      orphanedDocuments,
+    ] = await Promise.all([
+      countDocuments(
+        ctx.db
+          .query("sessionDocuments")
+          .withIndex("by_storageProvider_createdAt", (q) =>
+            q.eq("storageProvider", "convex"),
+          ),
+      ),
+      countDocuments(
+        ctx.db
+          .query("sessionDocuments")
+          .withIndex("by_storageProvider_createdAt", (q) =>
+            q.eq("storageProvider", "r2"),
+          ),
+      ),
+      countDocuments(
+        ctx.db
+          .query("sessionDocuments")
+          .withIndex("by_storageProvider_createdAt", (q) =>
+            q.eq("storageProvider", undefined),
+          ),
+      ),
+      countDocuments(
+        ctx.db
+          .query("sessionDocuments")
+          .withIndex("by_storageState_createdAt", (q) =>
+            q.eq("storageState", "orphaned"),
+          ),
+      ),
+    ]);
     const totalDocuments = convexDocuments + r2Documents + unlabeledDocuments;
 
     return {
@@ -115,8 +136,11 @@ export const getStorageMigrationStatus = query({
       convexDocuments,
       r2Documents,
       unlabeledDocuments,
-      pendingDocuments: convexDocuments + unlabeledDocuments,
-      isComplete: convexDocuments === 0 && unlabeledDocuments === 0,
+      orphanedDocuments,
+      pendingDocuments:
+        convexDocuments + unlabeledDocuments - orphanedDocuments,
+      isComplete:
+        convexDocuments + unlabeledDocuments - orphanedDocuments === 0,
     };
   },
 });
@@ -131,6 +155,18 @@ export const patchDocumentAfterTransfer = internalMutation({
     await ctx.db.patch(args.documentId, {
       storageId: args.storageId,
       storageProvider: args.storageProvider,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const markDocumentAsOrphaned = internalMutation({
+  args: {
+    documentId: v.id("sessionDocuments"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.documentId, {
+      storageState: "orphaned",
       updatedAt: Date.now(),
     });
   },
@@ -166,6 +202,12 @@ export const migrateDocumentsToR2Batch = action({
           documentId: string;
           fileName: string;
           status: "skipped";
+          reason: string;
+        }
+      | {
+          documentId: string;
+          fileName: string;
+          status: "orphaned";
           reason: string;
         }
       | {
@@ -211,14 +253,31 @@ export const migrateDocumentsToR2Batch = action({
           storageProvider: "r2",
         });
       } catch (error) {
+        const reason =
+          error instanceof Error
+            ? error.message
+            : "Unbekannter Fehler bei der R2-Migration.";
+
+        if (reason.includes("File not found")) {
+          await ctx.runMutation(markDocumentAsOrphanedRef, {
+            documentId: document._id as Id<"sessionDocuments">,
+          });
+
+          results.push({
+            documentId: document._id,
+            fileName: document.fileName,
+            status: "orphaned",
+            reason:
+              "Originaldatei in Convex Storage nicht mehr vorhanden. Dokument wird von weiteren R2-Migrationsversuchen ausgeschlossen.",
+          });
+          continue;
+        }
+
         results.push({
           documentId: document._id,
           fileName: document.fileName,
           status: "failed",
-          reason:
-            error instanceof Error
-              ? error.message
-              : "Unbekannter Fehler bei der R2-Migration.",
+          reason,
         });
       }
     }
@@ -228,6 +287,7 @@ export const migrateDocumentsToR2Batch = action({
       processed: documents.length,
       migrated: results.filter((result) => result.status === "migrated").length,
       skipped: results.filter((result) => result.status === "skipped").length,
+      orphaned: results.filter((result) => result.status === "orphaned").length,
       failed: results.filter((result) => result.status === "failed").length,
       results,
     };

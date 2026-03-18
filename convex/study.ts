@@ -185,31 +185,16 @@ const ensureSessionOwnership = async (
 const tryDeleteUploadedFile = async (
   ctx: Pick<ActionCtx, "runMutation"> | MutationCtx,
   storageId: string,
-  storageProvider: "convex" | "r2" | undefined,
+  storageProvider: "convex" | "r2",
   reason: string,
 ) => {
-  let result:
-    | Awaited<ReturnType<typeof deleteManagedFile>>
-    | { deleted: boolean }
-    | undefined;
+  let result: Awaited<ReturnType<typeof deleteManagedFile>> | undefined;
 
   try {
-    if ("db" in ctx) {
-      result = await deleteManagedFile(ctx, {
-        storageId,
-        storageProvider,
-      });
-    } else {
-      result = await ctx.runMutation(
-        components.convexFilesControl.cleanUp.deleteFile,
-        {
-          storageId,
-          ...(storageProvider === "r2"
-            ? { r2Config: getR2ConfigOrThrow() }
-            : {}),
-        },
-      );
-    }
+    result = await deleteManagedFile(ctx, {
+      storageId,
+      storageProvider,
+    });
 
     if (!result.deleted) {
       throw new Error("Upload-Bereinigung konnte Datei nicht löschen.");
@@ -218,7 +203,7 @@ const tryDeleteUploadedFile = async (
     console.warn("Upload-Bereinigung fehlgeschlagen.", {
       reason,
       storageId,
-      storageProvider: storageProvider ?? "convex",
+      storageProvider,
       result,
       error,
     });

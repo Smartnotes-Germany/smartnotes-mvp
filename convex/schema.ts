@@ -82,8 +82,8 @@ export default defineSchema({
   /** Dokumente, die einer Sitzung hinzugefügt wurden (PDFs, Texte, etc.) */
   sessionDocuments: defineTable({
     sessionId: v.id("studySessions"),
-    storageId: v.union(v.id("_storage"), v.string()),
-    storageProvider: v.optional(v.union(v.literal("convex"), v.literal("r2"))),
+    storageId: v.string(),
+    storageProvider: v.union(v.literal("convex"), v.literal("r2")),
     storageState: v.optional(v.literal("orphaned")),
     fileName: v.string(),
     fileType: v.string(),
@@ -102,12 +102,7 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_createdAt", ["createdAt"])
     .index("by_storageProvider_createdAt", ["storageProvider", "createdAt"])
-    .index("by_storageState_createdAt", ["storageState", "createdAt"])
-    .index("by_storageProvider_storageState_createdAt", [
-      "storageProvider",
-      "storageState",
-      "createdAt",
-    ]),
+    .index("by_storageState_createdAt", ["storageState", "createdAt"]),
 
   /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({

@@ -1,12 +1,11 @@
-import type { Id } from "./_generated/dataModel";
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./errorTracking";
 
 export type StorageProvider = "convex" | "r2";
 
 export type ManagedStorageReference = {
-  storageId: string | Id<"_storage">;
-  storageProvider?: StorageProvider;
+  storageId: string;
+  storageProvider: StorageProvider;
 };
 
 type R2Config = {
@@ -18,16 +17,10 @@ type R2Config = {
 
 type ReadUrlContext = {
   runMutation: ActionCtx["runMutation"] | MutationCtx["runMutation"];
-  storage?: {
-    getUrl: (storageId: Id<"_storage">) => Promise<string | null>;
-  };
 };
 
 type DeleteFileContext = {
-  runMutation: MutationCtx["runMutation"];
-  storage: {
-    delete: (storageId: Id<"_storage">) => Promise<void>;
-  };
+  runMutation: ActionCtx["runMutation"] | MutationCtx["runMutation"];
 };
 
 type TraceLogger = {
@@ -41,18 +34,11 @@ type TraceLogger = {
 const STORAGE_PROVIDER_VALUES = new Set<StorageProvider>(["convex", "r2"]);
 const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
-const normalizeStorageId = (storageId: string | Id<"_storage">) =>
-  String(storageId);
-
-export const resolveStorageProvider = (
-  storageProvider?: StorageProvider,
-): StorageProvider => storageProvider ?? "convex";
-
 export const getConfiguredStorageProvider = (): StorageProvider => {
   const configuredValue =
     process.env.FILE_STORAGE_PROVIDER?.trim().toLowerCase();
   if (!configuredValue) {
-    return "convex";
+    return "r2";
   }
 
   if (!STORAGE_PROVIDER_VALUES.has(configuredValue as StorageProvider)) {
@@ -87,82 +73,20 @@ export const getR2ConfigOrThrow = (): R2Config => {
 const maybeGetR2Config = (provider: StorageProvider) =>
   provider === "r2" ? getR2ConfigOrThrow() : undefined;
 
-const appendStorageUrlErrorDetail = (
-  grantErrorDetail: Record<string, unknown> | undefined,
-  error: unknown,
-): Record<string, unknown> => {
-  const storageUrlError =
-    error instanceof Error
-      ? {
-          functionName: "createStorageFallbackUrl",
-          method: "ctx.storage.getUrl",
-          name: error.name,
-          message: error.message,
-        }
-      : {
-          functionName: "createStorageFallbackUrl",
-          method: "ctx.storage.getUrl",
-          type: typeof error,
-        };
-
-  return grantErrorDetail
-    ? { ...grantErrorDetail, storageUrlError }
-    : storageUrlError;
-};
-
-const createStorageFallbackUrl = async (
-  ctx: ReadUrlContext,
-  storageId: string | Id<"_storage">,
-  status: string,
-  grantErrorDetail?: Record<string, unknown>,
-) => {
-  try {
-    if (!ctx.storage) {
-      return {
-        fileUrl: null,
-        source: "storage" as const,
-        status,
-        grantErrorDetail,
-      };
-    }
-
-    return {
-      fileUrl: await ctx.storage.getUrl(storageId as Id<"_storage">),
-      source: "storage" as const,
-      status,
-      grantErrorDetail,
-    };
-  } catch (error) {
-    return {
-      fileUrl: null,
-      source: "storage" as const,
-      status,
-      grantErrorDetail: appendStorageUrlErrorDetail(grantErrorDetail, error),
-    };
-  }
-};
-
 export const createManagedReadUrl = async (
   ctx: ReadUrlContext,
   reference: ManagedStorageReference,
   accessKey?: string,
   trace?: TraceLogger,
 ) => {
-  const storageProvider = resolveStorageProvider(reference.storageProvider);
-  const storageId = normalizeStorageId(reference.storageId);
-
-  if (!accessKey && storageProvider === "convex" && ctx.storage) {
-    return createStorageFallbackUrl(ctx, reference.storageId, "direct");
-  }
-
-  if (!accessKey && storageProvider === "r2") {
+  if (!accessKey) {
     const grantErrorDetail = {
-      message: "R2-Lesezugriffe erfordern einen accessKey.",
+      message: "Verwaltete Dateizugriffe erfordern einen accessKey.",
     };
 
     trace?.log("warn", "document_download_grant_access_key_missing", {
-      storageId,
-      storageProvider,
+      storageId: reference.storageId,
+      storageProvider: reference.storageProvider,
       grantErrorDetail,
     });
 
@@ -175,11 +99,11 @@ export const createManagedReadUrl = async (
   }
 
   try {
-    const r2Config = maybeGetR2Config(storageProvider);
+    const r2Config = maybeGetR2Config(reference.storageProvider);
     const downloadGrant = await ctx.runMutation(
       components.convexFilesControl.download.createDownloadGrant,
       {
-        storageId,
+        storageId: reference.storageId,
         maxUses: 1,
         expiresAt: Date.now() + DOWNLOAD_GRANT_TTL_MS,
       },
@@ -202,14 +126,6 @@ export const createManagedReadUrl = async (
       };
     }
 
-    if (storageProvider === "convex") {
-      return createStorageFallbackUrl(
-        ctx,
-        reference.storageId,
-        consumeResult.status,
-      );
-    }
-
     return {
       fileUrl: null,
       source: "download_grant" as const,
@@ -227,19 +143,10 @@ export const createManagedReadUrl = async (
           };
 
     trace?.log("warn", "document_download_grant_url_failed", {
-      storageId,
-      storageProvider,
+      storageId: reference.storageId,
+      storageProvider: reference.storageProvider,
       grantErrorDetail,
     });
-
-    if (storageProvider === "convex") {
-      return createStorageFallbackUrl(
-        ctx,
-        reference.storageId,
-        "grant_error",
-        grantErrorDetail,
-      );
-    }
 
     return {
       fileUrl: null,
@@ -254,35 +161,14 @@ export const deleteManagedFile = async (
   ctx: DeleteFileContext,
   reference: ManagedStorageReference,
 ) => {
-  const storageProvider = resolveStorageProvider(reference.storageProvider);
-  const storageId = normalizeStorageId(reference.storageId);
+  const r2Config = maybeGetR2Config(reference.storageProvider);
+  const deleted = await ctx.runMutation(
+    components.convexFilesControl.cleanUp.deleteFile,
+    {
+      storageId: reference.storageId,
+      ...(r2Config ? { r2Config } : {}),
+    },
+  );
 
-  try {
-    const r2Config = maybeGetR2Config(storageProvider);
-    const deleted = await ctx.runMutation(
-      components.convexFilesControl.cleanUp.deleteFile,
-      {
-        storageId,
-        ...(r2Config ? { r2Config } : {}),
-      },
-    );
-
-    if (!deleted.deleted && storageProvider === "convex") {
-      await ctx.storage.delete(reference.storageId as Id<"_storage">);
-      return { deleted: true, fallbackUsed: true };
-    }
-
-    return { deleted: deleted.deleted, fallbackUsed: false };
-  } catch {
-    if (storageProvider === "convex") {
-      try {
-        await ctx.storage.delete(reference.storageId as Id<"_storage">);
-        return { deleted: true, fallbackUsed: true };
-      } catch {
-        return { deleted: false, fallbackUsed: false };
-      }
-    }
-
-    return { deleted: false, fallbackUsed: false };
-  }
+  return { deleted: deleted.deleted };
 };

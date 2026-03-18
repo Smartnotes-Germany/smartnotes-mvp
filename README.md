@@ -12,7 +12,7 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 ## Tech Stack
 
 - Frontend: React 19, Vite, Tailwind CSS
-- Backend: Convex (database, file storage, server functions)
+- Backend: Convex (database, server functions) + Cloudflare R2 (Dateispeicher)
 - AI: `ai` + `@ai-sdk/google-vertex`
 - Document processing: native Vertex file input for PDF/JPG/JPEG/PNG/WEBP, plus `officeparser` extraction for PPT/PPTX/DOC/DOCX and text-based formats
 
@@ -22,7 +22,7 @@ The AI pipeline uses the Vercel AI SDK with Google Vertex AI.
 - `pnpm` (required)
 - A configured Convex project/deployment
 - Google Vertex AI credentials (API key in Express Mode, or project/location auth)
-- Optional for R2 storage: a Cloudflare R2 bucket plus access credentials
+- Cloudflare R2 bucket plus access credentials
 
 ## Setup
 
@@ -65,7 +65,7 @@ pnpm exec convex env set OBSERVABILITY_FLUSH_TIMEOUT_MS 300
 pnpm exec convex env set RETENTION_DAYS_RAW_CONTENT 14
 pnpm exec convex env set RETENTION_DAYS_ANALYTICS 180
 
-# Storage provider (defaults to "convex" when unset)
+# Storage provider (defaults to "r2" when unset)
 pnpm exec convex env set FILE_STORAGE_PROVIDER r2
 pnpm exec convex env set R2_ACCOUNT_ID <your-r2-account-id>
 pnpm exec convex env set R2_ACCESS_KEY_ID <your-r2-access-key-id>
@@ -103,13 +103,11 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `pnpm observability:debug-window:start -- --minutes 45` - activate sensitive debug capture for a bounded window
 - `pnpm observability:debug-window:stop` - disable sensitive debug capture immediately
 
-## Storage Migration
+## Dateispeicher
 
-- Convex file storage and Cloudflare R2 are supported behind the same storage abstraction.
-- `FILE_STORAGE_PROVIDER=convex` keeps new uploads in Convex storage.
-- `FILE_STORAGE_PROVIDER=r2` switches new uploads to Cloudflare R2.
-- Existing Convex-backed documents stay readable after the switch and can be migrated batchweise with `storageMigration:migrateDocumentsToR2Batch`.
-- Database backfills for `sessionDocuments.storageProvider` and the string-based `storageId` shape live in `convex/migrations.ts`.
+- Neue Uploads laufen über die zentrale Storage-Abstraktion in Cloudflare R2.
+- `sessionDocuments.storageId` ist dauerhaft ein String-Feld.
+- `sessionDocuments.storageProvider` ist verpflichtend und kennzeichnet den aktiven Provider.
 
 ## Session And Round Model
 

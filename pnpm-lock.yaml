@@ -11,9 +11,6 @@ importers:
       '@ai-sdk/google-vertex':
         specifier: ^4.0.58
         version: 4.0.58(zod@4.3.6)
-      '@convex-dev/migrations':
-        specifier: ^0.3.1
-        version: 0.3.1(convex@1.31.7(react@19.2.4))
       '@gilhrpenner/convex-files-control':
         specifier: ^0.5.1
         version: 0.5.1(@standard-schema/spec@1.1.0)(convex@1.31.7(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(zod@4.3.6)
@@ -437,11 +434,6 @@ packages:
     resolution: {integrity: sha512-Qugh9Vwwjpzqaf2Nwu1Ope1xA8r3JlrSEAK9ESpY8cqSU3lb2PJDjRtMWlmrwMzxeRh+hSURn6Nge2dsEUGl2Q==}
     peerDependencies:
       convex: ^1.31.7
-
-  '@convex-dev/migrations@0.3.1':
-    resolution: {integrity: sha512-dGiN82vWMN415/AGMcVooDOJk8iTousZahBBs27uA03pL74Uo3ksucUW3CiCfPx75rv+x9UnenEakimQYYNIrA==}
-    peerDependencies:
-      convex: ^1.24.8
 
   '@esbuild/aix-ppc64@0.27.0':
     resolution: {integrity: sha512-KuZrd2hRjz01y5JK9mEBSD3Vj3mbCvemhT466rSuJYeE/hjuBrHfjjcjMdTm/sz7au+++sdbJZJmuBwQLuw68A==}
@@ -3980,15 +3972,6 @@ snapshots:
   '@convex-dev/action-retrier@0.3.0(convex@1.31.7(react@19.2.4))':
     dependencies:
       convex: 1.31.7(react@19.2.4)
-
-  '@convex-dev/eslint-plugin@1.2.0(convex@1.31.7(react@19.2.4))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/utils': 8.49.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
-      convex: 1.31.7(react@19.2.4)
-    transitivePeerDependencies:
-      - eslint
-      - supports-color
-      - typescript
 
   '@convex-dev/migrations@0.3.1(convex@1.31.7(react@19.2.4))':
     dependencies:

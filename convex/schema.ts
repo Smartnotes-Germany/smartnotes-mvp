@@ -76,7 +76,8 @@ export default defineSchema({
       v.literal("analysis"),
     ),
     round: v.number(), // Aktiver Quiz-Batch der Sitzung; Deep Dives erhöhen diesen Wert.
-    currentFocusTopic: v.optional(v.string()),
+    currentFocusTopic: v.optional(v.string()), // Legacy-Feld für bestehende Sitzungen; neue Logik nutzt focusTopics.
+    focusTopics: v.optional(v.array(v.string())),
     sourceSummary: v.optional(v.string()), // KI-Zusammenfassung aller Quellen
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),
@@ -88,7 +89,9 @@ export default defineSchema({
   /** Dokumente, die einer Sitzung hinzugefügt wurden (PDFs, Texte, etc.) */
   sessionDocuments: defineTable({
     sessionId: v.id("studySessions"),
-    storageId: v.id("_storage"), // Referenz auf den Convex File Storage
+    storageId: v.string(),
+    storageProvider: v.union(v.literal("convex"), v.literal("r2")),
+    storageState: v.optional(v.literal("orphaned")),
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),
@@ -104,7 +107,9 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_sessionId", ["sessionId"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_storageProvider_createdAt", ["storageProvider", "createdAt"])
+    .index("by_storageState_createdAt", ["storageState", "createdAt"]),
 
   /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({

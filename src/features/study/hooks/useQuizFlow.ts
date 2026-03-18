@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { evaluateAnswerRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
-import type { FeedbackState, QuizQuestion } from "../types";
+import type { FeedbackState, QuizQuestion, StudySessionId } from "../types";
 import {
   trackQuizAnswerEvaluated,
   trackQuizAnswerEvaluationFailed,
@@ -12,7 +12,7 @@ import {
 
 type UseQuizFlowArgs = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   currentQuestion: QuizQuestion | null;
   answeredQuestions?: number;
   totalQuestions?: number;
@@ -38,6 +38,7 @@ export function useQuizFlow({
     sessionId,
   });
   const latestQuestionRef = useRef(currentQuestion);
+  const lastQuestionIdRef = useRef<string | null>(currentQuestion?.id ?? null);
   const seenQuestionIdsRef = useRef(new Set<string>());
   const progressRef = useRef({ answeredQuestions, totalQuestions });
 
@@ -61,6 +62,7 @@ export function useQuizFlow({
   useEffect(() => {
     setAnswerInput("");
     setDisplayQuestion(null);
+    lastQuestionIdRef.current = null;
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);
@@ -75,9 +77,16 @@ export function useQuizFlow({
       return;
     }
 
+    const questionId = currentQuestion?.id ?? null;
+    const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
+
     setDisplayQuestion(currentQuestion);
-    setAnswerInput("");
-    setQuestionStartedAt(Date.now());
+
+    if (hasQuestionChanged) {
+      setAnswerInput("");
+      setQuestionStartedAt(Date.now());
+      lastQuestionIdRef.current = questionId;
+    }
 
     if (!currentQuestion?.id) {
       return;

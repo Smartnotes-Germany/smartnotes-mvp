@@ -3,20 +3,21 @@ import type { ChangeEvent } from "react";
 import { useAction, useMutation } from "convex/react";
 import {
   extractDocumentContentRef,
+  generateFocusedQuizRef,
   generateQuizRef,
   generateUploadUrlRef,
   registerUploadedDocumentRef,
   removeDocumentRef,
 } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
-import { uploadFileToConvexStorage } from "../upload";
+import { uploadFileToManagedStorage } from "../upload";
 import {
   isVertexNativeCandidate,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
   validateUploadFile,
 } from "../../../../shared/uploadPolicy";
-import type { StudyDocument } from "../types";
+import type { StudyDocument, StudyDocumentId, StudySessionId } from "../types";
 import {
   trackDocumentExtractionFailed,
   trackDocumentRemoved,
@@ -30,7 +31,7 @@ import {
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   documents: StudyDocument[];
   documentCount: number;
   readyDocumentCount: number;
@@ -50,15 +51,15 @@ export function useUploadFlow({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
-  const [isRemovingDocument, setIsRemovingDocument] = useState<string | null>(
-    null,
-  );
+  const [isRemovingDocument, setIsRemovingDocument] =
+    useState<StudyDocumentId | null>(null);
 
   const generateUploadUrl = useMutation(generateUploadUrlRef);
-  const registerUploadedDocument = useMutation(registerUploadedDocumentRef);
+  const registerUploadedDocument = useAction(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
+  const generateFocusedQuiz = useAction(generateFocusedQuizRef);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
@@ -85,15 +86,13 @@ export function useUploadFlow({
 
         try {
           const uploadData = await generateUploadUrl({ grantToken, sessionId });
-          if (uploadData.storageProvider !== "convex") {
-            throw new Error(
-              "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
-            );
-          }
-
-          const uploadResult = await uploadFileToConvexStorage(
+          const uploadResult = await uploadFileToManagedStorage(
             uploadData.uploadUrl,
             file,
+            {
+              storageProvider: uploadData.storageProvider,
+              presetStorageId: uploadData.storageId,
+            },
           );
           const documentId = await registerUploadedDocument({
             grantToken,
@@ -199,7 +198,7 @@ export function useUploadFlow({
       await generateQuiz({
         grantToken,
         sessionId,
-        questionCount: 30,
+        questionCount: 1,
         clientRequestId,
       });
       trackQuizGenerationSucceeded(Date.now() - startedAt, {
@@ -229,8 +228,68 @@ export function useUploadFlow({
     readyDocumentCount,
   ]);
 
+  const generateFocusedQuizQuestions = useCallback(
+    async (focusTopics: string[]) => {
+      if (!grantToken || !sessionId || focusTopics.length === 0) {
+        return;
+      }
+
+      const normalizedTopics = [
+        ...new Set(focusTopics.map((topic) => topic.trim())),
+      ].filter((topic) => topic.length > 0);
+      if (normalizedTopics.length === 0) {
+        return;
+      }
+
+      const oversizedReadyDocuments = documents.filter(
+        (document) =>
+          document.extractionStatus === "ready" &&
+          isVertexNativeCandidate(document.fileType, document.fileName) &&
+          document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
+      );
+
+      if (oversizedReadyDocuments.length > 0) {
+        const names = oversizedReadyDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedReadyDocuments.length > 3 ? " ..." : "";
+
+        setUploadError(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_UPLOAD_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${names}${suffix}`,
+        );
+        return;
+      }
+
+      const clientRequestId = createClientRequestId("generateFocusedQuiz");
+      setIsGeneratingQuiz(true);
+      setUploadError(null);
+
+      try {
+        await generateFocusedQuiz({
+          grantToken,
+          sessionId,
+          focusTopics: normalizedTopics,
+          questionsPerTopic: 5,
+          clientRequestId,
+        });
+      } catch (error: unknown) {
+        setUploadError(
+          formatError(error, {
+            fallback:
+              "Die Fragen für die gewählten Themen konnten nicht erstellt werden.",
+            clientRequestId,
+          }),
+        );
+      } finally {
+        setIsGeneratingQuiz(false);
+      }
+    },
+    [documents, generateFocusedQuiz, grantToken, sessionId],
+  );
+
   const removeDocumentById = useCallback(
-    async (documentId: string) => {
+    async (documentId: StudyDocumentId) => {
       if (!grantToken || !sessionId) {
         return;
       }
@@ -261,6 +320,7 @@ export function useUploadFlow({
     setUploadError,
     onFileInputChange,
     generateQuizQuestions,
+    generateFocusedQuizQuestions,
     removeDocumentById,
   };
 }

@@ -1,4 +1,8 @@
+import type { Id } from "../../../convex/_generated/dataModel";
+
 export type ThemePreference = "light" | "dark" | "system";
+export type StudySessionId = Id<"studySessions">;
+export type StudyDocumentId = Id<"sessionDocuments">;
 
 export type StudyStage =
   | "upload"
@@ -63,14 +67,15 @@ export type StudySession = {
   title: string;
   stage: StudyStage;
   round: number; // Aktiver Quiz-Batch innerhalb derselben Lernsitzung.
-  currentFocusTopic?: string;
+  sourceTopics: string[];
+  focusTopics?: string[];
   quizQuestions: QuizQuestion[];
   analysis?: SessionAnalysis;
   summary?: StudySummary;
 };
 
 export type StudyDocument = {
-  _id: string;
+  _id: StudyDocumentId;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;
@@ -81,6 +86,7 @@ export type StudyDocument = {
 export type StudyResponse = {
   questionId: string;
   score: number;
+  topic: string;
 };
 
 export type StudyStats = {

@@ -1,5 +1,4 @@
 import type { Id } from "./_generated/dataModel";
-import { components } from "./_generated/api";
 import {
   mutation,
   query,
@@ -8,26 +7,13 @@ import {
 } from "./errorTracking";
 import { readRequiredEnv } from "./env";
 import { v } from "convex/values";
+import { assertAdminSecret } from "./adminAuth";
+import { deleteManagedFile } from "./fileStorage";
 import {
   buildIdentityKey,
   normalizeIdentityEmail,
   normalizeIdentityLabel,
 } from "../shared/identity";
-
-// Access token
-const getConfiguredAdminSecret = () => {
-  return readRequiredEnv(
-    "ACCESS_CODE_ADMIN_SECRET",
-    "ACCESS_CODE_ADMIN_SECRET ist nicht konfiguriert.",
-  );
-};
-
-const assertAdminSecret = (providedSecret: string) => {
-  const expectedSecret = getConfiguredAdminSecret();
-  if (providedSecret !== expectedSecret) {
-    throw new Error("Ungültiges Admin-Secret.");
-  }
-};
 
 const resolveTarget = async (
   ctx: QueryCtx | MutationCtx,
@@ -165,18 +151,17 @@ export const deleteData = mutation({
 
       for (const document of documents) {
         try {
-          const deleted = await ctx.runMutation(
-            components.convexFilesControl.cleanUp.deleteFile,
-            {
-              storageId: document.storageId,
-            },
-          );
+          const deleteResult = await deleteManagedFile(ctx, {
+            storageId: document.storageId,
+            storageProvider: document.storageProvider,
+          });
 
-          if (!deleted.deleted) {
-            await ctx.storage.delete(document.storageId);
+          if (deleteResult.deleted) {
+            deletedStorageFiles += 1;
+          } else {
+            // Treat an unsuccessful deletion as a failure to keep counts accurate.
+            throw new Error("Failed to delete managed file");
           }
-
-          deletedStorageFiles += 1;
         } catch {
           // Continue deleting DB records even if storage deletion fails.
         }

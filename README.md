@@ -14,7 +14,7 @@ environment-specific PostHog project with the separate website repo.
 ## Tech Stack
 
 - Frontend: React 19, Vite, Tailwind CSS
-- Backend: Convex (database, file storage, server functions)
+- Backend: Convex (database, server functions) + Cloudflare R2 (Dateispeicher)
 - AI: `ai` + `@ai-sdk/google-vertex`
 - Document processing: native Vertex file input for PDF/JPG/JPEG/PNG/WEBP, plus `officeparser` extraction for PPT/PPTX/DOC/DOCX and text-based formats
 
@@ -24,6 +24,7 @@ environment-specific PostHog project with the separate website repo.
 - `pnpm` (required)
 - A configured Convex project/deployment
 - Google Vertex AI credentials (API key in Express Mode, or project/location auth)
+- Cloudflare R2 bucket plus access credentials
 
 Environment variable reference: `docs/environment.md`.
 PostHog routing and proxy behavior: `docs/posthog-proxy.md`.
@@ -92,6 +93,13 @@ pnpm exec convex env set OBSERVABILITY_FLUSH_TIMEOUT_MS 300
 pnpm exec convex env set RETENTION_DAYS_RAW_CONTENT 14
 pnpm exec convex env set RETENTION_DAYS_ANALYTICS 180
 
+# Storage provider (defaults to "r2" when unset)
+pnpm exec convex env set FILE_STORAGE_PROVIDER r2
+pnpm exec convex env set R2_ACCOUNT_ID <your-r2-account-id>
+pnpm exec convex env set R2_ACCESS_KEY_ID <your-r2-access-key-id>
+pnpm exec convex env set R2_SECRET_ACCESS_KEY <your-r2-secret-access-key>
+pnpm exec convex env set R2_BUCKET_NAME <your-r2-bucket-name>
+
 # PostHog AI bridge
 pnpm exec convex env set POSTHOG_ENABLED true
 pnpm exec convex env set POSTHOG_PROJECT_KEY <your-posthog-project-key>
@@ -152,6 +160,12 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `pnpm format:check` - check code formatting
 - `pnpm observability:debug-window:start -- --minutes 45` - set debug-window env vars for bounded troubleshooting
 - `pnpm observability:debug-window:stop` - clear debug-window env vars immediately
+
+## Dateispeicher
+
+- Neue Uploads laufen über die zentrale Storage-Abstraktion in Cloudflare R2.
+- `sessionDocuments.storageId` ist dauerhaft ein String-Feld.
+- `sessionDocuments.storageProvider` ist verpflichtend und kennzeichnet den aktiven Provider.
 
 ## Session And Round Model
 

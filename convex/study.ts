@@ -1,15 +1,24 @@
 import type { Id } from "./_generated/dataModel";
 import { components } from "./_generated/api";
 import {
+  action,
   internalMutation,
   internalQuery,
   mutation,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./errorTracking";
+import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
+import {
+  createManagedReadUrl,
+  deleteManagedFile,
+  getConfiguredStorageProvider,
+  getR2ConfigOrThrow,
+} from "./fileStorage";
 import { topicsMatchForFocusMode } from "../shared/topicMatching";
 
 const MAX_ANALYSIS_FULL_RESPONSES = 240;
@@ -79,31 +88,31 @@ type GrantDoc = {
   revokedAt?: number;
 };
 
-const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
-
-const deleteStorageFileWithFallback = async (
-  ctx: MutationCtx,
-  storageId: Id<"_storage">,
-) => {
-  try {
-    const deleted = await ctx.runMutation(
-      components.convexFilesControl.cleanUp.deleteFile,
-      {
-        storageId,
-      },
-    );
-
-    if (!deleted.deleted) {
-      await ctx.storage.delete(storageId);
-    }
-  } catch {
-    try {
-      await ctx.storage.delete(storageId);
-    } catch {
-      // Best-effort cleanup.
-    }
+const getUploadRegistrationContextRef = makeFunctionReference<
+  "query",
+  {
+    grantToken: string;
+    sessionId: Id<"studySessions">;
+  },
+  {
+    grantId: Id<"accessGrants">;
   }
-};
+>("study:getUploadRegistrationContext");
+
+const storeUploadedDocumentRef = makeFunctionReference<
+  "mutation",
+  {
+    sessionId: Id<"studySessions">;
+    storageId: string;
+    storageProvider: "convex" | "r2";
+    fileName: string;
+    fileType: string;
+    fileSizeBytes: number;
+  },
+  Id<"sessionDocuments">
+>("study:storeUploadedDocument");
+
+const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
 
 const parseMetadataJson = (
   raw: string | undefined,
@@ -181,6 +190,75 @@ const ensureSessionOwnership = async (
   return session;
 };
 
+const tryDeleteUploadedFile = async (
+  ctx: Pick<ActionCtx, "runMutation"> | MutationCtx,
+  storageId: string,
+  storageProvider: "convex" | "r2",
+  reason: string,
+) => {
+  let result: Awaited<ReturnType<typeof deleteManagedFile>> | undefined;
+
+  try {
+    result = await deleteManagedFile(ctx, {
+      storageId,
+      storageProvider,
+    });
+
+    if (!result.deleted) {
+      throw new Error("Upload-Bereinigung konnte Datei nicht löschen.");
+    }
+  } catch (error) {
+    console.warn("Upload-Bereinigung fehlgeschlagen.", {
+      reason,
+      storageId,
+      storageProvider,
+      result,
+      error,
+    });
+  }
+};
+
+export const getUploadRegistrationContext = internalQuery({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    return {
+      grantId: grant._id,
+    };
+  },
+});
+
+export const storeUploadedDocument = internalMutation({
+  args: {
+    sessionId: v.id("studySessions"),
+    storageId: v.string(),
+    storageProvider: v.union(v.literal("convex"), v.literal("r2")),
+    fileName: v.string(),
+    fileType: v.string(),
+    fileSizeBytes: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    return ctx.db.insert("sessionDocuments", {
+      sessionId: args.sessionId,
+      storageId: args.storageId,
+      storageProvider: args.storageProvider,
+      fileName: args.fileName,
+      fileType: args.fileType,
+      fileSizeBytes: args.fileSizeBytes,
+      extractionStatus: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
 export const startSession = mutation({
   args: {
     grantToken: v.string(),
@@ -247,11 +325,11 @@ export const getSessionSnapshot = query({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(
-      ctx,
-      args.sessionId,
-      grant._id,
-    );
+    const session = await ctx.db.get(args.sessionId);
+
+    if (!session || session.grantId !== grant._id) {
+      return null;
+    }
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -289,60 +367,89 @@ export const generateUploadUrl = mutation({
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const storageProvider = getConfiguredStorageProvider();
 
     return ctx.runMutation(
       components.convexFilesControl.upload.generateUploadUrl,
       {
-        provider: "convex",
+        provider: storageProvider,
+        ...(storageProvider === "r2" ? { r2Config: getR2ConfigOrThrow() } : {}),
       },
     );
   },
 });
 
-export const registerUploadedDocument = mutation({
+export const registerUploadedDocument = action({
   args: {
     grantToken: v.string(),
     sessionId: v.id("studySessions"),
     uploadToken: v.string(),
-    storageId: v.id("_storage"),
+    storageId: v.string(),
     fileName: v.string(),
     fileType: v.string(),
     fileSizeBytes: v.number(),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const { grantId } = await ctx.runQuery(getUploadRegistrationContextRef, {
+      grantToken: args.grantToken,
+      sessionId: args.sessionId,
+    });
 
     const finalizedUpload = await ctx.runMutation(
       components.convexFilesControl.upload.finalizeUpload,
       {
         uploadToken: args.uploadToken,
         storageId: args.storageId,
-        accessKeys: [buildGrantAccessKey(grant._id)],
+        accessKeys: [buildGrantAccessKey(grantId)],
       },
     );
 
-    if (finalizedUpload.storageProvider !== "convex") {
-      throw new Error(
-        "Aktuell wird nur Convex-Speicher für Lernmaterial unterstützt.",
-      );
-    }
     if (finalizedUpload.storageId !== args.storageId) {
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
     }
 
-    const trustedMetadata = finalizedUpload.metadata;
+    let trustedMetadata;
+    try {
+      trustedMetadata =
+        finalizedUpload.storageProvider === "r2"
+          ? await ctx.runAction(
+              components.convexFilesControl.upload.computeR2Metadata,
+              {
+                storageId: args.storageId,
+                r2Config: getR2ConfigOrThrow(),
+              },
+            )
+          : finalizedUpload.metadata;
+    } catch (error) {
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "r2_metadata_failed",
+      );
+      throw error;
+    }
     if (!trustedMetadata) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "missing_metadata",
+      );
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
     }
 
     if (trustedMetadata.storageId !== args.storageId) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "storage_id_mismatch",
+      );
       throw new Error(
         "Upload konnte nicht verifiziert werden. Bitte versuche es erneut.",
       );
@@ -355,7 +462,12 @@ export const registerUploadedDocument = mutation({
       "application/octet-stream";
 
     if (args.fileSizeBytes !== trustedFileSizeBytes) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "file_size_mismatch",
+      );
       throw new Error(
         "Uploadgröße konnte nicht verifiziert werden. Bitte lade die Datei erneut hoch.",
       );
@@ -366,23 +478,33 @@ export const registerUploadedDocument = mutation({
       size: trustedFileSizeBytes,
     });
     if (!uploadValidation.valid) {
-      await deleteStorageFileWithFallback(ctx, args.storageId);
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "upload_validation_failed",
+      );
       throw new Error(uploadValidation.message);
     }
 
-    const now = Date.now();
-    const documentId = await ctx.db.insert("sessionDocuments", {
-      sessionId: args.sessionId,
-      storageId: args.storageId,
-      fileName: args.fileName,
-      fileType: trustedFileType,
-      fileSizeBytes: trustedFileSizeBytes,
-      extractionStatus: "pending",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return documentId;
+    try {
+      return await ctx.runMutation(storeUploadedDocumentRef, {
+        sessionId: args.sessionId,
+        storageId: args.storageId,
+        storageProvider: finalizedUpload.storageProvider,
+        fileName: args.fileName,
+        fileType: trustedFileType,
+        fileSizeBytes: trustedFileSizeBytes,
+      });
+    } catch (error) {
+      await tryDeleteUploadedFile(
+        ctx,
+        args.storageId,
+        finalizedUpload.storageProvider,
+        "store_document_failed",
+      );
+      throw error;
+    }
   },
 });
 
@@ -401,9 +523,35 @@ export const removeDocument = mutation({
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
-    await deleteStorageFileWithFallback(ctx, document.storageId);
+    const deleteResult = await deleteManagedFile(ctx, {
+      storageId: document.storageId,
+      storageProvider: document.storageProvider,
+    });
+
+    if (!deleteResult.deleted) {
+      throw new Error(
+        "Dokument konnte nicht gelöscht werden. Bitte versuche es erneut.",
+      );
+    }
 
     await ctx.db.delete(args.documentId);
+  },
+});
+
+export const setFocusTopics = mutation({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    focusTopics: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+
+    await ctx.db.patch(args.sessionId, {
+      focusTopics: args.focusTopics,
+      updatedAt: Date.now(),
+    });
   },
 });
 
@@ -425,29 +573,21 @@ export const createDocumentDownloadUrl = mutation({
     }
 
     const accessKey = buildGrantAccessKey(grant._id);
-    const downloadGrant = await ctx.runMutation(
-      components.convexFilesControl.download.createDownloadGrant,
+    const consumeResult = await createManagedReadUrl(
+      ctx,
       {
         storageId: document.storageId,
-        maxUses: 1,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        storageProvider: document.storageProvider,
       },
+      accessKey,
     );
 
-    const consumeResult = await ctx.runMutation(
-      components.convexFilesControl.download.consumeDownloadGrantForUrl,
-      {
-        downloadToken: downloadGrant.downloadToken,
-        accessKey,
-      },
-    );
-
-    if (consumeResult.status !== "ok" || !consumeResult.downloadUrl) {
+    if (!consumeResult.fileUrl) {
       throw new Error("Download-Link konnte nicht erstellt werden.");
     }
 
     return {
-      downloadUrl: consumeResult.downloadUrl,
+      downloadUrl: consumeResult.fileUrl,
     };
   },
 });
@@ -528,9 +668,16 @@ export const getQuizGenerationContext = internalQuery({
       .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
       .collect();
 
+    const responses = await ctx.db
+      .query("quizResponses")
+      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId))
+      .order("desc")
+      .take(50);
+
     return {
       session,
       documents,
+      responses,
       accessKey: buildGrantAccessKey(grant._id),
     };
   },
@@ -543,6 +690,8 @@ export const storeGeneratedQuiz = internalMutation({
     sourceTopics: v.array(v.string()),
     quizQuestions: v.array(quizQuestionValidator),
     currentFocusTopic: v.optional(v.string()),
+    focusTopics: v.optional(v.array(v.string())),
+    replaceExistingQuestions: v.optional(v.boolean()),
     incrementRound: v.boolean(),
   },
   handler: async (ctx, args) => {
@@ -554,15 +703,46 @@ export const storeGeneratedQuiz = internalMutation({
     const nextRound = args.incrementRound ? session.round + 1 : session.round;
     const now = Date.now();
 
+    // Merge source topics to keep all extracted topics throughout the session
+    const updatedSourceTopics = [
+      ...new Set([...session.sourceTopics, ...args.sourceTopics]),
+    ].slice(0, 15);
+
+    // Merge new questions into the existing list, avoiding duplicates by ID or content
+    const existingIds = new Set(session.quizQuestions.map((q) => q.id));
+    const existingPrompts = new Set(
+      session.quizQuestions.map((q) => q.prompt.trim().toLowerCase()),
+    );
+
+    const newUniqueQuestions = args.quizQuestions.filter((q) => {
+      const isDuplicateId = existingIds.has(q.id);
+      const normalizedPrompt = q.prompt.trim().toLowerCase();
+      const isDuplicateContent = existingPrompts.has(normalizedPrompt);
+
+      if (isDuplicateId || isDuplicateContent) {
+        return false;
+      }
+
+      // Add to set to catch duplicates within the new batch itself
+      existingPrompts.add(normalizedPrompt);
+      return true;
+    });
+
+    const updatedQuestions = args.replaceExistingQuestions
+      ? newUniqueQuestions
+      : [...session.quizQuestions, ...newUniqueQuestions];
+
     await ctx.db.patch(args.sessionId, {
       stage: "quiz",
       round: nextRound,
       sourceSummary: args.sourceSummary,
-      sourceTopics: args.sourceTopics,
-      quizQuestions: args.quizQuestions,
-      ...(args.currentFocusTopic
-        ? { currentFocusTopic: args.currentFocusTopic }
-        : {}),
+      sourceTopics: updatedSourceTopics,
+      quizQuestions: updatedQuestions,
+      ...(args.focusTopics
+        ? { focusTopics: args.focusTopics }
+        : args.currentFocusTopic
+          ? { focusTopics: [args.currentFocusTopic] }
+          : {}),
       updatedAt: now,
     });
   },
@@ -675,7 +855,7 @@ export const getAnalysisContext = internalQuery({
 
     const mode = args.mode ?? "full";
     const resolvedFocusTopic =
-      args.focusTopic?.trim() || session.currentFocusTopic?.trim() || "";
+      args.focusTopic?.trim() || (session.focusTopics?.[0] ?? "").trim() || "";
     const responseLimit = clampAnalysisResponseLimit(
       args.maxResponses ??
         (mode === "focus"

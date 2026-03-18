@@ -8,7 +8,7 @@ import {
   MAX_UPLOAD_FILE_LABEL,
 } from "../../../../shared/uploadPolicy";
 import { topicsMatchForFocusMode } from "../../../../shared/topicMatching";
-import type { QuizQuestion, StudyDocument } from "../types";
+import type { QuizQuestion, StudyDocument, StudySessionId } from "../types";
 import {
   trackAnalysisFailed,
   trackAnalysisRequested,
@@ -20,7 +20,7 @@ import {
 
 type UseAnalysisFlowArgs = {
   grantToken: string | null;
-  sessionId: string | null;
+  sessionId: StudySessionId | null;
   documents: StudyDocument[];
   quizQuestions: QuizQuestion[];
   currentFocusTopic?: string | null;

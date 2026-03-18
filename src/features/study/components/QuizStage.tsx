@@ -311,7 +311,9 @@ export function QuizStage({
                     <ArrowRight size={20} className="md:h-[22px] md:w-[22px]" />
                   )}
                   {shouldContinueToAnalysis
-                    ? useCompactAnalysisCopy ? "Analyse erstellen" : "Weiter zur Lernanalyse"
+                    ? useCompactAnalysisCopy
+                      ? "Analyse erstellen"
+                      : "Weiter zur Lernanalyse"
                     : "Nächste Frage"}
                 </button>
               </div>

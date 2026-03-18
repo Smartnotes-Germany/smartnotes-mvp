@@ -5,7 +5,6 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./errorTracking";
-import { readRequiredEnv } from "./env";
 import { v } from "convex/values";
 import { assertAdminSecret } from "./adminAuth";
 import { deleteManagedFile } from "./fileStorage";

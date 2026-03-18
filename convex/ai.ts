@@ -2248,7 +2248,10 @@ export const generateQuiz = action({
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
-    let desiredCount = 6;
+    const desiredCount = Math.max(
+      1,
+      Math.min(30, Math.floor(args.questionCount ?? 15)),
+    );
     let sourceContext = "";
     let generatedQuiz: QuizGenerationResult | null = null;
     let normalizedQuestions: QuestionForEvaluation[] = [];
@@ -2256,10 +2259,6 @@ export const generateQuiz = action({
     let analyticsError: unknown;
 
     try {
-      desiredCount = Math.max(
-        1,
-        Math.min(30, Math.floor(args.questionCount ?? 15)),
-      );
       const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
 
 Anforderungen:

@@ -3973,9 +3973,14 @@ snapshots:
     dependencies:
       convex: 1.31.7(react@19.2.4)
 
-  '@convex-dev/migrations@0.3.1(convex@1.31.7(react@19.2.4))':
+  '@convex-dev/eslint-plugin@1.2.0(convex@1.31.7(react@19.2.4))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)':
     dependencies:
+      '@typescript-eslint/utils': 8.49.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
       convex: 1.31.7(react@19.2.4)
+    transitivePeerDependencies:
+      - eslint
+      - supports-color
+      - typescript
 
   '@esbuild/aix-ppc64@0.27.0':
     optional: true

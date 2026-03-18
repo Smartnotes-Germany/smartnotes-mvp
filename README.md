@@ -235,8 +235,8 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 
 - Feature flag key: `analysis_cta_variant` (used in `QuizStage` CTA copy).
 - Suggested variants:
-  - control: default copy (`Lernanalyse starten`, `Analyse jetzt starten`)
-  - kompakt: shorter copy (`Analyse starten`)
+  - control: default copy (`Weiter zur Lernanalyse`)
+  - kompakt: shorter copy (`Analyse erstellen`)
 - Experiment suggestion: primary metric `analysis_succeeded` rate after `quiz_answer_submitted`.
 - Survey suggestion: trigger after `analysis_succeeded`, German copy, repeat cadence capped (e.g. max once per 14 days).
 

@@ -1,8 +1,8 @@
 import { api } from "../../../convex/_generated/api";
 
-export const redeemAccessCodeRef = api.access.redeemAccessCode;
+export const redeemAccessCodeRef = api.accessActions.redeemAccessCode;
 
-export const consumeMagicLinkRef = api.access.consumeMagicLink;
+export const consumeMagicLinkRef = api.accessActions.consumeMagicLink;
 
 export const startSessionRef = api.study.startSession;
 

@@ -765,6 +765,7 @@ export const storeQuizResponse = internalMutation({
     score: v.number(),
     explanation: v.string(),
     idealAnswer: v.string(),
+    misunderstanding: v.string(),
     timeSpentSeconds: v.number(),
   },
   handler: async (ctx, args) => {
@@ -789,6 +790,7 @@ export const storeQuizResponse = internalMutation({
         score: args.score,
         explanation: args.explanation,
         idealAnswer: args.idealAnswer,
+        misunderstanding: args.misunderstanding,
         timeSpentSeconds: args.timeSpentSeconds,
         updatedAt: now,
       });
@@ -806,6 +808,7 @@ export const storeQuizResponse = internalMutation({
       score: args.score,
       explanation: args.explanation,
       idealAnswer: args.idealAnswer,
+      misunderstanding: args.misunderstanding,
       timeSpentSeconds: args.timeSpentSeconds,
       createdAt: now,
       updatedAt: now,

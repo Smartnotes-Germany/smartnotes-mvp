@@ -765,7 +765,7 @@ export const storeQuizResponse = internalMutation({
     score: v.number(),
     explanation: v.string(),
     idealAnswer: v.string(),
-    misunderstanding: v.string(),
+    misunderstanding: v.optional(v.string()),
     timeSpentSeconds: v.number(),
   },
   handler: async (ctx, args) => {
@@ -781,7 +781,13 @@ export const storeQuizResponse = internalMutation({
       )
       .first();
 
-    if (existing) {
+      if (existing) {
+      const misunderstanding =
+        args.misunderstanding ??
+        (args.isCorrect
+          ? "Kein spezifisches Missverständnis"
+          : "Keine Angabe");
+
       await ctx.db.patch(existing._id, {
         topic: args.topic,
         prompt: args.prompt,
@@ -790,12 +796,18 @@ export const storeQuizResponse = internalMutation({
         score: args.score,
         explanation: args.explanation,
         idealAnswer: args.idealAnswer,
-        misunderstanding: args.misunderstanding,
+        misunderstanding,
         timeSpentSeconds: args.timeSpentSeconds,
         updatedAt: now,
       });
       return;
     }
+
+    const misunderstanding =
+      args.misunderstanding ??
+      (args.isCorrect
+        ? "Kein spezifisches Missverständnis"
+        : "Keine Angabe");
 
     await ctx.db.insert("quizResponses", {
       sessionId: args.sessionId,
@@ -808,7 +820,7 @@ export const storeQuizResponse = internalMutation({
       score: args.score,
       explanation: args.explanation,
       idealAnswer: args.idealAnswer,
-      misunderstanding: args.misunderstanding,
+      misunderstanding,
       timeSpentSeconds: args.timeSpentSeconds,
       createdAt: now,
       updatedAt: now,

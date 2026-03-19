@@ -239,3 +239,46 @@ export const generateMagicLink = mutation({
     return { code };
   },
 });
+
+export const backfillQuizResponseMisunderstanding = mutation({
+  args: {
+    adminSecret: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    assertAdminSecret(args.adminSecret);
+
+    const effectiveLimit = Math.max(1, Math.min(500, args.limit ?? 200));
+    const responses = await ctx.db
+      .query("quizResponses")
+      .withIndex("by_createdAt")
+      .order("asc")
+      .take(effectiveLimit);
+
+    let scanned = 0;
+    let patched = 0;
+
+    for (const response of responses) {
+      scanned += 1;
+      if (typeof response.misunderstanding === "string") {
+        continue;
+      }
+
+      const fallbackMisunderstanding = response.isCorrect
+        ? "Kein spezifisches Missverständnis"
+        : "Keine Angabe";
+
+      await ctx.db.patch(response._id, {
+        misunderstanding: fallbackMisunderstanding,
+        updatedAt: Date.now(),
+      });
+      patched += 1;
+    }
+
+    return {
+      scanned,
+      patched,
+      limit: effectiveLimit,
+    };
+  },
+});

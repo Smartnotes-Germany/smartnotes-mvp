@@ -8,12 +8,14 @@ type UseQuizFlowArgs = {
   grantToken: string | null;
   sessionId: StudySessionId | null;
   currentQuestion: QuizQuestion | null;
+  isQuizActive: boolean;
 };
 
 export function useQuizFlow({
   grantToken,
   sessionId,
   currentQuestion,
+  isQuizActive,
 }: UseQuizFlowArgs) {
   const [answerInput, setAnswerInput] = useState("");
   const [displayQuestion, setDisplayQuestion] = useState<QuizQuestion | null>(
@@ -54,23 +56,40 @@ export function useQuizFlow({
   }, [grantToken, sessionId]);
 
   useEffect(() => {
+    if (isQuizActive) {
+      return;
+    }
+
+    setAnswerInput("");
+    setDisplayQuestion(null);
+    lastQuestionIdRef.current = null;
+    setFeedback(null);
     setQuizError(null);
+    setIsSubmittingAnswer(false);
+    setQuestionStartedAt(Date.now());
+  }, [isQuizActive]);
+
+  useEffect(() => {
+    setQuizError(null);
+    const questionId = currentQuestion?.id ?? null;
+    const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
+
+    if (hasQuestionChanged) {
+      setFeedback(null);
+      setDisplayQuestion(currentQuestion);
+      setAnswerInput("");
+      setQuestionStartedAt(Date.now());
+      lastQuestionIdRef.current = questionId;
+      return;
+    }
+
     // Keep the submitted question visible while the answer is still being
     // evaluated or while its feedback is on screen.
     if (feedback || isSubmittingAnswer) {
       return;
     }
 
-    const questionId = currentQuestion?.id ?? null;
-    const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
-
     setDisplayQuestion(currentQuestion);
-
-    if (hasQuestionChanged) {
-      setAnswerInput("");
-      setQuestionStartedAt(Date.now());
-      lastQuestionIdRef.current = questionId;
-    }
   }, [currentQuestion, feedback, isSubmittingAnswer]);
 
   const submitAnswer = useCallback(

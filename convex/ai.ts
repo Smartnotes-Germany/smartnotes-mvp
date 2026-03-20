@@ -2257,6 +2257,10 @@ Anforderungen:
 
       const quizContext: {
         documents: SessionDocumentInput[];
+        responses: Array<{
+          questionId: string;
+          topic: string;
+        }>;
         accessKey?: string;
       } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
         grantToken: args.grantToken,
@@ -2766,20 +2770,58 @@ Anforderungen:
 - Antworthinweise müssen fachlich korrekt und konkret sein.
 - Gib eine kurze Hilfezeile für den Fall einer falschen Antwort.`;
 
+      const quizContext: {
+        session: {
+          quizQuestions: Array<{
+            id: string;
+            topic: string;
+            prompt: string;
+          }>;
+        };
+        documents: SessionDocumentInput[];
+        responses: Array<{
+          questionId: string;
+          topic: string;
+        }>;
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
+
+      const previousQuestionPromptById = new Map(
+        quizContext.session.quizQuestions.map((question) => [
+          question.id,
+          question.prompt.trim().toLowerCase(),
+        ]),
+      );
+      const previousFocusedPromptSet = new Set(
+        quizContext.responses
+          .filter((response) =>
+            includesAll
+              ? true
+              : normalizedFocusTopics.some((topic) =>
+                  topicsMatchForFocusMode(response.topic, topic),
+                ),
+          )
+          .map((response) =>
+            previousQuestionPromptById.get(response.questionId),
+          )
+          .filter((prompt): prompt is string => Boolean(prompt && prompt.length)),
+      );
+      const previousFocusedPrompts = [...previousFocusedPromptSet].slice(0, 50);
+      const avoidRepeatsInstruction =
+        previousFocusedPrompts.length > 0
+          ? `WICHTIG: Erstelle KEINE Fragen, die inhaltlich den folgenden bereits gestellten Fragen ähneln:\n- ${previousFocusedPrompts.join("\n- ")}`
+          : "";
+
       trace.log("info", "start", {
         focusTopics: normalizedFocusTopics,
         includesAll,
         questionsPerTopic,
         desiredCount,
+        previousQuestionCount: previousFocusedPromptSet.size,
         instructionLength: quizInstruction.length,
-      });
-
-      const quizContext: {
-        documents: SessionDocumentInput[];
-        accessKey?: string;
-      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
-        grantToken: args.grantToken,
-        sessionId: args.sessionId,
       });
 
       const documents = quizContext.documents;
@@ -2895,14 +2937,18 @@ Anforderungen:
       let validationIssue =
         "Die KI hat keine ausreichende Themenverteilung geliefert.";
 
-      for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+      for (let attemptIndex = 0; attemptIndex < 3; attemptIndex += 1) {
         const attemptInstruction =
           attemptIndex === 0
-            ? quizInstruction
+            ? [quizInstruction, avoidRepeatsInstruction].filter(Boolean).join(
+                "\n\n",
+              )
             : `${quizInstruction}
 
 Korrektur zur vorherigen Ausgabe:
 ${validationIssue}
+
+${avoidRepeatsInstruction}
 
 Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt.`;
 
@@ -3026,7 +3072,25 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
             continue;
           }
 
-          selectedQuestions = nextSelectedQuestions.selectedQuestions;
+          const uniqueSelectedQuestions =
+            nextSelectedQuestions.selectedQuestions.filter((question) => {
+              const normalizedPrompt = question.prompt.trim().toLowerCase();
+              return !previousFocusedPromptSet.has(normalizedPrompt);
+            });
+
+          if (uniqueSelectedQuestions.length < desiredCount) {
+            fallbackUsed = true;
+            validationIssue = `Es werden ${desiredCount} neue Fragen benötigt, aber nur ${uniqueSelectedQuestions.length} waren nicht bereits bekannt. Formuliere neue Fragen mit anderem Fokus, anderer Fragestellung und anderen Beispielen.`;
+            trace.log("warn", "validation_repeated_questions_retrying", {
+              attemptIndex,
+              desiredCount,
+              actualCount: uniqueSelectedQuestions.length,
+              previousQuestionCount: previousFocusedPromptSet.size,
+            });
+            continue;
+          }
+
+          selectedQuestions = uniqueSelectedQuestions;
           break;
         } catch (error) {
           if (attemptIndex === 0 && isNoOutputGeneratedError(error)) {

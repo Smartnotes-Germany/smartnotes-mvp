@@ -14,6 +14,7 @@ type UseQuizFlowArgs = {
   grantToken: string | null;
   sessionId: StudySessionId | null;
   currentQuestion: QuizQuestion | null;
+  isQuizActive: boolean;
   answeredQuestions?: number;
   totalQuestions?: number;
 };
@@ -22,6 +23,7 @@ export function useQuizFlow({
   grantToken,
   sessionId,
   currentQuestion,
+  isQuizActive,
   answeredQuestions,
   totalQuestions,
 }: UseQuizFlowArgs) {
@@ -70,22 +72,37 @@ export function useQuizFlow({
   }, [grantToken, sessionId]);
 
   useEffect(() => {
-    setQuizError(null);
-    // Keep the submitted question visible while the answer is still being
-    // evaluated or while its feedback is on screen.
-    if (feedback || isSubmittingAnswer) {
+    if (isQuizActive) {
       return;
     }
 
+    setAnswerInput("");
+    setDisplayQuestion(null);
+    lastQuestionIdRef.current = null;
+    setFeedback(null);
+    setQuizError(null);
+    setIsSubmittingAnswer(false);
+    setQuestionStartedAt(Date.now());
+  }, [isQuizActive]);
+
+  useEffect(() => {
+    setQuizError(null);
     const questionId = currentQuestion?.id ?? null;
     const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
 
-    setDisplayQuestion(currentQuestion);
-
     if (hasQuestionChanged) {
+      setFeedback(null);
+      setDisplayQuestion(currentQuestion);
       setAnswerInput("");
       setQuestionStartedAt(Date.now());
       lastQuestionIdRef.current = questionId;
+      return;
+    }
+
+      // Keep the submitted question visible while the answer is still being
+      // evaluated or while its feedback is on screen.
+    if (feedback || isSubmittingAnswer) {
+      return;
     }
 
     if (!currentQuestion?.id) {
@@ -96,6 +113,7 @@ export function useQuizFlow({
       return;
     }
 
+    setDisplayQuestion(currentQuestion);
     seenQuestionIdsRef.current.add(currentQuestion.id);
     trackQuizQuestionViewed(progressRef.current);
   }, [currentQuestion?.id, currentQuestion, feedback, isSubmittingAnswer]);

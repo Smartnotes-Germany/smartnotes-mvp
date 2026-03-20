@@ -123,6 +123,8 @@ export default defineSchema({
     score: v.number(), // Feinere Bewertung (0 bis 100)
     explanation: v.string(),
     idealAnswer: v.string(),
+    misunderstanding: v.optional(v.string()),
+    recheckQuestionId: v.optional(v.string()),
     timeSpentSeconds: v.number(), // Benötigte Zeit für die Beantwortung
     createdAt: v.number(),
     updatedAt: v.number(),

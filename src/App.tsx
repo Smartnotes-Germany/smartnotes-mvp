@@ -128,14 +128,22 @@ function StudyApp() {
     if (!session || !responses) {
       return 0;
     }
+
     const focusTopics = session.focusTopics ?? [];
-    if (focusTopics.length === 0 || focusTopics.includes("all")) {
-      return responses.length;
-    }
-    return responses.filter((r) =>
-      focusTopics.some((ft) => topicsMatchForFocusMode(r.topic, ft)),
-    ).length;
-  }, [responses, session]);
+    return session.quizQuestions.filter((question) => {
+      if (!responseByQuestionId.has(question.id)) {
+        return false;
+      }
+
+      if (focusTopics.length === 0 || focusTopics.includes("all")) {
+        return true;
+      }
+
+      return focusTopics.some((topic) =>
+        topicsMatchForFocusMode(question.topic, topic),
+      );
+    }).length;
+  }, [responseByQuestionId, responses, session]);
 
   const activeTopic = useMemo(() => {
     if (!session || !session.focusTopics || session.focusTopics.length === 0) {
@@ -211,13 +219,6 @@ function StudyApp() {
     currentFocusTopic: activeTopic,
     hasExistingAnalysis: Boolean(session?.analysis),
   });
-  const quizFlow = useQuizFlow({
-    grantToken,
-    sessionId,
-    currentQuestion,
-    answeredQuestions: stats?.answeredQuestions,
-    totalQuestions: stats?.totalQuestions,
-  });
   const [sessionActionError, setSessionActionError] = useState<string | null>(
     null,
   );
@@ -225,6 +226,19 @@ function StudyApp() {
     session?.stage === "quiz" &&
     answeredQuestionsInFocus >= minQuestionsRequired &&
     !session?.analysis;
+  const shouldReturnToExistingAnalysis =
+    session?.stage === "quiz" &&
+    answeredQuestionsInFocus >= minQuestionsRequired &&
+    Boolean(session?.analysis);
+  const displayStage = shouldReturnToExistingAnalysis
+    ? "analysis"
+    : session?.stage ?? "upload";
+  const quizFlow = useQuizFlow({
+    grantToken,
+    sessionId,
+    currentQuestion,
+    isQuizActive: displayStage === "quiz",
+  });
   const lastTrackedStageRef = useRef<AnalyticsStage | null>(null);
 
   const currentStage = useMemo<AnalyticsStage>(() => {
@@ -367,7 +381,7 @@ function StudyApp() {
   return (
     <NavigationShell
       logoImage={logoImage}
-      stage={session.stage}
+      stage={displayStage}
       preference={themePreference}
       setPreference={handleThemePreferenceChange}
       onStartFreshSession={handleStartFreshSession}
@@ -394,7 +408,7 @@ function StudyApp() {
         />
       )}
 
-      {session.stage === "quiz" && (
+      {displayStage === "quiz" && (
         <QuizStage
           currentQuestion={quizFlow.displayQuestion}
           feedback={quizFlow.feedback}
@@ -413,11 +427,13 @@ function StudyApp() {
           minQuestionsRequired={minQuestionsRequired}
           topicLoading={analysisFlow.topicLoading}
           isAnalyzing={analysisFlow.isAnalyzing}
-          shouldContinueToAnalysis={shouldContinueToAnalysis}
+          shouldContinueToAnalysis={
+            shouldContinueToAnalysis || shouldReturnToExistingAnalysis
+          }
         />
       )}
 
-      {session.stage === "analysis" && (
+      {displayStage === "analysis" && (
         <AnalysisStage
           analysis={session.analysis}
           isAnalyzing={analysisFlow.isAnalyzing}

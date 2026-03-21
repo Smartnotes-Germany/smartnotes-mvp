@@ -232,7 +232,7 @@ function StudyApp() {
     Boolean(session?.analysis);
   const displayStage = shouldReturnToExistingAnalysis
     ? "analysis"
-    : session?.stage ?? "upload";
+    : (session?.stage ?? "upload");
   const quizFlow = useQuizFlow({
     grantToken,
     sessionId,

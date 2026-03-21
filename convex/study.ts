@@ -805,12 +805,10 @@ export const storeQuizResponse = internalMutation({
       )
       .first();
 
-      if (existing) {
+    if (existing) {
       const misunderstanding =
         args.misunderstanding ??
-        (args.isCorrect
-          ? "Kein spezifisches Missverständnis"
-          : "Keine Angabe");
+        (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
 
       await ctx.db.patch(existing._id, {
         topic: args.topic,
@@ -829,9 +827,7 @@ export const storeQuizResponse = internalMutation({
 
     const misunderstanding =
       args.misunderstanding ??
-      (args.isCorrect
-        ? "Kein spezifisches Missverständnis"
-        : "Keine Angabe");
+      (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
 
     await ctx.db.insert("quizResponses", {
       sessionId: args.sessionId,

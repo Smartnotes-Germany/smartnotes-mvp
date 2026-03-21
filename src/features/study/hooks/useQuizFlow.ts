@@ -99,8 +99,8 @@ export function useQuizFlow({
       return;
     }
 
-      // Keep the submitted question visible while the answer is still being
-      // evaluated or while its feedback is on screen.
+    // Keep the submitted question visible while the answer is still being
+    // evaluated or while its feedback is on screen.
     if (feedback || isSubmittingAnswer) {
       return;
     }

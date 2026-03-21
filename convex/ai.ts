@@ -243,7 +243,7 @@ function normalizeDontKnowExplanation(
 }
 
 const answerEvaluationFieldRules = [
-  'Antworte ausschließlich als JSON-Objekt ohne Markdown oder Code-Fences.',
+  "Antworte ausschließlich als JSON-Objekt ohne Markdown oder Code-Fences.",
   'Pflichtfelder: "isCorrect" (boolean), "score" (number 0-100), "explanation" (string), "idealAnswer" (string), "misunderstanding" (string).',
   'Das Feld "score" muss eine Zahl zwischen 0 und 100 sein.',
   'Wenn kein spezifisches Missverständnis erkennbar ist, setze "misunderstanding" auf "Kein spezifisches Missverständnis".',
@@ -3027,7 +3027,9 @@ Anforderungen:
           .map((response) =>
             previousQuestionPromptById.get(response.questionId),
           )
-          .filter((prompt): prompt is string => Boolean(prompt && prompt.length)),
+          .filter((prompt): prompt is string =>
+            Boolean(prompt && prompt.length),
+          ),
       );
       const previousFocusedPrompts = [...previousFocusedPromptSet].slice(0, 50);
       const avoidRepeatsInstruction =
@@ -3160,9 +3162,9 @@ Anforderungen:
       for (let attemptIndex = 0; attemptIndex < 3; attemptIndex += 1) {
         const attemptInstruction =
           attemptIndex === 0
-            ? [quizInstruction, avoidRepeatsInstruction].filter(Boolean).join(
-                "\n\n",
-              )
+            ? [quizInstruction, avoidRepeatsInstruction]
+                .filter(Boolean)
+                .join("\n\n")
             : `${quizInstruction}
 
 Korrektur zur vorherigen Ausgabe:
@@ -3447,10 +3449,10 @@ export const evaluateAnswer = action({
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
-    let round = 0;
-    let question: QuestionForEvaluation | null = null;
-    let evaluationPrompt = "";
-    let generatedEvaluation: AnswerEvaluationResult | null = null;
+    let telemetryRound = 0;
+    let telemetryQuestion: QuestionForEvaluation | null = null;
+    let telemetryPrompt = "";
+    let telemetryEvaluation: AnswerEvaluationResult | null = null;
     let analyticsError: unknown;
 
     try {
@@ -3471,6 +3473,8 @@ export const evaluateAnswer = action({
       });
 
       const { round, question } = evaluationContext;
+      telemetryRound = round;
+      telemetryQuestion = question;
       const evaluationSystemPrompt =
         "Du bist ein sachlicher Prüfungs-Korrektor. Antworte auf Deutsch. Formuliere nüchtern und direkt. Verwende keine schmeichelnden, beschwichtigenden oder motivierenden Sätze. Erkläre kurz, was fachlich richtig ist oder was inhaltlich fehlt. Identifiziere zudem ein konkretes Missverständnis oder eine Wissenslücke aus der Antwort. Falls die Antwort vollständig korrekt ist oder kein spezifisches Missverständnis erkennbar ist, setze das Feld 'misunderstanding' auf 'Kein spezifisches Missverständnis'.";
       const evaluationPrompt = `Thema: ${question.topic}
@@ -3490,6 +3494,7 @@ Antwort der lernenden Person:
 ${args.userAnswer}
 
 Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`;
+      telemetryPrompt = evaluationPrompt;
 
       trace.log("info", "context_loaded", {
         round,
@@ -3560,6 +3565,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
           });
 
           generated = result.output;
+          telemetryEvaluation = generated;
           break;
         } catch (error) {
           if (isNoOutputGeneratedError(error)) {
@@ -3638,6 +3644,7 @@ Pflichtregeln:
             fallbackIdealAnswer: question.idealAnswer,
             answeredWithDontKnow: args.answeredWithDontKnow,
           });
+          telemetryEvaluation = generated;
 
           trace.log("info", "llm_fallback_response", {
             ...fallbackLog.details,
@@ -3736,21 +3743,21 @@ Pflichtregeln:
           timeSpentSeconds: args.timeSpentSeconds,
         },
         posthogInput: stringifyForPostHog({
-          round,
-          question,
+          round: telemetryRound,
+          question: telemetryQuestion,
           userAnswer: args.userAnswer,
-          prompt: evaluationPrompt,
+          prompt: telemetryPrompt,
         }),
-        posthogOutput: stringifyForPostHog(generatedEvaluation),
+        posthogOutput: stringifyForPostHog(telemetryEvaluation),
         posthogProperties: {
-          round,
-          questionTopic: question?.topic ?? "",
-          questionPrompt: question?.prompt ?? "",
-          expectedAnswer: question?.idealAnswer ?? "",
-          explanationHint: question?.explanationHint ?? "",
+          round: telemetryRound,
+          questionTopic: telemetryQuestion?.topic ?? "",
+          questionPrompt: telemetryQuestion?.prompt ?? "",
+          expectedAnswer: telemetryQuestion?.idealAnswer ?? "",
+          explanationHint: telemetryQuestion?.explanationHint ?? "",
           userAnswer: args.userAnswer,
-          prompt: evaluationPrompt,
-          evaluationResult: stringifyForPostHog(generatedEvaluation) ?? "",
+          prompt: telemetryPrompt,
+          evaluationResult: stringifyForPostHog(telemetryEvaluation) ?? "",
         },
       });
       await flushTelemetry({

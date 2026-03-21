@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useAction } from "convex/react";
-import { analyzePerformanceRef, generateTopicDeepDiveRef } from "../convexRefs";
+import { analyzePerformanceRef, generateFocusedQuizRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import {
   isVertexNativeCandidate,
@@ -32,7 +32,7 @@ export function useAnalysisFlow({
   const [topicLoading, setTopicLoading] = useState<string | null>(null);
 
   const analyzePerformance = useAction(analyzePerformanceRef);
-  const generateTopicDeepDive = useAction(generateTopicDeepDiveRef);
+  const generateFocusedQuiz = useAction(generateFocusedQuizRef);
 
   const analyzeSession = useCallback(async () => {
     if (!grantToken || !sessionId) {
@@ -116,16 +116,18 @@ export function useAnalysisFlow({
       setAnalysisError(null);
 
       try {
-        await generateTopicDeepDive({
+        await generateFocusedQuiz({
           grantToken,
           sessionId,
-          topic,
+          focusTopics: [topic],
+          questionsPerTopic: 5,
           clientRequestId,
         });
       } catch (error: unknown) {
         setAnalysisError(
           formatError(error, {
-            fallback: "Die Vertiefung konnte nicht geladen werden.",
+            fallback:
+              "Die neuen Fragen für dieses Thema konnten nicht erstellt werden.",
             clientRequestId,
           }),
         );
@@ -133,7 +135,7 @@ export function useAnalysisFlow({
         setTopicLoading(null);
       }
     },
-    [documents, generateTopicDeepDive, grantToken, sessionId],
+    [documents, generateFocusedQuiz, grantToken, sessionId],
   );
 
   return {

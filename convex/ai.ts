@@ -39,7 +39,7 @@ import {
   queueAndDeliverPostHogEvents,
 } from "./analyticsPosthog";
 import { readOptionalEnv, readRequiredEnv } from "./env";
-import { buildPostHogDistinctId } from "../shared/identity";
+import { buildSessionFallbackDistinctId } from "../shared/identity";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -1777,9 +1777,7 @@ const persistAiAnalyticsEvent = async (
 
     const distinctId =
       payload.posthogDistinctId ??
-      buildPostHogDistinctId(
-        `session-fallback:${hashIdentifier(payload.sessionId)}`,
-      );
+      buildSessionFallbackDistinctId(hashIdentifier(payload.sessionId));
     const commonProperties = {
       traceId: payload.traceId,
       scope: payload.scope,
@@ -1851,9 +1849,7 @@ const persistAiAnalyticsEvent = async (
       scope: payload.scope,
       distinctId:
         payload.posthogDistinctId ??
-        buildPostHogDistinctId(
-          `session-fallback:${hashIdentifier(payload.sessionId)}`,
-        ),
+        buildSessionFallbackDistinctId(hashIdentifier(payload.sessionId)),
       error: extractErrorForLog(error),
     });
   }
@@ -1870,14 +1866,14 @@ const getGrantPostHogIdentity = async (
     },
   );
 
-  if (!identity.identityKey || !identity.identityLabel) {
+  if (!identity.analyticsDistinctId || !identity.identityLabel) {
     return null;
   }
 
   return {
-    distinctId: buildPostHogDistinctId(identity.identityKey),
+    distinctId: identity.analyticsDistinctId,
     personProperties: {
-      identityKey: identity.identityKey,
+      analyticsGrantId: identity.analyticsGrantId,
       identityLabel: identity.identityLabel,
       ...(identity.identityEmail
         ? {
@@ -1886,6 +1882,7 @@ const getGrantPostHogIdentity = async (
           }
         : {}),
       ...(identity.note ? { note: identity.note } : {}),
+      identity_quality: identity.identityQuality,
       $name: identity.identityLabel,
     },
   };

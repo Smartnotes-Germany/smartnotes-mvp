@@ -106,8 +106,10 @@ export type GrantStatus = {
   valid: boolean;
   reason?: string;
   expiresAt?: number;
-  identityKey?: string;
+  analyticsDistinctId?: string;
+  analyticsGrantId?: string;
   identityLabel?: string;
+  identityQuality?: "email" | "app_only";
   identityEmail?: string;
   note?: string;
 };

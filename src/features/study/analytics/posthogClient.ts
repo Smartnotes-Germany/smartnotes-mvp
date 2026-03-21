@@ -1,15 +1,11 @@
 import posthog, { type PostHogConfig } from "posthog-js";
 import { resolvedFrontendEnv } from "../../../env";
 import {
-  buildPostHogDistinctId,
-  normalizeIdentityEmail,
-} from "../../../../shared/identity";
-import {
   extractUtmProperties,
-  getIdentityQuality,
   resolvePostHogCookieDomain,
   resolvePostHogEnvironment,
   type PostHogEnvironment,
+  type PostHogIdentityQuality,
 } from "../../../../shared/posthogRuntime";
 
 const SENSITIVE_SELECTOR = ".ph-no-capture, [data-ph-sensitive='true']";
@@ -30,14 +26,16 @@ type InitialAnalyticsContext = {
 };
 
 type AnalyticsIdentity = {
-  identityKey: string;
+  analyticsDistinctId: string;
+  analyticsGrantId: string;
   identityLabel: string;
+  identityQuality: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
   note?: string;
 };
 
 type AnalyticsContext = {
-  grantToken?: string | null;
+  analyticsGrantId?: string | null;
   sessionId?: string | null;
 };
 
@@ -197,37 +195,34 @@ export const identifyPostHogUser = (
     return;
   }
 
-  const normalizedEmail = identity.identityEmail
-    ? normalizeIdentityEmail(identity.identityEmail)
-    : undefined;
-  const identityQuality = getIdentityQuality({
-    identityEmail: normalizedEmail,
-  });
-
-  posthogClient.identify(buildPostHogDistinctId(identity.identityKey), {
+  posthogClient.identify(identity.analyticsDistinctId, {
     ...getBaseAnalyticsProperties(),
-    identityKey: identity.identityKey,
+    analyticsGrantId: identity.analyticsGrantId,
     identityLabel: identity.identityLabel,
-    ...(normalizedEmail
+    ...(identity.identityEmail
       ? {
-          identityEmail: normalizedEmail,
-          email_normalized: normalizedEmail,
-          $email: normalizedEmail,
+          identityEmail: identity.identityEmail,
+          email_normalized: identity.identityEmail,
+          $email: identity.identityEmail,
         }
       : {}),
     ...(identity.note ? { note: identity.note } : {}),
-    identity_quality: identityQuality,
+    identity_quality: identity.identityQuality,
     $name: identity.identityLabel,
   });
 
   posthogClient.register({
     ...getBaseAnalyticsProperties(),
-    identityKey: identity.identityKey,
+    analyticsGrantId: identity.analyticsGrantId,
     identityLabel: identity.identityLabel,
-    ...(normalizedEmail ? { identityEmail: normalizedEmail } : {}),
+    ...(identity.identityEmail
+      ? { identityEmail: identity.identityEmail }
+      : {}),
     ...(identity.note ? { note: identity.note } : {}),
-    identity_quality: identityQuality,
-    ...(context?.grantToken ? { grantToken: context.grantToken } : {}),
+    identity_quality: identity.identityQuality,
+    ...(context?.analyticsGrantId
+      ? { analyticsGrantId: context.analyticsGrantId }
+      : {}),
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
   });
 };
@@ -239,7 +234,9 @@ export const registerPostHogContext = (context: AnalyticsContext) => {
 
   posthogClient.register({
     ...getBaseAnalyticsProperties(),
-    ...(context.grantToken ? { grantToken: context.grantToken } : {}),
+    ...(context.analyticsGrantId
+      ? { analyticsGrantId: context.analyticsGrantId }
+      : {}),
     ...(context.sessionId ? { sessionId: context.sessionId } : {}),
   });
 };

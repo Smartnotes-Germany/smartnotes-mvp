@@ -95,8 +95,8 @@ Accepted limitation:
 
 - anonymous website-preview to app-preview continuity is not guaranteed across
   two different generated preview hosts
-- once the same normalized email is known in both repos, person-level merging
-  still works in PostHog
+- identified continuity across repos only exists when the same normalized email
+  is known in both repos
 
 ### Convex backend
 

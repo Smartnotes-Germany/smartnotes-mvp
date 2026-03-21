@@ -53,8 +53,8 @@ Frontend PostHog runtime behavior:
 - Vercel preview deployments keep full PostHog functionality per repo, but
   anonymous cross-repo browser continuity is not expected because the generated
   preview hosts do not share a parent cookie domain.
-- Person-level merging still works later when the same normalized email is
-  known in both repos.
+- Identified continuity across grants only exists when the same normalized
+  email is known in both repos.
 
 Important distinction:
 

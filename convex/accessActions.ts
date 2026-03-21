@@ -6,7 +6,7 @@ import { action } from "./errorTracking";
 import { internal } from "./_generated/api";
 import type { RedeemAccessCodeTransactionResult } from "./access";
 import { normalizeAccessCode, redeemSourceValidator } from "./access";
-import { buildPostHogDistinctId } from "../shared/identity";
+import type { PostHogIdentityQuality } from "../shared/posthogRuntime";
 import {
   buildPostHogEvent,
   queueAndDeliverPostHogEvents,
@@ -19,8 +19,10 @@ type UnexpectedRedeemFailure = {
   ok: false;
   reason: "unexpected_error";
   normalizedCode: string;
-  identityKey?: string;
+  analyticsDistinctId?: string;
+  analyticsGrantId?: string;
   identityLabel?: string;
+  identityQuality?: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
   note?: string;
 };
@@ -28,20 +30,28 @@ type UnexpectedRedeemFailure = {
 type RedeemActionResult = {
   grantToken: string;
   expiresAt: number;
-  identityKey: string;
+  analyticsDistinctId: string;
+  analyticsGrantId: string;
   identityLabel: string;
+  identityQuality: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
   note?: string;
 };
 
 const buildIdentityProperties = (result: {
-  identityKey?: string;
+  analyticsGrantId?: string;
   identityLabel?: string;
+  identityQuality?: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
   note?: string;
 }) => ({
-  ...(result.identityKey ? { identityKey: result.identityKey } : {}),
+  ...(result.analyticsGrantId
+    ? { analyticsGrantId: result.analyticsGrantId }
+    : {}),
   ...(result.identityLabel ? { identityLabel: result.identityLabel } : {}),
+  ...(result.identityQuality
+    ? { identity_quality: result.identityQuality }
+    : {}),
   ...(result.identityEmail ? { identityEmail: result.identityEmail } : {}),
   ...(result.note ? { note: result.note } : {}),
 });
@@ -73,12 +83,13 @@ const buildAccessEvent = (
     return buildPostHogEvent({
       scope: "access_redemption",
       event: "auth_code_redeem_succeeded",
-      distinctId: buildPostHogDistinctId(result.identityKey),
+      distinctId: result.analyticsDistinctId,
       properties: {
         status: "succeeded",
         source,
         attribution: "identified_server",
-        identityKey: result.identityKey,
+        identity_quality: result.identityQuality,
+        analyticsGrantId: result.analyticsGrantId,
         normalizedCode: result.normalizedCode,
       },
       personProperties: buildIdentityProperties(result),
@@ -86,14 +97,12 @@ const buildAccessEvent = (
   }
 
   const failureIdentity = buildIdentityProperties(result);
-  const hasIdentity = Boolean(failureIdentity.identityKey);
+  const hasIdentity = Boolean(result.analyticsDistinctId);
 
   return buildPostHogEvent({
     scope: "access_redemption",
     event: "auth_code_redeem_failed",
-    distinctId: hasIdentity
-      ? buildPostHogDistinctId(failureIdentity.identityKey!)
-      : ANONYMOUS_DISTINCT_ID,
+    distinctId: result.analyticsDistinctId ?? ANONYMOUS_DISTINCT_ID,
     properties: {
       status: "failed",
       source,
@@ -102,8 +111,11 @@ const buildAccessEvent = (
       attribution: hasIdentity
         ? "identified_server"
         : "anonymous_client_or_server",
-      ...(failureIdentity.identityKey
-        ? { identityKey: failureIdentity.identityKey }
+      ...(result.identityQuality
+        ? { identity_quality: result.identityQuality }
+        : {}),
+      ...(result.analyticsGrantId
+        ? { analyticsGrantId: result.analyticsGrantId }
         : {}),
     },
     personProperties: hasIdentity ? failureIdentity : undefined,
@@ -150,8 +162,10 @@ const performRedeem = async (
     return {
       grantToken: result.grantToken,
       expiresAt: result.expiresAt,
-      identityKey: result.identityKey,
+      analyticsDistinctId: result.analyticsDistinctId,
+      analyticsGrantId: result.analyticsGrantId,
       identityLabel: result.identityLabel,
+      identityQuality: result.identityQuality,
       identityEmail: result.identityEmail,
       note: result.note,
     };

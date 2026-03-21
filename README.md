@@ -141,16 +141,18 @@ pnpm dev
 ## Access Codes
 
 - The app has no classic account system, but access is no longer anonymous.
-- Access codes and magic links are intended to be tied to an identifiable person.
+- Access codes and magic links are tied to a stored Nutzerkennung.
 - Users enter a one-time code or magic link to receive a temporary grant token.
 - Redeemed codes remain administratively traceable through the stored access-code record and linked grant.
+- With a stored email address, analytics stay stable across multiple grants for the same person.
+- Without an email address, analytics stay limited to the single redeemed grant.
 
 For local development, `SMARTNOTES-DEMO-2026` auto-seeds if no code exists yet.
 
 To create production codes:
 
 ```bash
-pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',codes:['YOUR-CODE-1','YOUR-CODE-2']}"
+pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',codes:['YOUR-CODE-1','YOUR-CODE-2'],identityLabel:'Max Mustermann'}"
 ```
 
 ## Scripts
@@ -160,6 +162,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `pnpm lint` - run ESLint
 - `pnpm format` - format code with Prettier
 - `pnpm format:check` - check code formatting
+- `pnpm test:once` - run the Vitest suite once
 - `pnpm observability:debug-window:start -- --minutes 45` - set debug-window env vars for bounded troubleshooting
 - `pnpm observability:debug-window:stop` - clear debug-window env vars immediately
 
@@ -203,7 +206,10 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - PostHog frontend starts as early as possible and uses `persistence: 'localStorage+cookie'`.
 - Production uses `.smartnotes.tech` as the cookie domain so `smartnotes.tech` and `app.smartnotes.tech` can share the anonymous browser journey.
 - Local development stays on `localhost` only. Do not mix `localhost` and `127.0.0.1` if you expect one shared local browser identity across repos.
-- Preview deployments on separate Vercel-generated hosts keep full per-repo PostHog functionality, but they do not share anonymous browser continuity across repos. This is intentional; later person-level merging still happens through the same normalized email.
+- Preview deployments on separate Vercel-generated hosts keep full per-repo PostHog functionality, but they do not share anonymous browser continuity across repos.
+- Identified PostHog persons use a backend-issued `analyticsDistinctId`.
+- With an email address, `analyticsDistinctId` is stable per normalized email.
+- Without an email address, `analyticsDistinctId` is stable only for the individual grant.
 - Base frontend properties are registered automatically: `app_area`, `environment`, `source_surface`, `host`, `path`, `referrer`, `landing_url`, `utm_*`, `identity_quality`.
 - Session replay masking is configured selectively via `blockSelector`, `maskTextSelector` and `maskTextFn`.
 - Only elements explicitly marked with `ph-no-capture` or `data-ph-sensitive="true"` are masked in replay.

@@ -13,6 +13,8 @@ import {
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
+import { buildAnalyticsDistinctId } from "../shared/identity";
+import { getIdentityQuality } from "../shared/posthogRuntime";
 import {
   createManagedReadUrl,
   deleteManagedFile,
@@ -81,7 +83,6 @@ const aiAnalyticsErrorCategoryValidator = v.union(
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
-  identityKey?: string;
   identityLabel?: string;
   identityEmail?: string;
   note?: string;
@@ -113,6 +114,24 @@ const storeUploadedDocumentRef = makeFunctionReference<
 >("study:storeUploadedDocument");
 
 const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
+
+const buildGrantAnalyticsIdentity = (grant: GrantDoc) => {
+  const identityEmail = grant.identityEmail;
+
+  return {
+    identityLabel: grant.identityLabel,
+    ...(identityEmail ? { identityEmail } : {}),
+    ...(grant.note ? { note: grant.note } : {}),
+    identityQuality: getIdentityQuality({
+      identityEmail,
+    }),
+    analyticsDistinctId: buildAnalyticsDistinctId({
+      grantId: grant._id,
+      identityEmail,
+    }),
+    analyticsGrantId: grant._id,
+  };
+};
 
 const parseMetadataJson = (
   raw: string | undefined,
@@ -167,7 +186,6 @@ const ensureGrant = async (
 
   return {
     _id: grant._id,
-    identityKey: grant.identityKey,
     identityLabel: grant.identityLabel,
     identityEmail: grant.identityEmail,
     note: grant.note,
@@ -309,12 +327,7 @@ export const getGrantAnalyticsIdentity = internalQuery({
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
 
-    return {
-      identityKey: grant.identityKey,
-      identityLabel: grant.identityLabel,
-      identityEmail: grant.identityEmail,
-      note: grant.note,
-    };
+    return buildGrantAnalyticsIdentity(grant);
   },
 });
 

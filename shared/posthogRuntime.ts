@@ -51,7 +51,8 @@ export const resolvePostHogCookieDomain = (hostname: string) => {
 
 export const getIdentityQuality = (args: {
   identityEmail?: string;
-}): PostHogIdentityQuality => (args.identityEmail ? "email" : "app_only");
+}): Exclude<PostHogIdentityQuality, "anonymous"> =>
+  args.identityEmail ? "email" : "app_only";
 
 // We persist the first-touch UTM set for the current browser session so later
 // app events can still be attributed after navigation inside the SPA.

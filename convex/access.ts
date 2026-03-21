@@ -1,13 +1,19 @@
 import type { MutationCtx } from "./errorTracking";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./errorTracking";
 import { readRequiredEnv } from "./env";
 import {
-  buildIdentityKey,
+  assertMeaningfulIdentityLabel,
+  buildAnalyticsDistinctId,
+  hasMeaningfulIdentityLabel,
   normalizeIdentityEmail,
   normalizeIdentityLabel,
 } from "../shared/identity";
+import {
+  getIdentityQuality,
+  type PostHogIdentityQuality,
+} from "../shared/posthogRuntime";
 
 /** Constants for access management */
 const DEMO_ACCESS_CODE = "SMARTNOTES-DEMO-2026";
@@ -18,10 +24,17 @@ export const redeemSourceValidator = v.union(
 );
 
 type AccessIdentity = {
-  identityKey: string;
   identityLabel: string;
+  identityQuality: Exclude<PostHogIdentityQuality, "anonymous">;
+  analyticsDistinctId?: string;
+  analyticsGrantId?: Id<"accessGrants">;
   identityEmail?: string;
   note?: string;
+};
+
+type ResolvedAccessIdentity = AccessIdentity & {
+  analyticsDistinctId: string;
+  analyticsGrantId: Id<"accessGrants">;
 };
 
 type RedeemFailureReason = "unknown_code" | "already_used" | "missing_identity";
@@ -32,7 +45,7 @@ export type RedeemAccessCodeTransactionResult =
       normalizedCode: string;
       grantToken: string;
       expiresAt: number;
-    } & AccessIdentity)
+    } & ResolvedAccessIdentity)
   | ({
       ok: false;
       normalizedCode: string;
@@ -67,28 +80,32 @@ export const normalizeAccessCode = (rawCode: string) =>
 const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
   const identityLabel = accessCode.identityLabel
     ? normalizeIdentityLabel(accessCode.identityLabel)
-    : accessCode.note
-      ? normalizeIdentityLabel(accessCode.note)
-      : "";
+    : "";
   const identityEmail = accessCode.identityEmail
     ? normalizeIdentityEmail(accessCode.identityEmail)
     : undefined;
   const note = accessCode.note?.trim();
 
-  if (!identityLabel) {
+  if (!identityLabel || !hasMeaningfulIdentityLabel(identityLabel)) {
     return null;
   }
 
-  const identityKey =
-    accessCode.identityKey ||
-    buildIdentityKey({
-      identityLabel,
-      identityEmail,
-    });
+  const identityQuality = getIdentityQuality({
+    identityEmail,
+  });
+  const analyticsGrantId = accessCode.consumedByGrantId;
+  const analyticsDistinctId = analyticsGrantId
+    ? buildAnalyticsDistinctId({
+        grantId: analyticsGrantId,
+        identityEmail,
+      })
+    : undefined;
 
   return {
-    identityKey,
     identityLabel,
+    identityQuality,
+    ...(analyticsDistinctId ? { analyticsDistinctId } : {}),
+    ...(analyticsGrantId ? { analyticsGrantId } : {}),
     ...(identityEmail ? { identityEmail } : {}),
     ...(note ? { note } : {}),
   } satisfies AccessIdentity;
@@ -113,6 +130,7 @@ const findAccessCode = async (
         code: DEMO_ACCESS_CODE,
         normalizedCode: DEMO_ACCESS_CODE,
         createdAt: now,
+        identityLabel: "Lokale Demo",
         note: "Auto-seeded demo code for local development",
       });
       accessCode = await ctx.db.get(seededId);
@@ -151,11 +169,14 @@ const redeemStoredAccessCode = async (
   const grantId = await ctx.db.insert("accessGrants", {
     token: grantToken,
     createdAt: now,
-    ...identity,
+    identityLabel: identity.identityLabel,
+    ...(identity.identityEmail
+      ? { identityEmail: identity.identityEmail }
+      : {}),
+    ...(identity.note ? { note: identity.note } : {}),
   });
 
   await ctx.db.patch(accessCode._id, {
-    identityKey: identity.identityKey,
     identityLabel: identity.identityLabel,
     ...(identity.identityEmail
       ? { identityEmail: identity.identityEmail }
@@ -171,6 +192,11 @@ const redeemStoredAccessCode = async (
     grantToken,
     expiresAt,
     ...identity,
+    analyticsDistinctId: buildAnalyticsDistinctId({
+      grantId,
+      identityEmail: identity.identityEmail,
+    }),
+    analyticsGrantId: grantId,
   } satisfies RedeemAccessCodeTransactionResult;
 };
 
@@ -219,11 +245,22 @@ export const validateGrant = query({
       return { valid: false, reason: "revoked" as const };
     }
 
+    const identityEmail = grant.identityEmail
+      ? normalizeIdentityEmail(grant.identityEmail)
+      : undefined;
+
     return {
       valid: true,
-      identityKey: grant.identityKey,
       identityLabel: grant.identityLabel,
-      identityEmail: grant.identityEmail,
+      identityEmail,
+      identityQuality: getIdentityQuality({
+        identityEmail,
+      }),
+      analyticsDistinctId: buildAnalyticsDistinctId({
+        grantId: grant._id,
+        identityEmail,
+      }),
+      analyticsGrantId: grant._id,
       note: grant.note,
     };
   },
@@ -236,7 +273,7 @@ export const createAccessCodes = mutation({
   args: {
     adminSecret: v.string(),
     codes: v.array(v.string()),
-    identityLabel: v.optional(v.string()),
+    identityLabel: v.string(),
     identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
   },
@@ -251,18 +288,11 @@ export const createAccessCodes = mutation({
 
     const now = Date.now();
     let inserted = 0;
-    const identityLabel = args.identityLabel
-      ? normalizeIdentityLabel(args.identityLabel)
-      : undefined;
+    const identityLabel = assertMeaningfulIdentityLabel(args.identityLabel);
     const identityEmail = args.identityEmail
       ? normalizeIdentityEmail(args.identityEmail)
       : undefined;
-    const identityKey = identityLabel
-      ? buildIdentityKey({
-          identityLabel,
-          identityEmail,
-        })
-      : undefined;
+    const note = args.note?.trim();
 
     for (const code of args.codes) {
       const normalizedCode = normalizeAccessCode(code);
@@ -285,10 +315,9 @@ export const createAccessCodes = mutation({
         code,
         normalizedCode,
         createdAt: now,
-        ...(identityKey ? { identityKey } : {}),
-        ...(identityLabel ? { identityLabel } : {}),
+        identityLabel,
         ...(identityEmail ? { identityEmail } : {}),
-        ...(args.note ? { note: args.note } : {}),
+        ...(note ? { note } : {}),
       });
       inserted += 1;
     }

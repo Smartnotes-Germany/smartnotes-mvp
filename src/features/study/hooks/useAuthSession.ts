@@ -112,17 +112,19 @@ export function useAuthSession(): AuthSessionReturn {
 
   const applyAnalyticsIdentity = useCallback(
     (identity: {
-      identityKey: string;
+      analyticsDistinctId: string;
+      analyticsGrantId: string;
       identityLabel: string;
+      identityQuality: "email" | "app_only";
       identityEmail?: string;
       note?: string;
     }) => {
       identifyPostHogUser(identity, {
-        grantToken,
+        analyticsGrantId: identity.analyticsGrantId,
         sessionId,
       });
     },
-    [grantToken, sessionId],
+    [sessionId],
   );
 
   useEffect(() => {
@@ -143,13 +145,15 @@ export function useAuthSession(): AuthSessionReturn {
           localStorage.setItem(STORAGE_KEYS.grantToken, result.grantToken);
           identifyPostHogUser(
             {
-              identityKey: result.identityKey,
+              analyticsDistinctId: result.analyticsDistinctId,
+              analyticsGrantId: result.analyticsGrantId,
               identityLabel: result.identityLabel,
+              identityQuality: result.identityQuality,
               identityEmail: result.identityEmail,
               note: result.note,
             },
             {
-              grantToken: result.grantToken,
+              analyticsGrantId: result.analyticsGrantId,
             },
           );
           trackAuthCodeRedeemSucceeded("magic_link");
@@ -187,28 +191,35 @@ export function useAuthSession(): AuthSessionReturn {
       return;
     }
 
-    if (!grantStatus.identityKey || !grantStatus.identityLabel) {
+    if (
+      !grantStatus.analyticsDistinctId ||
+      !grantStatus.analyticsGrantId ||
+      !grantStatus.identityLabel ||
+      !grantStatus.identityQuality
+    ) {
       return;
     }
 
     applyAnalyticsIdentity({
-      identityKey: grantStatus.identityKey,
+      analyticsDistinctId: grantStatus.analyticsDistinctId,
+      analyticsGrantId: grantStatus.analyticsGrantId,
       identityLabel: grantStatus.identityLabel,
+      identityQuality: grantStatus.identityQuality,
       identityEmail: grantStatus.identityEmail,
       note: grantStatus.note,
     });
   }, [applyAnalyticsIdentity, grantStatus, grantToken]);
 
   useEffect(() => {
-    if (!grantToken) {
+    if (!grantStatus?.valid || !grantStatus.analyticsGrantId) {
       return;
     }
 
     registerPostHogContext({
-      grantToken,
+      analyticsGrantId: grantStatus.analyticsGrantId,
       sessionId,
     });
-  }, [grantToken, sessionId]);
+  }, [grantStatus, sessionId]);
 
   useEffect(() => {
     if (
@@ -234,7 +245,7 @@ export function useAuthSession(): AuthSessionReturn {
         setSessionId(newSessionId);
         localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
         registerPostHogContext({
-          grantToken,
+          analyticsGrantId: grantStatus.analyticsGrantId,
           sessionId: newSessionId,
         });
         markStartedSession(newSessionId, "auto");
@@ -274,7 +285,7 @@ export function useAuthSession(): AuthSessionReturn {
       setSessionId(latestSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, latestSessionId);
       registerPostHogContext({
-        grantToken,
+        analyticsGrantId: grantStatus.analyticsGrantId,
         sessionId: latestSessionId,
       });
       maybeTrackResumedSession(latestSessionId);
@@ -318,13 +329,15 @@ export function useAuthSession(): AuthSessionReturn {
       setAccessCodeInput("");
       identifyPostHogUser(
         {
-          identityKey: auth.identityKey,
+          analyticsDistinctId: auth.analyticsDistinctId,
+          analyticsGrantId: auth.analyticsGrantId,
           identityLabel: auth.identityLabel,
+          identityQuality: auth.identityQuality,
           identityEmail: auth.identityEmail,
           note: auth.note,
         },
         {
-          grantToken: auth.grantToken,
+          analyticsGrantId: auth.analyticsGrantId,
           sessionId: newSessionId,
         },
       );
@@ -354,7 +367,7 @@ export function useAuthSession(): AuthSessionReturn {
       setSessionId(newSessionId);
       localStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
       registerPostHogContext({
-        grantToken,
+        analyticsGrantId: grantStatus?.analyticsGrantId ?? null,
         sessionId: newSessionId,
       });
       markStartedSession(newSessionId, "fresh");
@@ -367,7 +380,12 @@ export function useAuthSession(): AuthSessionReturn {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [grantToken, markStartedSession, startSession]);
+  }, [
+    grantStatus?.analyticsGrantId,
+    grantToken,
+    markStartedSession,
+    startSession,
+  ]);
 
   const signOut = useCallback(() => {
     trackSessionSignout();

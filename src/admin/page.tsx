@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/logo.png";
+import { hasMeaningfulIdentityLabel } from "../../shared/identity";
 
 export default function Page() {
   const [draftSecret, setDraftSecret] = useState(
@@ -50,6 +51,13 @@ export default function Page() {
 
     if (!trimmedIdentityLabel) {
       alert("Bitte gib den Namen oder die Kennung des Nutzers ein.");
+      return;
+    }
+
+    if (!hasMeaningfulIdentityLabel(trimmedIdentityLabel)) {
+      alert(
+        "Die Nutzerkennung muss mindestens einen Buchstaben oder eine Zahl enthalten.",
+      );
       return;
     }
 
@@ -165,7 +173,7 @@ export default function Page() {
                 Admin-Dashboard
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Zugriffscodes und Nutzerzuordnung verwalten
+                Zugriffscodes und Analytics-Zuordnung verwalten
               </p>
             </div>
           </div>
@@ -266,9 +274,9 @@ export default function Page() {
                     />
                   </div>
                   <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
-                    Ohne Nutzerzuordnung wird kein Link mehr erstellt. Jeder
-                    Zugangscode muss einer identifizierbaren Person zugeordnet
-                    sein.
+                    Jeder Zugangscode braucht eine Nutzerkennung. Ohne
+                    E-Mail-Adresse bleibt die Analytics-Zuordnung auf genau
+                    diesen eingelösten Grant begrenzt.
                   </p>
                   <button
                     onClick={handleGenerateLink}
@@ -298,8 +306,16 @@ export default function Page() {
               <ul className="list-disc space-y-2 pl-5">
                 <li>Links und Zugangscodes sind nur einmal gültig.</li>
                 <li>
-                  Die Nutzerzuordnung bleibt nach dem Einlösen zur Verwaltung,
-                  Nachvollziehbarkeit und für Analytics erhalten.
+                  Die Nutzerkennung bleibt nach dem Einlösen für Verwaltung und
+                  Nachvollziehbarkeit erhalten.
+                </li>
+                <li>
+                  Mit E-Mail-Adresse bleibt die Analytics-Zuordnung über mehrere
+                  Grants hinweg stabil.
+                </li>
+                <li>
+                  Ohne E-Mail-Adresse bleibt die Analytics-Zuordnung auf den
+                  einzelnen Grant begrenzt.
                 </li>
                 <li>
                   Das Admin-Secret wird lokal im Browser gespeichert, bis du

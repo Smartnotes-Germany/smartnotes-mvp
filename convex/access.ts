@@ -79,7 +79,7 @@ export const normalizeAccessCode = (rawCode: string) =>
   rawCode.trim().replace(/\s+/g, "-").toUpperCase();
 
 const buildLegacyIdentityFromAccessCodeId = (accessCodeId: Id<"accessCodes">) =>
-  `${LEGACY_ACCESS_CODE_IDENTITY_LABEL} ${accessCodeId.slice(-8)}`;
+  `${LEGACY_ACCESS_CODE_IDENTITY_LABEL} (${accessCodeId})`;
 
 const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
   const normalizedIdentityLabel = accessCode.identityLabel

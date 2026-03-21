@@ -144,11 +144,10 @@ describe("convex/access", () => {
 
     const redeemed = await redeemCode(t, "legacy-code-1");
 
-    expect(redeemed).toMatchObject({
-      identityLabel: "Altbestand ohne Label",
-      note: "Altbestand ohne Label",
-      identityQuality: "app_only",
-    });
+    expect(redeemed.note).toBe("Altbestand ohne Label");
+    expect(redeemed.identityQuality).toBe("app_only");
+    expect(redeemed.identityLabel).toMatch(/^Unbekannte Nutzerkennung \(.+\)$/);
+    expect(redeemed.identityLabel).not.toBe(redeemed.note);
 
     const grantStatus = await t.query(api.access.validateGrant, {
       grantToken: redeemed.grantToken,
@@ -156,10 +155,10 @@ describe("convex/access", () => {
 
     expect(grantStatus).toMatchObject({
       valid: true,
-      identityLabel: "Altbestand ohne Label",
       note: "Altbestand ohne Label",
       identityQuality: "app_only",
     });
+    expect(grantStatus.identityLabel).toBe(redeemed.identityLabel);
   });
 
   it("erzeugt ohne E-Mail pro Grant unterschiedliche analyticsDistinctIds, auch bei gleichem oder ähnlichem Label", async () => {

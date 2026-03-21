@@ -238,6 +238,8 @@ function StudyApp() {
     sessionId,
     currentQuestion,
     isQuizActive: displayStage === "quiz",
+    answeredQuestions: stats?.answeredQuestions,
+    totalQuestions: stats?.totalQuestions,
   });
   const lastTrackedStageRef = useRef<AnalyticsStage | null>(null);
 
@@ -369,7 +371,7 @@ function StudyApp() {
         isAcceptingPrivacy={isAcceptingPrivacy}
         logoImage={logoImage}
         preference={themePreference}
-        setPreference={setThemePreference}
+        setPreference={handleThemePreferenceChange}
       />
     );
   }

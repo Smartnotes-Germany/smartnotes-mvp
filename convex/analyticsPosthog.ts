@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {
   MAX_POSTHOG_ATTEMPTS,
+  POSTHOG_PENDING_ORPHAN_THRESHOLD_MS,
   type PostHogOutboxId,
   type PostHogProperties,
 } from "./analyticsOutbox";
@@ -222,12 +223,24 @@ export const processPostHogOutbox = internalAction({
   },
   handler: async (ctx, args): Promise<{ processed: number }> => {
     const now = Date.now();
-    const events: Doc<"posthogEventOutbox">[] = await ctx.runQuery(
-      internal.analyticsOutbox.listRetryableEvents,
-      {
-        now,
-        limit: args.limit ?? POSTHOG_RETRY_BATCH_SIZE,
-      },
+    const limit = args.limit ?? POSTHOG_RETRY_BATCH_SIZE;
+    const orphanedPendingEvents: Doc<"posthogEventOutbox">[] =
+      await ctx.runQuery(internal.analyticsOutbox.listOrphanedPendingEvents, {
+        createdBefore: now - POSTHOG_PENDING_ORPHAN_THRESHOLD_MS,
+        limit,
+      });
+
+    const remainingCapacity = Math.max(limit - orphanedPendingEvents.length, 0);
+    const retryableEvents: Doc<"posthogEventOutbox">[] =
+      remainingCapacity > 0
+        ? await ctx.runQuery(internal.analyticsOutbox.listRetryableEvents, {
+            now,
+            limit: remainingCapacity,
+          })
+        : [];
+
+    const events = [...orphanedPendingEvents, ...retryableEvents].sort(
+      (left, right) => left.createdAt - right.createdAt,
     );
 
     for (const event of events) {

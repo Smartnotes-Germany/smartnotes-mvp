@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./errorTracking";
 
 export const MAX_POSTHOG_ATTEMPTS = 5;
+export const POSTHOG_PENDING_ORPHAN_THRESHOLD_MS = 2 * 60_000;
 
 export type PostHogPrimitive = string | number | boolean;
 export type PostHogPropertyValue =
@@ -73,6 +74,22 @@ export const listRetryableEvents = internalQuery({
       .query("posthogEventOutbox")
       .withIndex("by_deliveryStatus_nextRetryAt", (q) =>
         q.eq("deliveryStatus", "retry").lte("nextRetryAt", args.now),
+      )
+      .order("asc")
+      .take(args.limit);
+  },
+});
+
+export const listOrphanedPendingEvents = internalQuery({
+  args: {
+    createdBefore: v.number(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("posthogEventOutbox")
+      .withIndex("by_deliveryStatus_createdAt", (q) =>
+        q.eq("deliveryStatus", "pending").lt("createdAt", args.createdBefore),
       )
       .order("asc")
       .take(args.limit);

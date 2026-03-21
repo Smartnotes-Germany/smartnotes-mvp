@@ -197,6 +197,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_deliveryStatus_nextRetryAt", ["deliveryStatus", "nextRetryAt"])
+    .index("by_deliveryStatus_createdAt", ["deliveryStatus", "createdAt"])
     .index("by_createdAt", ["createdAt"])
     .index("by_scope_createdAt", ["scope", "createdAt"])
     .index("by_insertId", ["insertId"]),

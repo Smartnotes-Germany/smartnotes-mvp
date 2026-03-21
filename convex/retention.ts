@@ -8,6 +8,11 @@ const DEFAULT_RAW_RETENTION_DAYS = 14;
 const DEFAULT_ANALYTICS_RETENTION_DAYS = 180;
 const DEFAULT_BATCH_SIZE = 120;
 const MAX_BATCHES_PER_RUN = 20;
+const DELETABLE_OUTBOX_STATUSES = [
+  "dead_letter",
+  "delivered",
+  "pending",
+] as const;
 
 const runRetentionBatchRef = makeFunctionReference<
   "mutation",
@@ -98,30 +103,36 @@ export const runRetentionBatch = internalMutation({
       await ctx.db.delete(event._id);
     }
 
-    const outboxEvents = await ctx.db
-      .query("posthogEventOutbox")
-      .withIndex("by_createdAt", (q) => q.lt("createdAt", analyticsCutoff))
-      .order("asc")
-      .take(args.batchSize);
+    const eligibleOutboxEvents = (
+      await Promise.all(
+        DELETABLE_OUTBOX_STATUSES.map((deliveryStatus) =>
+          ctx.db
+            .query("posthogEventOutbox")
+            .withIndex("by_deliveryStatus_createdAt", (q) =>
+              q
+                .eq("deliveryStatus", deliveryStatus)
+                .lt("createdAt", analyticsCutoff),
+            )
+            .order("asc")
+            .take(args.batchSize),
+        ),
+      )
+    )
+      .flat()
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .slice(0, args.batchSize);
 
-    let deletedPostHogOutboxEvents = 0;
-    for (const event of outboxEvents) {
-      if (
-        event.deliveryStatus !== "delivered" &&
-        event.deliveryStatus !== "dead_letter"
-      ) {
-        continue;
-      }
-
+    for (const event of eligibleOutboxEvents) {
       await ctx.db.delete(event._id);
-      deletedPostHogOutboxEvents += 1;
     }
+
+    const deletedPostHogOutboxEvents = eligibleOutboxEvents.length;
 
     const done =
       documents.length < args.batchSize &&
       responses.length < args.batchSize &&
       analyticsEvents.length < args.batchSize &&
-      outboxEvents.length < args.batchSize;
+      deletedPostHogOutboxEvents < args.batchSize;
 
     return {
       done,

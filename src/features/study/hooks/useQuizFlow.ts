@@ -65,6 +65,7 @@ export function useQuizFlow({
     setAnswerInput("");
     setDisplayQuestion(null);
     lastQuestionIdRef.current = null;
+    seenQuestionIdsRef.current.clear();
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);
@@ -79,6 +80,7 @@ export function useQuizFlow({
     setAnswerInput("");
     setDisplayQuestion(null);
     lastQuestionIdRef.current = null;
+    seenQuestionIdsRef.current.clear();
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);

@@ -13,7 +13,7 @@ const insertAccessCode = async (
   t: TestHarness,
   args: {
     code: string;
-    identityLabel: string;
+    identityLabel?: string;
     identityEmail?: string;
     note?: string;
   },
@@ -23,7 +23,7 @@ const insertAccessCode = async (
       code: args.code,
       normalizedCode: normalizeAccessCode(args.code),
       createdAt: Date.now(),
-      identityLabel: args.identityLabel,
+      ...(args.identityLabel ? { identityLabel: args.identityLabel } : {}),
       ...(args.identityEmail ? { identityEmail: args.identityEmail } : {}),
       ...(args.note ? { note: args.note } : {}),
     });
@@ -132,6 +132,34 @@ describe("convex/access", () => {
     expect(redeemed.analyticsDistinctId).toBe(
       `smartnotes-user:grant:${redeemed.analyticsGrantId}`,
     );
+  });
+
+  it("löst alte Zugangscodes ohne Nutzerkennung mit einem Fallback-Label ein", async () => {
+    const t = createTestHarness();
+
+    await insertAccessCode(t, {
+      code: "legacy-code-1",
+      note: "Altbestand ohne Label",
+    });
+
+    const redeemed = await redeemCode(t, "legacy-code-1");
+
+    expect(redeemed).toMatchObject({
+      identityLabel: "Altbestand ohne Label",
+      note: "Altbestand ohne Label",
+      identityQuality: "app_only",
+    });
+
+    const grantStatus = await t.query(api.access.validateGrant, {
+      grantToken: redeemed.grantToken,
+    });
+
+    expect(grantStatus).toMatchObject({
+      valid: true,
+      identityLabel: "Altbestand ohne Label",
+      note: "Altbestand ohne Label",
+      identityQuality: "app_only",
+    });
   });
 
   it("erzeugt ohne E-Mail pro Grant unterschiedliche analyticsDistinctIds, auch bei gleichem oder ähnlichem Label", async () => {

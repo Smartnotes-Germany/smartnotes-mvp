@@ -18,6 +18,7 @@ import {
 /** Constants for access management */
 const DEMO_ACCESS_CODE = "SMARTNOTES-DEMO-2026";
 const ACCESS_GRANT_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours
+const LEGACY_ACCESS_CODE_IDENTITY_LABEL = "Unbekannte Nutzerkennung";
 export const redeemSourceValidator = v.union(
   v.literal("manual_code"),
   v.literal("magic_link"),
@@ -78,7 +79,7 @@ export const normalizeAccessCode = (rawCode: string) =>
   rawCode.trim().replace(/\s+/g, "-").toUpperCase();
 
 const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
-  const identityLabel = accessCode.identityLabel
+  const normalizedIdentityLabel = accessCode.identityLabel
     ? normalizeIdentityLabel(accessCode.identityLabel)
     : "";
   const identityEmail = accessCode.identityEmail
@@ -86,9 +87,15 @@ const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
     : undefined;
   const note = accessCode.note?.trim();
 
-  if (!identityLabel || !hasMeaningfulIdentityLabel(identityLabel)) {
-    return null;
-  }
+  const fallbackIdentityLabel =
+    note && hasMeaningfulIdentityLabel(note)
+      ? normalizeIdentityLabel(note)
+      : LEGACY_ACCESS_CODE_IDENTITY_LABEL;
+  const identityLabel =
+    normalizedIdentityLabel &&
+    hasMeaningfulIdentityLabel(normalizedIdentityLabel)
+      ? normalizedIdentityLabel
+      : fallbackIdentityLabel;
 
   const identityQuality = getIdentityQuality({
     identityEmail,

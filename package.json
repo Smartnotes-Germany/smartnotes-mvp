@@ -15,7 +15,8 @@
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "observability:debug-window:start": "node ./scripts/observability-debug-window.mjs start",
-    "observability:debug-window:stop": "node ./scripts/observability-debug-window.mjs stop"
+    "observability:debug-window:stop": "node ./scripts/observability-debug-window.mjs stop",
+    "knip": "knip"
   },
   "dependencies": {
     "@ai-sdk/google-vertex": "^4.0.58",
@@ -51,6 +52,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "knip": "^6.0.1",
     "npm-run-all2": "^8.0.4",
     "postcss": "^8.5.6",
     "prettier": "^3.8.1",

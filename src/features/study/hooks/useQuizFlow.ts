@@ -98,6 +98,15 @@ export function useQuizFlow({
       setAnswerInput("");
       setQuestionStartedAt(Date.now());
       lastQuestionIdRef.current = questionId;
+
+      if (
+        currentQuestion?.id &&
+        !seenQuestionIdsRef.current.has(currentQuestion.id)
+      ) {
+        seenQuestionIdsRef.current.add(currentQuestion.id);
+        trackQuizQuestionViewed(progressRef.current);
+      }
+
       return;
     }
 

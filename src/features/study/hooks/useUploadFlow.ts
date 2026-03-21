@@ -80,6 +80,7 @@ export function useUploadFlow({
           size: file.size,
         });
         if (!uploadValidation.valid) {
+          trackDocumentUploadFailed();
           errors.push(`${file.name}: ${uploadValidation.message}`);
           continue;
         }

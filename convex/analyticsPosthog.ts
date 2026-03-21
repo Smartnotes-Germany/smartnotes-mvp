@@ -1,5 +1,6 @@
 "use node";
 
+import { createHash } from "node:crypto";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./errorTracking";
 import { internalAction } from "./errorTracking";
@@ -20,6 +21,22 @@ import {
 const DEFAULT_POSTHOG_HOST = "https://eu.i.posthog.com";
 const CAPTURE_TIMEOUT_MS = 1_500;
 const POSTHOG_RETRY_BATCH_SIZE = 50;
+const HASH_PREVIEW_LENGTH = 12;
+const MAX_STORED_TEXT_LENGTH = 160;
+const SAFE_PROPERTY_KEYS = new Set([
+  "identity_quality",
+  "status",
+  "scope",
+  "source",
+  "attribution",
+  "app_area",
+  "source_surface",
+  "environment",
+]);
+const SENSITIVE_PROPERTY_KEY_PATTERN =
+  /(?:^|[_$.])(email|name|label|note|code|token|grant|session|trace|distinct|identity|person|phone|address|input|output|message|stack|documentids?|readydocumentids?|traceid|analyticsgrantid|normalizedcode)(?:$|[_$.])/i;
+const SENSITIVE_STRING_VALUE_PATTERN =
+  /@|smartnotes-|^ph-|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[A-Za-z0-9+/_=-]{24,}/i;
 
 type DeliverablePostHogEvent = {
   scope: string;
@@ -80,6 +97,83 @@ const serializeProperties = (value: PostHogProperties | undefined) =>
 
 const deserializeProperties = (value: string) =>
   JSON.parse(value) as PostHogProperties;
+
+const hashStoredToken = (value: string) =>
+  createHash("sha256")
+    .update(value)
+    .digest("hex")
+    .slice(0, HASH_PREVIEW_LENGTH);
+
+const redactStoredToken = (value: string) => `hash:${hashStoredToken(value)}`;
+
+const shouldHashStoredValue = (key: string, value: string) =>
+  (!SAFE_PROPERTY_KEYS.has(key) && SENSITIVE_PROPERTY_KEY_PATTERN.test(key)) ||
+  SENSITIVE_STRING_VALUE_PATTERN.test(value);
+
+const sanitizeStoredPrimitive = (
+  key: string,
+  value: string | number | boolean,
+): string | number | boolean => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  if (shouldHashStoredValue(key, value)) {
+    return redactStoredToken(value);
+  }
+
+  return value.length > MAX_STORED_TEXT_LENGTH
+    ? `${value.slice(0, MAX_STORED_TEXT_LENGTH - 3)}...`
+    : value;
+};
+
+const sanitizeStoredArray = (
+  key: string,
+  value: Array<string | number | boolean>,
+) => value.map((entry) => sanitizeStoredPrimitive(key, entry));
+
+export const sanitizePostHogPropertiesForStorage = (
+  value: PostHogProperties | undefined,
+): PostHogProperties => {
+  if (!value) {
+    return {};
+  }
+
+  const sanitized: PostHogProperties = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) {
+      continue;
+    }
+
+    sanitized[key] = Array.isArray(entry)
+      ? sanitizeStoredArray(key, entry)
+      : sanitizeStoredPrimitive(key, entry);
+  }
+
+  return sanitized;
+};
+
+export const sanitizePostHogErrorMessageForStorage = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "redacted_error";
+  }
+
+  const sanitized = trimmed
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/smartnotes-[^\s,)]+/gi, "[redacted-id]")
+    .replace(/[A-Za-z0-9+/_=-]{24,}/g, "[redacted-token]");
+  const normalized =
+    sanitized.length > MAX_STORED_TEXT_LENGTH
+      ? `${sanitized.slice(0, MAX_STORED_TEXT_LENGTH - 3)}...`
+      : sanitized;
+
+  if (normalized === trimmed) {
+    return normalized;
+  }
+
+  return `${normalized} [hash:${hashStoredToken(trimmed)}]`;
+};
 
 const errorMessageFromUnknown = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -146,12 +240,14 @@ const markDeliveryResult = async (
   }
 
   const lastErrorMessage = errorMessageFromUnknown(error);
+  const sanitizedLastErrorMessage =
+    sanitizePostHogErrorMessageForStorage(lastErrorMessage);
 
   if (attemptCount >= MAX_POSTHOG_ATTEMPTS) {
     await ctx.runMutation(internal.analyticsOutbox.markDeadLetter, {
       outboxId,
       attemptCount,
-      lastErrorMessage,
+      lastErrorMessage: sanitizedLastErrorMessage,
       now,
     });
     return;
@@ -160,7 +256,7 @@ const markDeliveryResult = async (
   await ctx.runMutation(internal.analyticsOutbox.markRetry, {
     outboxId,
     attemptCount,
-    lastErrorMessage,
+    lastErrorMessage: sanitizedLastErrorMessage,
     now,
   });
 };
@@ -190,16 +286,24 @@ export const queueAndDeliverPostHogEvents = async (
   events: DeliverablePostHogEvent[],
 ) => {
   for (const event of events) {
+    const sanitizedProperties = sanitizePostHogPropertiesForStorage(
+      event.properties,
+    );
+    const sanitizedPersonProperties = sanitizePostHogPropertiesForStorage(
+      event.personProperties,
+    );
     const outboxId = await ctx.runMutation(
       internal.analyticsOutbox.enqueueEvent,
       {
         scope: event.scope,
         event: event.event,
         distinctId: event.distinctId,
-        propertiesJson: serializeProperties(event.properties),
-        ...(event.personProperties
+        propertiesJson: serializeProperties(sanitizedProperties),
+        ...(Object.keys(sanitizedPersonProperties).length > 0
           ? {
-              personPropertiesJson: serializeProperties(event.personProperties),
+              personPropertiesJson: serializeProperties(
+                sanitizedPersonProperties,
+              ),
             }
           : {}),
         insertId: event.insertId,

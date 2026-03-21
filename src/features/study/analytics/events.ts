@@ -163,11 +163,11 @@ export const trackDocumentUploadSucceeded = () => {
   });
 };
 
-export const trackDocumentUploadFailed = () => {
+export const trackDocumentUploadFailed = (documents = 1) => {
   captureStudyEvent("document_upload_failed", {
     stage: "upload",
     status: "failed",
-    documents: 1,
+    documents,
   });
 };
 

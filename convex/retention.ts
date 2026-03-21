@@ -6,17 +6,19 @@ import { components } from "./_generated/api";
 
 const DEFAULT_RAW_RETENTION_DAYS = 14;
 const DEFAULT_ANALYTICS_RETENTION_DAYS = 180;
+const DEFAULT_POSTHOG_OUTBOX_RETENTION_DAYS = 30;
 const DEFAULT_BATCH_SIZE = 120;
 const MAX_BATCHES_PER_RUN = 20;
-const DELETABLE_OUTBOX_STATUSES = [
-  "dead_letter",
-  "delivered",
-  "pending",
-] as const;
+const DELETABLE_OUTBOX_STATUSES = ["dead_letter", "delivered"] as const;
 
 const runRetentionBatchRef = makeFunctionReference<
   "mutation",
-  { rawRetentionMs: number; analyticsRetentionMs: number; batchSize: number },
+  {
+    rawRetentionMs: number;
+    analyticsRetentionMs: number;
+    posthogOutboxRetentionMs: number;
+    batchSize: number;
+  },
   {
     done: boolean;
     redactedDocuments: number;
@@ -37,10 +39,16 @@ const resolveRetentionConfig = () => {
     DEFAULT_ANALYTICS_RETENTION_DAYS,
     { min: 1 },
   );
+  const posthogOutboxRetentionDays = readIntegerEnv(
+    "RETENTION_DAYS_POSTHOG_OUTBOX",
+    DEFAULT_POSTHOG_OUTBOX_RETENTION_DAYS,
+    { min: 1 },
+  );
 
   return {
     rawRetentionMs: rawRetentionDays * 24 * 60 * 60 * 1000,
     analyticsRetentionMs: analyticsRetentionDays * 24 * 60 * 60 * 1000,
+    posthogOutboxRetentionMs: posthogOutboxRetentionDays * 24 * 60 * 60 * 1000,
   };
 };
 
@@ -48,12 +56,14 @@ export const runRetentionBatch = internalMutation({
   args: {
     rawRetentionMs: v.number(),
     analyticsRetentionMs: v.number(),
+    posthogOutboxRetentionMs: v.number(),
     batchSize: v.number(),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const rawCutoff = now - args.rawRetentionMs;
     const analyticsCutoff = now - args.analyticsRetentionMs;
+    const posthogOutboxCutoff = now - args.posthogOutboxRetentionMs;
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -111,7 +121,7 @@ export const runRetentionBatch = internalMutation({
             .withIndex("by_deliveryStatus_createdAt", (q) =>
               q
                 .eq("deliveryStatus", deliveryStatus)
-                .lt("createdAt", analyticsCutoff),
+                .lt("createdAt", posthogOutboxCutoff),
             )
             .order("asc")
             .take(args.batchSize),
@@ -161,6 +171,7 @@ export const runDailyRetention = internalAction({
       const result = await ctx.runMutation(runRetentionBatchRef, {
         rawRetentionMs: config.rawRetentionMs,
         analyticsRetentionMs: config.analyticsRetentionMs,
+        posthogOutboxRetentionMs: config.posthogOutboxRetentionMs,
         batchSize: DEFAULT_BATCH_SIZE,
       });
 

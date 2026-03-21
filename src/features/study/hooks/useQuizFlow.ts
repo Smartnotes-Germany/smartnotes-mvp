@@ -195,14 +195,6 @@ export function useQuizFlow({
           },
         );
       } catch (error: unknown) {
-        trackQuizAnswerEvaluationFailed(
-          Date.now() - evaluationStartedAt,
-          dontKnowSubmission,
-          {
-            answeredQuestions,
-            totalQuestions,
-          },
-        );
         const latestContext = latestSessionContextRef.current;
         if (
           latestContext.grantToken !== submissionContext.grantToken ||
@@ -211,6 +203,14 @@ export function useQuizFlow({
           return;
         }
 
+        trackQuizAnswerEvaluationFailed(
+          Date.now() - evaluationStartedAt,
+          dontKnowSubmission,
+          {
+            answeredQuestions,
+            totalQuestions,
+          },
+        );
         setQuizError(
           formatError(error, {
             fallback:

@@ -78,6 +78,9 @@ const generateToken = () => {
 export const normalizeAccessCode = (rawCode: string) =>
   rawCode.trim().replace(/\s+/g, "-").toUpperCase();
 
+const buildLegacyIdentityFromAccessCodeId = (accessCodeId: Id<"accessCodes">) =>
+  `${LEGACY_ACCESS_CODE_IDENTITY_LABEL} ${accessCodeId.slice(-8)}`;
+
 const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
   const normalizedIdentityLabel = accessCode.identityLabel
     ? normalizeIdentityLabel(accessCode.identityLabel)
@@ -87,10 +90,9 @@ const getAccessCodeIdentity = (accessCode: Doc<"accessCodes">) => {
     : undefined;
   const note = accessCode.note?.trim();
 
-  const fallbackIdentityLabel =
-    note && hasMeaningfulIdentityLabel(note)
-      ? normalizeIdentityLabel(note)
-      : LEGACY_ACCESS_CODE_IDENTITY_LABEL;
+  const fallbackIdentityLabel = accessCode._id
+    ? buildLegacyIdentityFromAccessCodeId(accessCode._id)
+    : LEGACY_ACCESS_CODE_IDENTITY_LABEL;
   const identityLabel =
     normalizedIdentityLabel &&
     hasMeaningfulIdentityLabel(normalizedIdentityLabel)

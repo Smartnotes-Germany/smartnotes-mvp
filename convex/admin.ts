@@ -134,6 +134,7 @@ export const deleteData = mutation({
       grantToken: args.grantToken,
       sessionId: args.sessionId,
     });
+    const shouldRevokeGrant = Boolean(args.grantToken);
 
     let deletedSessions = 0;
     let deletedDocuments = 0;
@@ -192,7 +193,7 @@ export const deleteData = mutation({
       deletedSessions += 1;
     }
 
-    if (target.grant) {
+    if (shouldRevokeGrant && target.grant) {
       await ctx.db.patch(target.grant._id, {
         token: `deleted-${crypto.randomUUID()}`,
         revokedAt: Date.now(),
@@ -205,7 +206,7 @@ export const deleteData = mutation({
       deletedResponses,
       deletedAnalyticsEvents,
       deletedStorageFiles,
-      revokedGrant: Boolean(target.grant),
+      revokedGrant: shouldRevokeGrant && Boolean(target.grant),
     };
   },
 });

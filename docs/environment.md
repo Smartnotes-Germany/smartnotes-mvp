@@ -12,7 +12,8 @@ Convex runs in its own runtime model, so we do not use T3 Env directly inside Co
 - Frontend env schema: `src/env.ts`
 - Build env schema: `vite.config.ts`
 - Convex env access helpers: `convex/env.ts`
-- Local example file: `.env.example`
+- Storage env consumers: `convex/fileStorage.ts`
+- Local example/reference file: `.env.example`
 
 ## Where each variable belongs
 
@@ -20,6 +21,8 @@ Convex runs in its own runtime model, so we do not use T3 Env directly inside Co
 - `pnpm exec convex env set ...`: Convex backend envs
 
 Do **not** put Convex backend secrets in Vite env files.
+`.env.example` only contains browser/build values plus commented backend reference
+names so the setup does not falsely imply that Convex reads from `.env.local`.
 
 For the full PostHog routing and persistence model across Vercel prod,
 localhost dev, Vercel preview, Convex, and source-map upload, see
@@ -109,12 +112,29 @@ At least one auth path must exist:
 | -------------------------- | -------- | ------- | ------------------------- |
 | `ACCESS_CODE_ADMIN_SECRET` | yes      | -       | Protects admin operations |
 
+### Storage / Cloudflare R2
+
+| Variable                | Required    | Default | Notes                                                  |
+| ----------------------- | ----------- | ------- | ------------------------------------------------------ |
+| `FILE_STORAGE_PROVIDER` | no          | `r2`    | Allowed values: `convex`, `r2`                         |
+| `R2_ACCOUNT_ID`         | conditional | -       | Required when `FILE_STORAGE_PROVIDER` is unset or `r2` |
+| `R2_ACCESS_KEY_ID`      | conditional | -       | Required when `FILE_STORAGE_PROVIDER` is unset or `r2` |
+| `R2_SECRET_ACCESS_KEY`  | conditional | -       | Required when `FILE_STORAGE_PROVIDER` is unset or `r2` |
+| `R2_BUCKET_NAME`        | conditional | -       | Required when `FILE_STORAGE_PROVIDER` is unset or `r2` |
+
+Storage behavior:
+
+- New deployments default to `r2` even when `FILE_STORAGE_PROVIDER` is unset.
+- Set `FILE_STORAGE_PROVIDER=convex` only if you intentionally want Convex-managed storage instead of R2.
+- R2 credentials are read centrally through the same trimmed backend helper path as the other Convex envs.
+
 ### Retention
 
-| Variable                     | Required | Default | Notes   |
-| ---------------------------- | -------- | ------- | ------- |
-| `RETENTION_DAYS_RAW_CONTENT` | no       | `14`    | Min `1` |
-| `RETENTION_DAYS_ANALYTICS`   | no       | `180`   | Min `1` |
+| Variable                        | Required | Default | Notes   |
+| ------------------------------- | -------- | ------- | ------- |
+| `RETENTION_DAYS_RAW_CONTENT`    | no       | `14`    | Min `1` |
+| `RETENTION_DAYS_ANALYTICS`      | no       | `180`   | Min `1` |
+| `RETENTION_DAYS_POSTHOG_OUTBOX` | no       | `30`    | Min `1` |
 
 ### Backend PostHog bridge
 

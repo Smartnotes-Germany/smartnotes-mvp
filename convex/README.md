@@ -7,6 +7,9 @@ Important current assumptions:
 - Access is grant-based and tied to an identifiable person when possible.
 - Backend PostHog capture is persisted to a Convex outbox first and only sent
   from Node actions, never from queries or mutations.
+- Treat the sanitized outbox payload as the backend PostHog delivery contract.
+- If that contract changes, update `../docs/observability-balanced-mode.md` in
+  the same patch.
 - Backend PostHog delivery uses the direct ingest host, never the frontend
   `/snph` proxy path.
 - Backend PostHog events automatically attach `app_area="app"` and

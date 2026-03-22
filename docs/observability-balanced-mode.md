@@ -20,12 +20,14 @@ For frontend PostHog proxy routing behavior across prod and dev, see `docs/posth
 
 - Access-redemption events and AI backend events are first persisted to the Convex `posthogEventOutbox`.
 - Node actions perform the actual PostHog delivery, including retries and dead-letter handling.
-- Backend emits `ai_operation_completed` and `$ai_generation` with unredacted AI payloads to PostHog.
+- Backend emits `ai_operation_completed` and `$ai_generation` to PostHog from the same sanitized payload shape that is persisted in the outbox.
 - Capture is gated by Convex env vars and drains the outbox without HTTP delivery when disabled.
 - This backend bridge sends directly to the configured absolute PostHog host. It does not use the frontend `/snph` proxy path.
 - Backend PostHog events also stamp `app_area="app"` and `source_surface="server"`.
 - If `POSTHOG_APP_ENV` (or `APP_ENV`) is set in Convex, backend events include
   the explicit environment tag as well.
+- Sensitive identifiers in backend PostHog properties are hashed before persistence and before delivery to PostHog.
+- True retries add `retried=true` and `retryAttempt=<n>` to the PostHog event properties.
 - Required Convex vars:
   - `POSTHOG_ENABLED=true|false`
   - `POSTHOG_PROJECT_KEY=<project key>`
@@ -48,10 +50,10 @@ Format and limits by sink:
   - `documentIds` / `readyDocumentIds` are stored as comma-separated strings.
   - Arrays are truncated to the first 20 entries.
 - PostHog AI bridge (`ai_operation_completed` / `$ai_generation`):
-  - `documentIds` / `readyDocumentIds` are stored as arrays.
-  - Arrays are forwarded without backend truncation.
+  - `documentIds` / `readyDocumentIds` are stored as arrays of hashed identifiers in the outbox.
+  - The same sanitized values are forwarded to PostHog for both first delivery and retries.
 
-Convex analytics still keep the sampled, truncated correlation view. Langfuse and PostHog now receive the full backend values.
+Convex analytics still keep the sampled, truncated correlation view. Langfuse receives the full backend values; PostHog receives the privacy-preserving sanitized outbox representation.
 
 Correlation workflow:
 
@@ -62,7 +64,7 @@ Correlation workflow:
 ### Capture scope
 
 - Langfuse receives full prompts, messages, and model outputs for traced backend AI calls.
-- PostHog receives operational metrics plus unredacted AI request/response payloads, source context, generated question sets, analysis payloads, and answer-evaluation content.
+- PostHog receives operational metrics plus the sanitized backend outbox payload. Sensitive identifiers and token-like values are hashed before persistence and before delivery.
 - Correlation fields (`traceId`, `documentIds`, `readyDocumentIds`) remain available in both systems.
 
 ## Required Convex Environment Variables
@@ -77,6 +79,7 @@ Correlation workflow:
 - `OBSERVABILITY_FLUSH_TIMEOUT_MS=300`
 - `RETENTION_DAYS_RAW_CONTENT=14`
 - `RETENTION_DAYS_ANALYTICS=180`
+- `RETENTION_DAYS_POSTHOG_OUTBOX=30`
 
 ## Flush-on-exit delivery strategy
 
@@ -95,6 +98,7 @@ Operational expectation:
 
 - Convex analytics events are persisted synchronously in the action transaction path.
 - Backend PostHog events are also persisted synchronously first and then delivered via the outbox worker.
+- The outbox payload is the source of truth for what backend PostHog delivery will send. Do not document richer PostHog payloads unless they are persisted in `posthogEventOutbox`.
 - Langfuse export is still network-dependent and asynchronous.
 - A brief ingestion delay is normal; compare parity after 60-120 seconds.
 

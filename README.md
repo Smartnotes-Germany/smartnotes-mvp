@@ -60,6 +60,8 @@ VITE_POSTHOG_UI_HOST=https://eu.posthog.com
 ```
 
 Tip: start from `.env.example` and keep canonical names (`VITE_POSTHOG_*`).
+The file intentionally keeps Convex env names commented so `.env.local` is not
+mistaken for backend configuration.
 
 Recommended PostHog project layout:
 
@@ -94,9 +96,11 @@ pnpm exec convex env set OBSERVABILITY_FLUSH_ON_EXIT true
 pnpm exec convex env set OBSERVABILITY_FLUSH_TIMEOUT_MS 300
 pnpm exec convex env set RETENTION_DAYS_RAW_CONTENT 14
 pnpm exec convex env set RETENTION_DAYS_ANALYTICS 180
+pnpm exec convex env set RETENTION_DAYS_POSTHOG_OUTBOX 30
 
 # Storage provider (defaults to "r2" when unset)
-pnpm exec convex env set FILE_STORAGE_PROVIDER r2
+# only set this if you explicitly want Convex-managed storage instead of R2
+# pnpm exec convex env set FILE_STORAGE_PROVIDER convex
 pnpm exec convex env set R2_ACCOUNT_ID <your-r2-account-id>
 pnpm exec convex env set R2_ACCESS_KEY_ID <your-r2-access-key-id>
 pnpm exec convex env set R2_SECRET_ACCESS_KEY <your-r2-secret-access-key>
@@ -114,6 +118,7 @@ Important:
 
 - `POSTHOG_HOST` here is for the Convex backend bridge, not the browser.
 - Do not set `POSTHOG_HOST=/snph`. Relative proxy paths only work for browser traffic via `VITE_POSTHOG_HOST`.
+- `FILE_STORAGE_PROVIDER` is optional. If you leave it unset, Smartnotes uses R2 by default and therefore still requires the `R2_*` credentials above.
 
 5. Optional: source map upload for PostHog Error Tracking (build-time env vars):
 

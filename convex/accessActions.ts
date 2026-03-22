@@ -58,7 +58,7 @@ const buildIdentityProperties = (result: {
 
 const buildFailureMessage = (
   source: RedeemSource,
-  reason: "unknown_code" | "already_used" | "missing_identity",
+  reason: "unknown_code" | "already_used",
 ) => {
   if (source === "magic_link" && reason === "unknown_code") {
     return "Der Link ist ungültig oder abgelaufen.";
@@ -72,7 +72,8 @@ const buildFailureMessage = (
     return "Dieser Zugangscode wurde bereits verwendet.";
   }
 
-  return "Dieser Zugangscode ist keiner identifizierten Person zugeordnet.";
+  const exhaustiveReason: never = reason;
+  return exhaustiveReason;
 };
 
 const buildAccessEvent = (
@@ -125,7 +126,6 @@ const buildAccessEvent = (
 const KNOWN_REDEEM_ERRORS = new Set([
   "Zugangscode wurde nicht erkannt.",
   "Dieser Zugangscode wurde bereits verwendet.",
-  "Dieser Zugangscode ist keiner identifizierten Person zugeordnet.",
   "Der Link ist ungültig oder abgelaufen.",
 ]);
 

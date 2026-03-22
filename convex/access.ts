@@ -38,7 +38,7 @@ type ResolvedAccessIdentity = AccessIdentity & {
   analyticsGrantId: Id<"accessGrants">;
 };
 
-type RedeemFailureReason = "unknown_code" | "already_used" | "missing_identity";
+type RedeemFailureReason = "unknown_code" | "already_used";
 
 export type RedeemAccessCodeTransactionResult =
   | ({
@@ -159,19 +159,11 @@ const redeemStoredAccessCode = async (
       ok: false,
       reason: "already_used",
       normalizedCode: accessCode.normalizedCode,
-      ...(getAccessCodeIdentity(accessCode) ?? {}),
+      ...getAccessCodeIdentity(accessCode),
     } satisfies RedeemAccessCodeTransactionResult;
   }
 
   const identity = getAccessCodeIdentity(accessCode);
-  if (!identity) {
-    return {
-      ok: false,
-      reason: "missing_identity",
-      normalizedCode: accessCode.normalizedCode,
-    } satisfies RedeemAccessCodeTransactionResult;
-  }
-
   const grantToken = generateToken();
   const expiresAt = now + ACCESS_GRANT_TTL_MS;
 

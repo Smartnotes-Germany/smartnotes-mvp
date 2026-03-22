@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getConfiguredStorageProvider,
   getR2ConfigOrThrow,
@@ -12,14 +12,30 @@ const STORAGE_ENV_NAMES = [
   "R2_BUCKET_NAME",
 ] as const;
 
+const originalStorageEnv = new Map(
+  STORAGE_ENV_NAMES.map((name) => [name, process.env[name]] as const),
+);
+
 const resetStorageEnv = () => {
   for (const name of STORAGE_ENV_NAMES) {
     delete process.env[name];
   }
 };
 
-afterEach(() => {
+beforeEach(() => {
   resetStorageEnv();
+});
+
+afterEach(() => {
+  for (const name of STORAGE_ENV_NAMES) {
+    const originalValue = originalStorageEnv.get(name);
+    if (originalValue === undefined) {
+      delete process.env[name];
+      continue;
+    }
+
+    process.env[name] = originalValue;
+  }
 });
 
 describe("convex/fileStorage ENV handling", () => {

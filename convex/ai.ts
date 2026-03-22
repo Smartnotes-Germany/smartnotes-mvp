@@ -1130,31 +1130,6 @@ type PostHogFileAttachmentSummary = {
   sizeBytes: number;
 };
 
-const analyticsMetadataAllowlist = new Set([
-  "clientRequestId",
-  "responseCount",
-  "usedFallback",
-  "topic",
-  "questionId",
-  "round",
-  "questionTopic",
-  "questionScore",
-  "answerLength",
-  "timeSpentSeconds",
-  "documentsWithoutText",
-  "readyDocuments",
-  "totalDocuments",
-  "filePartCount",
-  "sourceContextLength",
-  "outputQuestionCount",
-  "documentIds",
-  "readyDocumentIds",
-  "fallbackStrategy",
-  "finishReason",
-  "currentFocusTopic",
-  "analysisMode",
-]);
-
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   if (value.length <= maxChars) {
     return value;
@@ -1164,35 +1139,14 @@ const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   return `${value.slice(0, maxChars)}\n...[gekürzt: ${omitted} Zeichen]`;
 };
 
-const toSafeAnalyticsMetadataValue = (
-  value: unknown,
-): string | number | boolean | null => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value.length > 400 ? `${value.slice(0, 400)}…` : value;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => {
-        if (typeof entry === "string") {
-          return entry;
-        }
-        if (typeof entry === "number" || typeof entry === "boolean") {
-          return String(entry);
-        }
-        return null;
-      })
-      .filter((entry): entry is string => Boolean(entry))
-      .slice(0, 20)
-      .join(",");
+export const serializeAnalyticsMetadata = (
+  metadata?: Record<string, unknown>,
+) => {
+  if (!metadata) {
+    return undefined;
   }
 
-  return "[object]";
+  return JSON.stringify(metadata);
 };
 
 const stringifyForPostHog = (value: unknown) => {
@@ -1225,23 +1179,6 @@ const summarizeFilePartsForPostHog = (
     mediaType: part.mediaType,
     sizeBytes: part.data.byteLength,
   }));
-
-const sanitizeAnalyticsMetadata = (metadata?: Record<string, unknown>) => {
-  if (!metadata) {
-    return undefined;
-  }
-
-  const sanitizedEntries = Object.entries(metadata)
-    .filter(([key]) => analyticsMetadataAllowlist.has(key))
-    .slice(0, 20)
-    .map(([key, value]) => [key, toSafeAnalyticsMetadataValue(value)] as const);
-
-  if (sanitizedEntries.length === 0) {
-    return undefined;
-  }
-
-  return JSON.stringify(Object.fromEntries(sanitizedEntries));
-};
 
 const toStringArray = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) {
@@ -1772,7 +1709,7 @@ const persistAiAnalyticsEvent = async (
         typeof errorRecord.stack === "string"
           ? errorRecord.stack
           : undefined,
-      metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
+      metadataJson: serializeAnalyticsMetadata(payload.metadata),
     });
 
     const distinctId =

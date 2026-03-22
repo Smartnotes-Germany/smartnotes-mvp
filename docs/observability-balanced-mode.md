@@ -46,15 +46,16 @@ For cross-system debugging use these fields together:
 Format and limits by sink:
 
 - Langfuse telemetry metadata (`experimental_telemetry.metadata`):
-  - `documentIds` / `readyDocumentIds` are stored with the full values passed from the backend.
+  - Primitive values remain primitive.
+  - Arrays and objects are normalized to JSON strings for telemetry metadata compatibility.
 - Convex analytics (`aiAnalyticsEvents.metadataJson`):
-  - `documentIds` / `readyDocumentIds` are stored as comma-separated strings.
-  - Arrays are truncated to the first 20 entries.
+  - Stores the raw backend metadata as JSON.
+  - `documentIds` / `readyDocumentIds` remain arrays.
 - PostHog AI bridge (`ai_operation_completed` / `$ai_generation`):
   - `documentIds` / `readyDocumentIds` are stored as arrays with their original values in the outbox.
   - The same original values are forwarded to PostHog for both first delivery and retries.
 
-Convex analytics still keep the sampled, truncated correlation view. Langfuse and PostHog both receive the full backend values, while the Convex outbox remains the delivery source of truth for PostHog.
+Convex analytics and PostHog now both keep the raw backend metadata contract, while Langfuse keeps type normalized telemetry metadata plus full traced inputs and outputs.
 
 Correlation workflow:
 

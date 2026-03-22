@@ -10,6 +10,8 @@ Important current assumptions:
 - Treat the persisted outbox payload as the backend PostHog delivery contract.
 - If that contract changes, update `../docs/observability-balanced-mode.md` in
   the same patch.
+- If an observability sink changes its stored payload contract, update the
+  matching tests in the same patch as well.
 - Backend PostHog delivery uses the direct ingest host, never the frontend
   `/snph` proxy path.
 - Backend PostHog events automatically attach `app_area="app"` and

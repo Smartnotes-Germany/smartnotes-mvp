@@ -191,6 +191,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - AI calls are traced with Langfuse telemetry in `balanced` mode.
 - Langfuse captures full AI inputs and outputs for every traced backend call.
 - Telemetry stores operational metadata plus unredacted request and response context.
+- `aiAnalyticsEvents.metadataJson` stores the raw backend metadata for each AI-event.
 - AI actions flush telemetry on exit (`OBSERVABILITY_FLUSH_ON_EXIT`) with a bounded timeout (`OBSERVABILITY_FLUSH_TIMEOUT_MS`) to reduce trace loss.
 - A daily Convex cron redacts/deletes older sensitive data:
   - Redacts `sessionDocuments.extractedText` and `quizResponses.userAnswer`.

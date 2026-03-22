@@ -290,7 +290,7 @@ ORDER BY scope, status;
 - Start with one destination only (free-tier friendly), for example:
   - HTTP webhook destination for daily reliability snapshots, or
   - Batch export to your BI warehouse when available.
-- Keep payload minimal and based on already redacted events.
+- Keep payload minimal and based on the real PostHog event contract.
 
 ### Dashboards and alerts checklist
 

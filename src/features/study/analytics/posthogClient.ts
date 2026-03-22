@@ -44,19 +44,6 @@ const normalizeAnalyticsProperties = (properties: AnalyticsProperties) =>
     Object.entries(properties).filter(([, value]) => value !== undefined),
   );
 
-const sanitizeAnalyticsUrl = (value?: string) => {
-  if (!value) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(value);
-    return `${url.origin}${url.pathname}`;
-  } catch {
-    return undefined;
-  }
-};
-
 // The first-touch browser context should survive reloads within the current tab
 // so later identified events still carry the original landing and UTM values.
 const readInitialAnalyticsContext = (): InitialAnalyticsContext | null => {
@@ -76,11 +63,8 @@ const readInitialAnalyticsContext = (): InitialAnalyticsContext | null => {
     const context = parsed as InitialAnalyticsContext;
     return {
       ...context,
-      landingUrl:
-        sanitizeAnalyticsUrl(context.landingUrl) ??
-        sanitizeAnalyticsUrl(window.location.href) ??
-        `${window.location.origin}${window.location.pathname}`,
-      initialReferrer: sanitizeAnalyticsUrl(context.initialReferrer),
+      landingUrl: context.landingUrl || window.location.href,
+      initialReferrer: context.initialReferrer,
     };
   } catch {
     return null;
@@ -106,10 +90,9 @@ const getInitialAnalyticsContext = (): InitialAnalyticsContext => {
 
   const url = new URL(window.location.href);
   const utm = extractUtmProperties(url.searchParams);
-  const sanitizedReferrer = sanitizeAnalyticsUrl(document.referrer);
   const context: InitialAnalyticsContext = {
-    landingUrl: `${url.origin}${url.pathname}`,
-    ...(sanitizedReferrer ? { initialReferrer: sanitizedReferrer } : {}),
+    landingUrl: window.location.href,
+    ...(document.referrer ? { initialReferrer: document.referrer } : {}),
     ...(utm.utm_source ? { utmSource: utm.utm_source } : {}),
     ...(utm.utm_medium ? { utmMedium: utm.utm_medium } : {}),
     ...(utm.utm_campaign ? { utmCampaign: utm.utm_campaign } : {}),
@@ -127,7 +110,6 @@ const getBaseAnalyticsProperties = () => {
     import.meta.env.DEV,
   );
   const initialContext = getInitialAnalyticsContext();
-  const sanitizedReferrer = sanitizeAnalyticsUrl(document.referrer);
 
   return normalizeAnalyticsProperties({
     app_area: resolvedFrontendEnv.appArea,
@@ -135,8 +117,8 @@ const getBaseAnalyticsProperties = () => {
     source_surface: "client",
     host: window.location.host,
     path: window.location.pathname,
-    referrer: sanitizedReferrer ?? initialContext.initialReferrer,
-    landing_url: sanitizeAnalyticsUrl(initialContext.landingUrl),
+    referrer: document.referrer || initialContext.initialReferrer,
+    landing_url: initialContext.landingUrl,
     utm_source: initialContext.utmSource,
     utm_medium: initialContext.utmMedium,
     utm_campaign: initialContext.utmCampaign,

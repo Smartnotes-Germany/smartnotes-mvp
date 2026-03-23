@@ -32,7 +32,7 @@ import type { StudyStage, ThemePreference } from "./features/study/types";
 
 const analyticsStageByStudyStage: Record<StudyStage, AnalyticsStage> = {
   upload: "upload",
-  mode_selection: "quiz",
+  mode_selection: "mode_selection",
   quiz: "quiz",
   analysis: "analysis",
   summary: "analysis",

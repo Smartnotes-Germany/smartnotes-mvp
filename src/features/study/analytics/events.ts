@@ -8,6 +8,7 @@ export type AnalyticsStage =
   | "auth"
   | "loading"
   | "upload"
+  | "mode_selection"
   | "quiz"
   | "analysis"
   | "ux";
@@ -93,6 +94,14 @@ type ProgressProperties = {
 type DocumentProperties = {
   documents?: number;
   readyDocuments?: number;
+};
+
+type TopicSelectionProperties = DocumentProperties & {
+  selectionMode?: "all" | "focused";
+  selectedTopicCount?: number;
+  selectedTopics?: string;
+  questionsPerTopic?: number;
+  outputQuestionCount?: number;
 };
 
 export const trackAuthCodeRedeemStarted = (
@@ -185,10 +194,10 @@ export const trackDocumentExtractionFailed = () => {
   });
 };
 
-export const trackQuizGenerationRequested = (
+export const trackTopicSelectionPreparationRequested = (
   properties: DocumentProperties,
 ) => {
-  captureStudyEvent("quiz_generation_requested", {
+  captureStudyEvent("topic_selection_preparation_requested", {
     stage: "upload",
     status: "requested",
     documents: properties.documents,
@@ -196,11 +205,11 @@ export const trackQuizGenerationRequested = (
   });
 };
 
-export const trackQuizGenerationSucceeded = (
+export const trackTopicSelectionPreparationSucceeded = (
   durationMs: number,
   properties: DocumentProperties,
 ) => {
-  captureStudyEvent("quiz_generation_succeeded", {
+  captureStudyEvent("topic_selection_preparation_succeeded", {
     stage: "upload",
     status: "succeeded",
     documents: properties.documents,
@@ -210,15 +219,67 @@ export const trackQuizGenerationSucceeded = (
   });
 };
 
-export const trackQuizGenerationFailed = (
+export const trackTopicSelectionPreparationFailed = (
   durationMs: number,
   properties: DocumentProperties,
 ) => {
-  captureStudyEvent("quiz_generation_failed", {
+  captureStudyEvent("topic_selection_preparation_failed", {
     stage: "upload",
     status: "failed",
     documents: properties.documents,
     readyDocuments: properties.readyDocuments,
+    durationMs,
+    durationBucket: toDurationBucketMs(durationMs),
+  });
+};
+
+export const trackFocusedQuizGenerationRequested = (
+  properties: TopicSelectionProperties,
+) => {
+  captureStudyEvent("focused_quiz_generation_requested", {
+    stage: "mode_selection",
+    status: "requested",
+    documents: properties.documents,
+    readyDocuments: properties.readyDocuments,
+    selectionMode: properties.selectionMode,
+    selectedTopicCount: properties.selectedTopicCount,
+    selectedTopics: properties.selectedTopics,
+    questionsPerTopic: properties.questionsPerTopic,
+  });
+};
+
+export const trackFocusedQuizGenerationSucceeded = (
+  durationMs: number,
+  properties: TopicSelectionProperties,
+) => {
+  captureStudyEvent("focused_quiz_generation_succeeded", {
+    stage: "mode_selection",
+    status: "succeeded",
+    documents: properties.documents,
+    readyDocuments: properties.readyDocuments,
+    selectionMode: properties.selectionMode,
+    selectedTopicCount: properties.selectedTopicCount,
+    selectedTopics: properties.selectedTopics,
+    questionsPerTopic: properties.questionsPerTopic,
+    outputQuestionCount: properties.outputQuestionCount,
+    durationMs,
+    durationBucket: toDurationBucketMs(durationMs),
+  });
+};
+
+export const trackFocusedQuizGenerationFailed = (
+  durationMs: number,
+  properties: TopicSelectionProperties,
+) => {
+  captureStudyEvent("focused_quiz_generation_failed", {
+    stage: "mode_selection",
+    status: "failed",
+    documents: properties.documents,
+    readyDocuments: properties.readyDocuments,
+    selectionMode: properties.selectionMode,
+    selectedTopicCount: properties.selectedTopicCount,
+    selectedTopics: properties.selectedTopics,
+    questionsPerTopic: properties.questionsPerTopic,
     durationMs,
     durationBucket: toDurationBucketMs(durationMs),
   });

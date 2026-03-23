@@ -2858,6 +2858,7 @@ export const generateFocusedQuiz = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -2868,9 +2869,14 @@ export const generateFocusedQuiz = action({
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
+    let desiredQuestionCount: number | undefined;
     let analyticsError: unknown;
     let analyticsFocusTopics: string[] = [];
     let analyticsQuestionsPerTopic: number | undefined;
+    let generatedQuiz: QuizGenerationResult | null = null;
+    let normalizedQuestionsForPostHog: QuestionForEvaluation[] = [];
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
+    let sourceContext = "";
 
     try {
       const requestedTopics = [
@@ -2898,6 +2904,7 @@ export const generateFocusedQuiz = action({
       const desiredCount = includesAll
         ? 10
         : normalizedFocusTopics.length * questionsPerTopic;
+      desiredQuestionCount = desiredCount;
 
       if (!includesAll && desiredCount > 30) {
         throw new Error("Bitte wähle maximal 6 Themen gleichzeitig aus.");
@@ -3042,7 +3049,6 @@ Anforderungen:
         mediaType: string;
         filename: string;
       }> = [];
-      let sourceContext = "";
 
       try {
         const modelInput = await buildModelInputFromDocuments(
@@ -3080,6 +3086,7 @@ Anforderungen:
 
       filePartCount = fileParts.length;
       sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
 
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
@@ -3185,6 +3192,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           });
 
           generated = result.output;
+          generatedQuiz = result.output;
 
           if (includesAll) {
             const nextSelectedQuestions = generated.questions.slice(
@@ -3298,6 +3306,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           idealAnswer: question.idealAnswer,
           explanationHint: question.explanationHint,
         }));
+      normalizedQuestionsForPostHog = normalizedQuestions;
 
       await ctx.runMutation(internal.study.storeGeneratedQuiz, {
         sessionId: args.sessionId,
@@ -3329,6 +3338,8 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "generateFocusedQuiz",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -3351,6 +3362,31 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           clientRequestId: args.clientRequestId,
           focusTopics: analyticsFocusTopics.join(", "),
           questionsPerTopic: analyticsQuestionsPerTopic,
+          desiredCount: desiredQuestionCount,
+        },
+        posthogInput: stringifyForPostHog({
+          focusTopics: analyticsFocusTopics,
+          questionsPerTopic: analyticsQuestionsPerTopic,
+          desiredCount: desiredQuestionCount,
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedQuiz,
+          normalizedQuestions: normalizedQuestionsForPostHog,
+        }),
+        posthogProperties: {
+          selectionMode:
+            analyticsFocusTopics.length === 1 &&
+            analyticsFocusTopics[0] === "all"
+              ? "all"
+              : "focused",
+          focusTopics: analyticsFocusTopics.join(", "),
+          requestedQuestionCount: desiredQuestionCount ?? 0,
+          questionsPerTopic: analyticsQuestionsPerTopic ?? 0,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          normalizedQuestions:
+            stringifyForPostHog(normalizedQuestionsForPostHog) ?? "[]",
         },
       });
       await flushTelemetry({

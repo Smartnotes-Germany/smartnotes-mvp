@@ -24,9 +24,12 @@ import {
   trackDocumentUploadFailed,
   trackDocumentUploadStarted,
   trackDocumentUploadSucceeded,
-  trackQuizGenerationFailed,
-  trackQuizGenerationRequested,
-  trackQuizGenerationSucceeded,
+  trackFocusedQuizGenerationFailed,
+  trackFocusedQuizGenerationRequested,
+  trackFocusedQuizGenerationSucceeded,
+  trackTopicSelectionPreparationFailed,
+  trackTopicSelectionPreparationRequested,
+  trackTopicSelectionPreparationSucceeded,
 } from "../analytics";
 
 type UseUploadFlowArgs = {
@@ -39,6 +42,49 @@ type UseUploadFlowArgs = {
 
 type ExtractionResult = {
   extractionStatus?: "ready" | "failed";
+};
+
+type FocusedQuizGenerationResult = {
+  questionCount?: number;
+  focusTopics?: string[];
+};
+
+const FOCUSED_QUESTIONS_PER_TOPIC = 5;
+const MAX_TRACKED_TOPICS = 6;
+
+export const summarizeTopicSelectionForAnalytics = (focusTopics: string[]) => {
+  const normalizedTopics = [
+    ...new Set(focusTopics.map((topic) => topic.trim())),
+  ].filter((topic) => topic.length > 0);
+  const includesAll = normalizedTopics.includes("all");
+  const effectiveTopics = includesAll
+    ? ["all"]
+    : normalizedTopics.filter((topic) => topic !== "all");
+
+  if (effectiveTopics.length === 0) {
+    return {
+      normalizedTopics: effectiveTopics,
+      selectionMode: "focused" as const,
+      selectedTopicCount: 0,
+      selectedTopics: "",
+    };
+  }
+
+  if (effectiveTopics[0] === "all") {
+    return {
+      normalizedTopics: effectiveTopics,
+      selectionMode: "all" as const,
+      selectedTopicCount: 1,
+      selectedTopics: "all",
+    };
+  }
+
+  return {
+    normalizedTopics: effectiveTopics,
+    selectionMode: "focused" as const,
+    selectedTopicCount: effectiveTopics.length,
+    selectedTopics: effectiveTopics.slice(0, MAX_TRACKED_TOPICS).join(", "),
+  };
 };
 
 export function useUploadFlow({
@@ -190,7 +236,7 @@ export function useUploadFlow({
     const clientRequestId = createClientRequestId("generateQuiz");
     setIsGeneratingQuiz(true);
     setUploadError(null);
-    trackQuizGenerationRequested({
+    trackTopicSelectionPreparationRequested({
       documents: documentCount,
       readyDocuments: readyDocumentCount,
     });
@@ -202,12 +248,12 @@ export function useUploadFlow({
         questionCount: 1,
         clientRequestId,
       });
-      trackQuizGenerationSucceeded(Date.now() - startedAt, {
+      trackTopicSelectionPreparationSucceeded(Date.now() - startedAt, {
         documents: documentCount,
         readyDocuments: readyDocumentCount,
       });
     } catch (error: unknown) {
-      trackQuizGenerationFailed(Date.now() - startedAt, {
+      trackTopicSelectionPreparationFailed(Date.now() - startedAt, {
         documents: documentCount,
         readyDocuments: readyDocumentCount,
       });
@@ -235,9 +281,12 @@ export function useUploadFlow({
         return;
       }
 
-      const normalizedTopics = [
-        ...new Set(focusTopics.map((topic) => topic.trim())),
-      ].filter((topic) => topic.length > 0);
+      const {
+        normalizedTopics,
+        selectionMode,
+        selectedTopicCount,
+        selectedTopics,
+      } = summarizeTopicSelectionForAnalytics(focusTopics);
       if (normalizedTopics.length === 0) {
         return;
       }
@@ -262,19 +311,45 @@ export function useUploadFlow({
         return;
       }
 
+      const startedAt = Date.now();
       const clientRequestId = createClientRequestId("generateFocusedQuiz");
       setIsGeneratingQuiz(true);
       setUploadError(null);
+      trackFocusedQuizGenerationRequested({
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+        selectionMode,
+        selectedTopicCount,
+        selectedTopics,
+        questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
+      });
 
       try {
-        await generateFocusedQuiz({
+        const result = (await generateFocusedQuiz({
           grantToken,
           sessionId,
           focusTopics: normalizedTopics,
-          questionsPerTopic: 5,
+          questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
           clientRequestId,
+        })) as FocusedQuizGenerationResult;
+        trackFocusedQuizGenerationSucceeded(Date.now() - startedAt, {
+          documents: documentCount,
+          readyDocuments: readyDocumentCount,
+          selectionMode,
+          selectedTopicCount,
+          selectedTopics,
+          questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
+          outputQuestionCount: result.questionCount,
         });
       } catch (error: unknown) {
+        trackFocusedQuizGenerationFailed(Date.now() - startedAt, {
+          documents: documentCount,
+          readyDocuments: readyDocumentCount,
+          selectionMode,
+          selectedTopicCount,
+          selectedTopics,
+          questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
+        });
         setUploadError(
           formatError(error, {
             fallback:
@@ -286,7 +361,14 @@ export function useUploadFlow({
         setIsGeneratingQuiz(false);
       }
     },
-    [documents, generateFocusedQuiz, grantToken, sessionId],
+    [
+      documentCount,
+      documents,
+      generateFocusedQuiz,
+      grantToken,
+      readyDocumentCount,
+      sessionId,
+    ],
   );
 
   const removeDocumentById = useCallback(

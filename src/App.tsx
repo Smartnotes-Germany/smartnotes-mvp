@@ -230,7 +230,7 @@ function StudyApp() {
     session?.stage === "quiz" &&
     answeredQuestionsInFocus >= minQuestionsRequired &&
     Boolean(session?.analysis);
-  const displayStage = shouldReturnToExistingAnalysis
+  const displayStage: StudyStage = shouldReturnToExistingAnalysis
     ? "analysis"
     : (session?.stage ?? "upload");
   const quizFlow = useQuizFlow({
@@ -258,8 +258,8 @@ function StudyApp() {
       return "loading";
     }
 
-    return analyticsStageByStudyStage[session.stage];
-  }, [grantStatus, grantToken, session, sessionId, stats]);
+    return analyticsStageByStudyStage[displayStage];
+  }, [displayStage, grantStatus, grantToken, session, sessionId, stats]);
 
   const handleThemePreferenceChange = useCallback(
     (nextPreference: ThemePreference) => {
@@ -397,7 +397,7 @@ function StudyApp() {
         </p>
       )}
 
-      {session.stage === "upload" && (
+      {displayStage === "upload" && (
         <UploadStage
           documents={documents}
           isUploading={uploadFlow.isUploading}
@@ -410,7 +410,8 @@ function StudyApp() {
         />
       )}
 
-      {displayStage === "quiz" && (
+      {(analyticsStageByStudyStage[session.stage] === "mode_selection" ||
+        displayStage === "quiz") && (
         <QuizStage
           currentQuestion={quizFlow.displayQuestion}
           feedback={quizFlow.feedback}

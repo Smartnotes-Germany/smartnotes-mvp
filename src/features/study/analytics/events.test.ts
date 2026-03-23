@@ -39,6 +39,7 @@ describe("study analytics event contract", () => {
       answeredQuestions: 0,
       totalQuestions: 0,
     });
+    expect(captureMock).toHaveBeenCalledTimes(1);
   });
 
   it("tracks topic selection preparation failures with upload-stage timing", () => {
@@ -58,6 +59,7 @@ describe("study analytics event contract", () => {
         durationBucket: "1s_to_3s",
       },
     );
+    expect(captureMock).toHaveBeenCalledTimes(1);
   });
 
   it("tracks focused quiz generation with selected topics and output counts", () => {
@@ -110,5 +112,6 @@ describe("study analytics event contract", () => {
         durationBucket: "10s_to_30s",
       },
     );
+    expect(captureMock).toHaveBeenCalledTimes(2);
   });
 });

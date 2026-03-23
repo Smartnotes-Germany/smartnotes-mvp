@@ -16,6 +16,7 @@ import {
   trackAuthCodeRedeemFailed,
   trackAuthCodeRedeemStarted,
   trackAuthCodeRedeemSucceeded,
+  trackConsentUpdated,
   trackSessionResumed,
   trackSessionSignout,
   trackSessionStarted,
@@ -104,8 +105,8 @@ export function useAuthSession(): AuthSessionReturn {
 
   const acceptPrivacy = useCallback(async () => {
     setIsAcceptingPrivacy(true);
-    // Simuliere kurze Verzögerung für UX, falls gewünscht, oder direkt setzen
     localStorage.setItem("smartnotes.privacy-accepted", "true");
+    trackConsentUpdated("akzeptiert");
     setHasAcceptedPrivacy(true);
     setIsAcceptingPrivacy(false);
   }, []);

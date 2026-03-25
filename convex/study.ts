@@ -13,6 +13,8 @@ import {
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
+import { buildAnalyticsDistinctId } from "../shared/identity";
+import { getIdentityQuality } from "../shared/posthogRuntime";
 import {
   createManagedReadUrl,
   deleteManagedFile,
@@ -81,6 +83,9 @@ const aiAnalyticsErrorCategoryValidator = v.union(
 
 type GrantDoc = {
   _id: Id<"accessGrants">;
+  identityLabel?: string;
+  identityEmail?: string;
+  note?: string;
   revokedAt?: number;
 };
 
@@ -109,6 +114,24 @@ const storeUploadedDocumentRef = makeFunctionReference<
 >("study:storeUploadedDocument");
 
 const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
+
+const buildGrantAnalyticsIdentity = (grant: GrantDoc) => {
+  const identityEmail = grant.identityEmail;
+
+  return {
+    identityLabel: grant.identityLabel,
+    ...(identityEmail ? { identityEmail } : {}),
+    ...(grant.note ? { note: grant.note } : {}),
+    identityQuality: getIdentityQuality({
+      identityEmail,
+    }),
+    analyticsDistinctId: buildAnalyticsDistinctId({
+      grantId: grant._id,
+      identityEmail,
+    }),
+    analyticsGrantId: grant._id,
+  };
+};
 
 const parseMetadataJson = (
   raw: string | undefined,
@@ -163,6 +186,9 @@ const ensureGrant = async (
 
   return {
     _id: grant._id,
+    identityLabel: grant.identityLabel,
+    identityEmail: grant.identityEmail,
+    note: grant.note,
     revokedAt: grant.revokedAt,
   };
 };
@@ -291,6 +317,17 @@ export const getLatestSessionId = query({
       .first();
 
     return latestSession?._id ?? null;
+  },
+});
+
+export const getGrantAnalyticsIdentity = internalQuery({
+  args: {
+    grantToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const grant = await ensureGrant(ctx, args.grantToken);
+
+    return buildGrantAnalyticsIdentity(grant);
   },
 });
 
@@ -781,12 +818,10 @@ export const storeQuizResponse = internalMutation({
       )
       .first();
 
-      if (existing) {
+    if (existing) {
       const misunderstanding =
         args.misunderstanding ??
-        (args.isCorrect
-          ? "Kein spezifisches Missverständnis"
-          : "Keine Angabe");
+        (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
 
       await ctx.db.patch(existing._id, {
         topic: args.topic,
@@ -805,9 +840,7 @@ export const storeQuizResponse = internalMutation({
 
     const misunderstanding =
       args.misunderstanding ??
-      (args.isCorrect
-        ? "Kein spezifisches Missverständnis"
-        : "Keine Angabe");
+      (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
 
     await ctx.db.insert("quizResponses", {
       sessionId: args.sessionId,

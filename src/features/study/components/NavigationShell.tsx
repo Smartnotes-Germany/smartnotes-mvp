@@ -29,6 +29,7 @@ export function NavigationShell({
   children,
 }: NavigationShellProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isQuizStep = stage === "mode_selection" || stage === "quiz";
 
   useEffect(() => {
     if (isMobileMenuOpen) {
@@ -85,7 +86,7 @@ export function NavigationShell({
               />
               <StageBadge
                 label="2. Quiz"
-                active={stage === "quiz"}
+                active={isQuizStep}
                 done={stage === "analysis"}
               />
               <StageBadge
@@ -153,7 +154,7 @@ export function NavigationShell({
           />
           <StageBadge
             label="2. Quiz"
-            active={stage === "quiz"}
+            active={isQuizStep}
             done={stage === "analysis"}
           />
           <StageBadge

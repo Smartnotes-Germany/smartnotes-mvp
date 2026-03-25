@@ -18,17 +18,81 @@ import {
   validateUploadFile,
 } from "../../../../shared/uploadPolicy";
 import type { StudyDocument, StudyDocumentId, StudySessionId } from "../types";
+import {
+  trackDocumentExtractionFailed,
+  trackDocumentRemoved,
+  trackDocumentUploadFailed,
+  trackDocumentUploadStarted,
+  trackDocumentUploadSucceeded,
+  trackFocusedQuizGenerationFailed,
+  trackFocusedQuizGenerationRequested,
+  trackFocusedQuizGenerationSucceeded,
+  trackTopicSelectionPreparationFailed,
+  trackTopicSelectionPreparationRequested,
+  trackTopicSelectionPreparationSucceeded,
+} from "../analytics";
 
 type UseUploadFlowArgs = {
   grantToken: string | null;
   sessionId: StudySessionId | null;
   documents: StudyDocument[];
+  documentCount: number;
+  readyDocumentCount: number;
+};
+
+type ExtractionResult = {
+  extractionStatus?: "ready" | "failed";
+};
+
+type FocusedQuizGenerationResult = {
+  questionCount?: number;
+  focusTopics?: string[];
+};
+
+const FOCUSED_QUESTIONS_PER_TOPIC = 5;
+const MAX_TRACKED_TOPICS = 6;
+
+export const summarizeTopicSelectionForAnalytics = (focusTopics: string[]) => {
+  const normalizedTopics = [
+    ...new Set(focusTopics.map((topic) => topic.trim())),
+  ].filter((topic) => topic.length > 0);
+  const includesAll = normalizedTopics.includes("all");
+  const effectiveTopics = includesAll
+    ? ["all"]
+    : normalizedTopics.filter((topic) => topic !== "all");
+
+  if (effectiveTopics.length === 0) {
+    return {
+      normalizedTopics: effectiveTopics,
+      selectionMode: "focused" as const,
+      selectedTopicCount: 0,
+      selectedTopics: "",
+    };
+  }
+
+  if (effectiveTopics[0] === "all") {
+    return {
+      normalizedTopics: effectiveTopics,
+      selectionMode: "all" as const,
+      selectedTopicCount: 1,
+      selectedTopics: "all",
+    };
+  }
+
+  return {
+    normalizedTopics: effectiveTopics,
+    selectionMode: "focused" as const,
+    selectedTopicCount: effectiveTopics.length,
+    selectedTopics: effectiveTopics.slice(0, MAX_TRACKED_TOPICS).join(", "),
+  };
 };
 
 export function useUploadFlow({
   grantToken,
   sessionId,
   documents,
+  documentCount,
+  readyDocumentCount,
 }: UseUploadFlowArgs) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -52,6 +116,7 @@ export function useUploadFlow({
       setIsUploading(true);
       setUploadError(null);
       const errors: string[] = [];
+      trackDocumentUploadStarted(files.length);
 
       for (const file of files) {
         const clientRequestId = createClientRequestId("extractDocument");
@@ -61,6 +126,7 @@ export function useUploadFlow({
           size: file.size,
         });
         if (!uploadValidation.valid) {
+          trackDocumentUploadFailed();
           errors.push(`${file.name}: ${uploadValidation.message}`);
           continue;
         }
@@ -85,13 +151,25 @@ export function useUploadFlow({
             fileSizeBytes: file.size,
           });
 
-          await extractDocumentContent({
+          const extractionResult = (await extractDocumentContent({
             grantToken,
             sessionId,
             documentId,
             clientRequestId,
-          });
+          })) as ExtractionResult;
+
+          if (extractionResult.extractionStatus === "failed") {
+            trackDocumentExtractionFailed();
+            trackDocumentUploadFailed();
+            errors.push(
+              `${file.name}: Die Datei konnte nicht vollständig verarbeitet werden.`,
+            );
+            continue;
+          }
+
+          trackDocumentUploadSucceeded();
         } catch (error: unknown) {
+          trackDocumentUploadFailed();
           errors.push(
             `${file.name}: ${formatError(error, {
               fallback:
@@ -154,9 +232,14 @@ export function useUploadFlow({
       return;
     }
 
+    const startedAt = Date.now();
     const clientRequestId = createClientRequestId("generateQuiz");
     setIsGeneratingQuiz(true);
     setUploadError(null);
+    trackTopicSelectionPreparationRequested({
+      documents: documentCount,
+      readyDocuments: readyDocumentCount,
+    });
 
     try {
       await generateQuiz({
@@ -165,7 +248,15 @@ export function useUploadFlow({
         questionCount: 1,
         clientRequestId,
       });
+      trackTopicSelectionPreparationSucceeded(Date.now() - startedAt, {
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+      });
     } catch (error: unknown) {
+      trackTopicSelectionPreparationFailed(Date.now() - startedAt, {
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+      });
       setUploadError(
         formatError(error, {
           fallback: "Quizfragen konnten nicht erstellt werden.",
@@ -175,7 +266,14 @@ export function useUploadFlow({
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [documents, generateQuiz, grantToken, sessionId]);
+  }, [
+    documents,
+    generateQuiz,
+    grantToken,
+    sessionId,
+    documentCount,
+    readyDocumentCount,
+  ]);
 
   const generateFocusedQuizQuestions = useCallback(
     async (focusTopics: string[]) => {
@@ -183,9 +281,12 @@ export function useUploadFlow({
         return;
       }
 
-      const normalizedTopics = [
-        ...new Set(focusTopics.map((topic) => topic.trim())),
-      ].filter((topic) => topic.length > 0);
+      const {
+        normalizedTopics,
+        selectionMode,
+        selectedTopicCount,
+        selectedTopics,
+      } = summarizeTopicSelectionForAnalytics(focusTopics);
       if (normalizedTopics.length === 0) {
         return;
       }
@@ -210,19 +311,45 @@ export function useUploadFlow({
         return;
       }
 
+      const startedAt = Date.now();
       const clientRequestId = createClientRequestId("generateFocusedQuiz");
       setIsGeneratingQuiz(true);
       setUploadError(null);
+      trackFocusedQuizGenerationRequested({
+        documents: documentCount,
+        readyDocuments: readyDocumentCount,
+        selectionMode,
+        selectedTopicCount,
+        selectedTopics,
+        questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
+      });
 
       try {
-        await generateFocusedQuiz({
+        const result = (await generateFocusedQuiz({
           grantToken,
           sessionId,
           focusTopics: normalizedTopics,
-          questionsPerTopic: 5,
+          questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
           clientRequestId,
+        })) as FocusedQuizGenerationResult;
+        trackFocusedQuizGenerationSucceeded(Date.now() - startedAt, {
+          documents: documentCount,
+          readyDocuments: readyDocumentCount,
+          selectionMode,
+          selectedTopicCount,
+          selectedTopics,
+          questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
+          outputQuestionCount: result.questionCount,
         });
       } catch (error: unknown) {
+        trackFocusedQuizGenerationFailed(Date.now() - startedAt, {
+          documents: documentCount,
+          readyDocuments: readyDocumentCount,
+          selectionMode,
+          selectedTopicCount,
+          selectedTopics,
+          questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
+        });
         setUploadError(
           formatError(error, {
             fallback:
@@ -234,7 +361,14 @@ export function useUploadFlow({
         setIsGeneratingQuiz(false);
       }
     },
-    [documents, generateFocusedQuiz, grantToken, sessionId],
+    [
+      documentCount,
+      documents,
+      generateFocusedQuiz,
+      grantToken,
+      readyDocumentCount,
+      sessionId,
+    ],
   );
 
   const removeDocumentById = useCallback(
@@ -246,7 +380,9 @@ export function useUploadFlow({
       setIsRemovingDocument(documentId);
       try {
         await removeDocument({ grantToken, sessionId, documentId });
+        trackDocumentRemoved("succeeded");
       } catch (error: unknown) {
+        trackDocumentRemoved("failed");
         setUploadError(
           formatError(error, {
             fallback: "Die Datei konnte nicht entfernt werden.",

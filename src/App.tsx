@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 import logoImage from "./assets/images/logo.png";
 import {
   AnalysisStage,
@@ -21,6 +21,22 @@ import {
 } from "./features/study/hooks";
 import Page from "./admin/page.tsx";
 import { topicsMatchForFocusMode } from "../shared/topicMatching";
+import {
+  registerBaseContext,
+  trackConsentUpdated,
+  trackStudyStageViewed,
+  trackThemeChanged,
+  type AnalyticsStage,
+} from "./features/study/analytics";
+import type { StudyStage, ThemePreference } from "./features/study/types";
+
+const analyticsStageByStudyStage: Record<StudyStage, AnalyticsStage> = {
+  upload: "upload",
+  mode_selection: "mode_selection",
+  quiz: "quiz",
+  analysis: "analysis",
+  summary: "analysis",
+};
 
 function StudyApp() {
   const { preference: themePreference, setPreference: setThemePreference } =
@@ -57,9 +73,18 @@ function StudyApp() {
   );
 
   const session = snapshot?.session ?? null;
-  const documents = snapshot?.documents ?? [];
+  const documents = useMemo(
+    () => snapshot?.documents ?? [],
+    [snapshot?.documents],
+  );
   const responses = snapshot?.responses;
   const stats = snapshot?.stats ?? null;
+  const readyDocumentCount = useMemo(
+    () =>
+      documents.filter((document) => document.extractionStatus === "ready")
+        .length,
+    [documents],
+  );
 
   useEffect(() => {
     if (snapshot === null && sessionId) {
@@ -177,11 +202,19 @@ function StudyApp() {
     session,
   ]);
 
-  const uploadFlow = useUploadFlow({ grantToken, sessionId, documents });
+  const uploadFlow = useUploadFlow({
+    grantToken,
+    sessionId,
+    documents,
+    documentCount: documents.length,
+    readyDocumentCount,
+  });
   const analysisFlow = useAnalysisFlow({
     grantToken,
     sessionId,
     documents,
+    answeredQuestions: stats?.answeredQuestions,
+    totalQuestions: stats?.totalQuestions,
     quizQuestions: session?.quizQuestions ?? [],
     currentFocusTopic: activeTopic,
     hasExistingAnalysis: Boolean(session?.analysis),
@@ -197,15 +230,92 @@ function StudyApp() {
     session?.stage === "quiz" &&
     answeredQuestionsInFocus >= minQuestionsRequired &&
     Boolean(session?.analysis);
-  const displayStage = shouldReturnToExistingAnalysis
+  const displayStage: StudyStage = shouldReturnToExistingAnalysis
     ? "analysis"
-    : session?.stage ?? "upload";
+    : (session?.stage ?? "upload");
   const quizFlow = useQuizFlow({
     grantToken,
     sessionId,
     currentQuestion,
     isQuizActive: displayStage === "quiz",
+    answeredQuestions: stats?.answeredQuestions,
+    totalQuestions: stats?.totalQuestions,
   });
+  const lastTrackedStageRef = useRef<AnalyticsStage | null>(null);
+
+  const currentStage = useMemo<AnalyticsStage>(() => {
+    if (!grantToken) {
+      return "auth";
+    }
+
+    if (
+      !grantStatus ||
+      !grantStatus.valid ||
+      !sessionId ||
+      !session ||
+      !stats
+    ) {
+      return "loading";
+    }
+
+    return analyticsStageByStudyStage[displayStage];
+  }, [displayStage, grantStatus, grantToken, session, sessionId, stats]);
+
+  const handleThemePreferenceChange = useCallback(
+    (nextPreference: ThemePreference) => {
+      if (nextPreference === themePreference) {
+        return;
+      }
+
+      trackThemeChanged(themePreference, nextPreference);
+      setThemePreference(nextPreference);
+    },
+    [setThemePreference, themePreference],
+  );
+
+  useEffect(() => {
+    if (lastTrackedStageRef.current === currentStage) {
+      return;
+    }
+
+    lastTrackedStageRef.current = currentStage;
+    trackStudyStageViewed(currentStage, {
+      documents: documents.length,
+      readyDocuments: readyDocumentCount,
+      answeredQuestions: stats?.answeredQuestions,
+      totalQuestions: stats?.totalQuestions,
+    });
+  }, [currentStage, documents.length, readyDocumentCount, stats]);
+
+  useEffect(() => {
+    const handleConsentUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ consentState?: unknown }>;
+      const rawConsentState =
+        typeof customEvent.detail?.consentState === "string"
+          ? customEvent.detail.consentState
+          : "aktualisiert";
+      const consentState =
+        rawConsentState === "akzeptiert" ||
+        rawConsentState === "abgelehnt" ||
+        rawConsentState === "aktualisiert"
+          ? rawConsentState
+          : "aktualisiert";
+
+      trackConsentUpdated(consentState);
+    };
+
+    window.addEventListener(
+      "smartnotes:consent-updated",
+      handleConsentUpdated as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "smartnotes:consent-updated",
+        handleConsentUpdated as EventListener,
+      );
+    };
+  }, []);
 
   const handleStartFreshSession = async () => {
     setSessionActionError(null);
@@ -243,7 +353,7 @@ function StudyApp() {
       <AuthScreen
         logoImage={logoImage}
         preference={themePreference}
-        setPreference={setThemePreference}
+        setPreference={handleThemePreferenceChange}
         isConsumingMagicLink={isConsumingMagicLink}
         accessCodeInput={accessCodeInput}
         onAccessCodeChange={setAccessCodeInput}
@@ -261,7 +371,7 @@ function StudyApp() {
         isAcceptingPrivacy={isAcceptingPrivacy}
         logoImage={logoImage}
         preference={themePreference}
-        setPreference={setThemePreference}
+        setPreference={handleThemePreferenceChange}
       />
     );
   }
@@ -275,7 +385,7 @@ function StudyApp() {
       logoImage={logoImage}
       stage={displayStage}
       preference={themePreference}
-      setPreference={setThemePreference}
+      setPreference={handleThemePreferenceChange}
       onStartFreshSession={handleStartFreshSession}
       isCreatingSession={isCreatingSession}
       onSignOut={signOut}
@@ -287,7 +397,7 @@ function StudyApp() {
         </p>
       )}
 
-      {session.stage === "upload" && (
+      {displayStage === "upload" && (
         <UploadStage
           documents={documents}
           isUploading={uploadFlow.isUploading}
@@ -300,7 +410,8 @@ function StudyApp() {
         />
       )}
 
-      {displayStage === "quiz" && (
+      {(analyticsStageByStudyStage[session.stage] === "mode_selection" ||
+        displayStage === "quiz") && (
         <QuizStage
           currentQuestion={quizFlow.displayQuestion}
           feedback={quizFlow.feedback}
@@ -339,12 +450,25 @@ function StudyApp() {
   );
 }
 
+function AnalyticsContextSync() {
+  const location = useLocation();
+
+  useEffect(() => {
+    registerBaseContext();
+  }, [location.hash, location.pathname, location.search]);
+
+  return null;
+}
+
 function App() {
   return (
-    <Routes>
-      <Route path="/admin" element={<Page />} />
-      <Route path="*" element={<StudyApp />} />
-    </Routes>
+    <>
+      <AnalyticsContextSync />
+      <Routes>
+        <Route path="/admin" element={<Page />} />
+        <Route path="*" element={<StudyApp />} />
+      </Routes>
+    </>
   );
 }
 

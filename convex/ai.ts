@@ -31,10 +31,15 @@ import {
   getObservabilityMode,
   getTelemetryProvider,
   hashIdentifier,
-  isSensitiveCaptureEnabled,
   redactTextForLog,
 } from "./observability";
 import { createManagedReadUrl, type StorageProvider } from "./fileStorage";
+import {
+  buildPostHogEvent,
+  queueAndDeliverPostHogEvents,
+} from "./analyticsPosthog";
+import { readOptionalEnv, readRequiredEnv } from "./env";
+import { buildSessionFallbackDistinctId } from "../shared/identity";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -158,6 +163,7 @@ const deepDiveSchema = z.object({
 });
 
 type SessionDocumentInput = {
+  _id: Id<"sessionDocuments">;
   storageId: string;
   storageProvider: StorageProvider;
   fileName: string;
@@ -237,7 +243,7 @@ function normalizeDontKnowExplanation(
 }
 
 const answerEvaluationFieldRules = [
-  'Antworte ausschließlich als JSON-Objekt ohne Markdown oder Code-Fences.',
+  "Antworte ausschließlich als JSON-Objekt ohne Markdown oder Code-Fences.",
   'Pflichtfelder: "isCorrect" (boolean), "score" (number 0-100), "explanation" (string), "idealAnswer" (string), "misunderstanding" (string).',
   'Das Feld "score" muss eine Zahl zwischen 0 und 100 sein.',
   'Wenn kein spezifisches Missverständnis erkennbar ist, setze "misunderstanding" auf "Kein spezifisches Missverständnis".',
@@ -363,21 +369,19 @@ const createDocumentReadUrl = async (
   );
 
 const createVertexModel = () => {
-  const apiKey = process.env.GOOGLE_VERTEX_API_KEY;
+  const apiKey = readOptionalEnv("GOOGLE_VERTEX_API_KEY");
   if (apiKey) {
     return createVertex({ apiKey });
   }
 
-  const project = process.env.GOOGLE_VERTEX_PROJECT;
-  if (!project) {
-    throw new Error(
-      "Konfiguriere GOOGLE_VERTEX_API_KEY (Express Mode) oder GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_LOCATION.",
-    );
-  }
+  const project = readRequiredEnv(
+    "GOOGLE_VERTEX_PROJECT",
+    "Konfiguriere GOOGLE_VERTEX_API_KEY (Express Mode) oder GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_LOCATION.",
+  );
 
   return createVertex({
     project,
-    location: process.env.GOOGLE_VERTEX_LOCATION ?? "us-central1",
+    location: readOptionalEnv("GOOGLE_VERTEX_LOCATION") ?? "us-central1",
   });
 };
 
@@ -1088,6 +1092,8 @@ type PersistedAiErrorCategory =
 type PersistedAiAnalyticsPayload = {
   traceId: string;
   sessionId: Id<"studySessions">;
+  posthogDistinctId?: string;
+  posthogPersonProperties?: Record<string, string | number | boolean>;
   scope: string;
   status: PersistedAiAnalyticsStatus;
   privacyMode?: PersistedPrivacyMode;
@@ -1108,30 +1114,21 @@ type PersistedAiAnalyticsPayload = {
   errorCategory?: PersistedAiErrorCategory;
   error?: ReturnType<typeof extractErrorForLog>;
   metadata?: Record<string, unknown>;
+  posthogInput?: string;
+  posthogOutput?: string;
+  posthogProperties?: Record<string, string | number | boolean | string[]>;
 };
 
-const analyticsMetadataAllowlist = new Set([
-  "clientRequestId",
-  "responseCount",
-  "usedFallback",
-  "topic",
-  "questionId",
-  "round",
-  "questionTopic",
-  "questionScore",
-  "answerLength",
-  "timeSpentSeconds",
-  "documentsWithoutText",
-  "readyDocuments",
-  "totalDocuments",
-  "filePartCount",
-  "sourceContextLength",
-  "outputQuestionCount",
-  "fallbackStrategy",
-  "finishReason",
-  "currentFocusTopic",
-  "analysisMode",
-]);
+type DocumentCorrelationMetadata = {
+  documentIds?: string[];
+  readyDocumentIds?: string[];
+};
+
+type PostHogFileAttachmentSummary = {
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+};
 
 const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   if (value.length <= maxChars) {
@@ -1142,52 +1139,67 @@ const truncateForLog = (value: string, maxChars = MAX_LOG_PREVIEW_CHARS) => {
   return `${value.slice(0, maxChars)}\n...[gekürzt: ${omitted} Zeichen]`;
 };
 
-const toSafeAnalyticsMetadataValue = (
-  value: unknown,
-): string | number | boolean | null => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value.length > 400 ? `${value.slice(0, 400)}…` : value;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => {
-        if (typeof entry === "string") {
-          return entry;
-        }
-        if (typeof entry === "number" || typeof entry === "boolean") {
-          return String(entry);
-        }
-        return null;
-      })
-      .filter((entry): entry is string => Boolean(entry))
-      .slice(0, 20)
-      .join(",");
-  }
-
-  return "[object]";
-};
-
-const sanitizeAnalyticsMetadata = (metadata?: Record<string, unknown>) => {
+export const serializeAnalyticsMetadata = (
+  metadata?: Record<string, unknown>,
+) => {
   if (!metadata) {
     return undefined;
   }
 
-  const sanitizedEntries = Object.entries(metadata)
-    .filter(([key]) => analyticsMetadataAllowlist.has(key))
-    .slice(0, 20)
-    .map(([key, value]) => [key, toSafeAnalyticsMetadataValue(value)] as const);
+  return JSON.stringify(metadata);
+};
 
-  if (sanitizedEntries.length === 0) {
+const stringifyForPostHog = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const summarizeFilePartsForPostHog = (
+  fileParts: Array<{
+    filename: string;
+    mediaType: string;
+    data: Buffer;
+  }>,
+): PostHogFileAttachmentSummary[] =>
+  fileParts.map((part) => ({
+    filename: part.filename,
+    mediaType: part.mediaType,
+    sizeBytes: part.data.byteLength,
+  }));
+
+const toStringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
     return undefined;
   }
 
-  return JSON.stringify(Object.fromEntries(sanitizedEntries));
+  const normalized = value.filter(
+    (entry): entry is string => typeof entry === "string",
+  );
+
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const buildDocumentCorrelationMetadata = (
+  documentIds: string[],
+  readyDocumentIds: string[],
+): DocumentCorrelationMetadata => {
+  return {
+    ...(documentIds.length > 0 ? { documentIds } : {}),
+    ...(readyDocumentIds.length > 0 ? { readyDocumentIds } : {}),
+  };
 };
 
 const buildAiSdkTelemetry = (
@@ -1648,8 +1660,7 @@ const persistAiAnalyticsEvent = async (
         ? payload.error
         : undefined;
     const privacyMode = payload.privacyMode ?? getObservabilityMode();
-    const contentCaptured =
-      payload.contentCaptured ?? isSensitiveCaptureEnabled();
+    const contentCaptured = payload.contentCaptured ?? true;
     const telemetryProvider =
       payload.telemetryProvider ?? getTelemetryProvider();
 
@@ -1698,17 +1709,120 @@ const persistAiAnalyticsEvent = async (
         typeof errorRecord.stack === "string"
           ? errorRecord.stack
           : undefined,
-      metadataJson: sanitizeAnalyticsMetadata(payload.metadata),
+      metadataJson: serializeAnalyticsMetadata(payload.metadata),
     });
+
+    const distinctId =
+      payload.posthogDistinctId ??
+      buildSessionFallbackDistinctId(hashIdentifier(payload.sessionId));
+    const commonProperties = {
+      traceId: payload.traceId,
+      scope: payload.scope,
+      status: payload.status,
+      latencyMs: payload.latencyMs,
+      inputTokens: payload.usage?.inputTokens,
+      outputTokens: payload.usage?.outputTokens,
+      totalTokens: payload.usage?.totalTokens,
+      llmAttempts: payload.llmAttempts,
+      fallbackUsed: payload.fallbackUsed,
+      telemetryProvider,
+      privacyMode,
+      modelId: payload.modelId,
+      finishReason: payload.finishReason,
+      totalDocuments: payload.totalDocuments,
+      readyDocuments: payload.readyDocuments,
+      filePartCount: payload.filePartCount,
+      sourceContextLength: payload.sourceContextLength,
+      outputQuestionCount: payload.outputQuestionCount,
+      errorCategory: payload.errorCategory,
+      errorName:
+        errorRecord &&
+        "name" in errorRecord &&
+        typeof errorRecord.name === "string"
+          ? errorRecord.name
+          : undefined,
+      errorMessage:
+        errorRecord &&
+        "message" in errorRecord &&
+        typeof errorRecord.message === "string"
+          ? errorRecord.message
+          : undefined,
+      errorStackPreview:
+        errorRecord &&
+        "stack" in errorRecord &&
+        typeof errorRecord.stack === "string"
+          ? errorRecord.stack
+          : undefined,
+      contentCaptured,
+      documentIds: toStringArray(payload.metadata?.documentIds),
+      readyDocumentIds: toStringArray(payload.metadata?.readyDocumentIds),
+      ...payload.posthogProperties,
+    };
+
+    await queueAndDeliverPostHogEvents(ctx, [
+      buildPostHogEvent({
+        scope: "ai",
+        event: "ai_operation_completed",
+        distinctId,
+        personProperties: payload.posthogPersonProperties,
+        properties: commonProperties,
+      }),
+      buildPostHogEvent({
+        scope: "ai",
+        event: "$ai_generation",
+        distinctId,
+        personProperties: payload.posthogPersonProperties,
+        properties: {
+          ...commonProperties,
+          input: payload.posthogInput,
+          output: payload.posthogOutput,
+        },
+      }),
+    ]);
   } catch (error) {
     console.warn("[KI-Monitoring]", {
       event: "analytics_persist_failed",
       traceId: payload.traceId,
       scope: payload.scope,
-      sessionHash: hashIdentifier(payload.sessionId),
+      distinctId:
+        payload.posthogDistinctId ??
+        buildSessionFallbackDistinctId(hashIdentifier(payload.sessionId)),
       error: extractErrorForLog(error),
     });
   }
+};
+
+const getGrantPostHogIdentity = async (
+  ctx: Pick<ActionCtx, "runQuery">,
+  grantToken: string,
+) => {
+  const identity = await ctx.runQuery(
+    internal.study.getGrantAnalyticsIdentity,
+    {
+      grantToken,
+    },
+  );
+
+  if (!identity.analyticsDistinctId || !identity.identityLabel) {
+    return null;
+  }
+
+  return {
+    distinctId: identity.analyticsDistinctId,
+    personProperties: {
+      analyticsGrantId: identity.analyticsGrantId,
+      identityLabel: identity.identityLabel,
+      ...(identity.identityEmail
+        ? {
+            identityEmail: identity.identityEmail,
+            $email: identity.identityEmail,
+          }
+        : {}),
+      ...(identity.note ? { note: identity.note } : {}),
+      identity_quality: identity.identityQuality,
+      $name: identity.identityLabel,
+    },
+  };
 };
 
 const parseJsonStringSafely = (value: string): unknown => {
@@ -2224,6 +2338,7 @@ export const generateQuiz = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -2231,16 +2346,23 @@ export const generateQuiz = action({
     let finishReason: string | undefined;
     let totalDocuments = 0;
     let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
+    const desiredCount = Math.max(
+      1,
+      Math.min(30, Math.floor(args.questionCount ?? 15)),
+    );
+    let sourceContext = "";
+    let generatedQuiz: QuizGenerationResult | null = null;
+    let normalizedQuestions: QuestionForEvaluation[] = [];
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
     let analyticsError: unknown;
 
     try {
-      const desiredCount = Math.max(
-        1,
-        Math.min(30, Math.floor(args.questionCount ?? 15)),
-      );
       const quizInstruction = `Erstelle ${desiredCount} kurze, prüfungsnahe Fragen auf Basis des bereitgestellten Lernmaterials.
 
 Anforderungen:
@@ -2276,11 +2398,18 @@ Anforderungen:
           document.extractionStatus === "ready",
       );
       readyDocumentsCount = readyDocuments.length;
+      documentIds = documents.map((document) => String(document._id));
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
 
       trace.log("info", "documents_loaded", {
         totalDocuments: documents.length,
         readyDocuments: readyDocuments.length,
         documents: documents.map((document) => ({
+          documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
           fileSizeBytes: document.fileSizeBytes,
@@ -2329,7 +2458,6 @@ Anforderungen:
         mediaType: string;
         filename: string;
       }> = [];
-      let sourceContext = "";
 
       try {
         const modelInput = await buildModelInputFromDocuments(
@@ -2367,6 +2495,7 @@ Anforderungen:
 
       filePartCount = fileParts.length;
       sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
 
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
@@ -2426,6 +2555,7 @@ Anforderungen:
               appScope: "generateQuiz",
               stage: "primary",
               readyDocuments: readyDocuments.length,
+              ...documentCorrelationMetadata,
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
             },
@@ -2455,6 +2585,7 @@ Anforderungen:
         }
 
         generated = result.output;
+        generatedQuiz = result.output;
       } catch (error) {
         if (!isNoOutputGeneratedError(error)) {
           trace.addUsage(extractUsageFromError(error));
@@ -2499,6 +2630,7 @@ Anforderungen:
                   appScope: "generateQuiz",
                   stage: "fallback_structured",
                   readyDocuments: readyDocuments.length,
+                  ...documentCorrelationMetadata,
                   filePartCount: fileParts.length,
                   sourceContextLength: sourceContext.length,
                 },
@@ -2531,6 +2663,7 @@ Anforderungen:
             }
 
             generated = fallbackResult.output;
+            generatedQuiz = fallbackResult.output;
           } else {
             trace.log("info", "llm_fallback_request", {
               strategy: "json_messages",
@@ -2556,6 +2689,7 @@ Anforderungen:
                   appScope: "generateQuiz",
                   stage: "fallback_json",
                   readyDocuments: readyDocuments.length,
+                  ...documentCorrelationMetadata,
                   filePartCount: fileParts.length,
                   sourceContextLength: sourceContext.length,
                 },
@@ -2574,6 +2708,7 @@ Anforderungen:
             );
 
             generated = normalizeQuizGenerationOutput(fallbackResult.output);
+            generatedQuiz = generated;
 
             trace.log("info", "llm_fallback_response", {
               ...fallbackLog.details,
@@ -2624,7 +2759,7 @@ Anforderungen:
         );
       }
 
-      const normalizedQuestions = generated.questions
+      normalizedQuestions = generated.questions
         .slice(0, desiredCount)
         .map((question, index) => ({
           id: `${Date.now()}-${index + 1}`,
@@ -2660,6 +2795,8 @@ Anforderungen:
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "generateQuiz",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -2680,6 +2817,23 @@ Anforderungen:
         error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
         metadata: {
           clientRequestId: args.clientRequestId,
+          ...documentCorrelationMetadata,
+        },
+        posthogInput: stringifyForPostHog({
+          desiredCount,
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedQuiz,
+          normalizedQuestions,
+        }),
+        posthogProperties: {
+          requestedQuestionCount: desiredCount,
+          sourceContext,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          generatedQuiz: stringifyForPostHog(generatedQuiz) ?? "",
+          normalizedQuestions: stringifyForPostHog(normalizedQuestions) ?? "[]",
         },
       });
       await flushTelemetry({
@@ -2704,6 +2858,7 @@ export const generateFocusedQuiz = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -2714,9 +2869,14 @@ export const generateFocusedQuiz = action({
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
+    let desiredQuestionCount: number | undefined;
     let analyticsError: unknown;
     let analyticsFocusTopics: string[] = [];
     let analyticsQuestionsPerTopic: number | undefined;
+    let generatedQuiz: QuizGenerationResult | null = null;
+    let normalizedQuestionsForPostHog: QuestionForEvaluation[] = [];
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
+    let sourceContext = "";
 
     try {
       const requestedTopics = [
@@ -2744,6 +2904,7 @@ export const generateFocusedQuiz = action({
       const desiredCount = includesAll
         ? 10
         : normalizedFocusTopics.length * questionsPerTopic;
+      desiredQuestionCount = desiredCount;
 
       if (!includesAll && desiredCount > 30) {
         throw new Error("Bitte wähle maximal 6 Themen gleichzeitig aus.");
@@ -2807,7 +2968,9 @@ Anforderungen:
           .map((response) =>
             previousQuestionPromptById.get(response.questionId),
           )
-          .filter((prompt): prompt is string => Boolean(prompt && prompt.length)),
+          .filter((prompt): prompt is string =>
+            Boolean(prompt && prompt.length),
+          ),
       );
       const previousFocusedPrompts = [...previousFocusedPromptSet].slice(0, 50);
       const avoidRepeatsInstruction =
@@ -2886,7 +3049,6 @@ Anforderungen:
         mediaType: string;
         filename: string;
       }> = [];
-      let sourceContext = "";
 
       try {
         const modelInput = await buildModelInputFromDocuments(
@@ -2924,6 +3086,7 @@ Anforderungen:
 
       filePartCount = fileParts.length;
       sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
 
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
@@ -2940,9 +3103,9 @@ Anforderungen:
       for (let attemptIndex = 0; attemptIndex < 3; attemptIndex += 1) {
         const attemptInstruction =
           attemptIndex === 0
-            ? [quizInstruction, avoidRepeatsInstruction].filter(Boolean).join(
-                "\n\n",
-              )
+            ? [quizInstruction, avoidRepeatsInstruction]
+                .filter(Boolean)
+                .join("\n\n")
             : `${quizInstruction}
 
 Korrektur zur vorherigen Ausgabe:
@@ -3029,6 +3192,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           });
 
           generated = result.output;
+          generatedQuiz = result.output;
 
           if (includesAll) {
             const nextSelectedQuestions = generated.questions.slice(
@@ -3142,6 +3306,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           idealAnswer: question.idealAnswer,
           explanationHint: question.explanationHint,
         }));
+      normalizedQuestionsForPostHog = normalizedQuestions;
 
       await ctx.runMutation(internal.study.storeGeneratedQuiz, {
         sessionId: args.sessionId,
@@ -3173,6 +3338,8 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "generateFocusedQuiz",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -3195,6 +3362,31 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           clientRequestId: args.clientRequestId,
           focusTopics: analyticsFocusTopics.join(", "),
           questionsPerTopic: analyticsQuestionsPerTopic,
+          desiredCount: desiredQuestionCount,
+        },
+        posthogInput: stringifyForPostHog({
+          focusTopics: analyticsFocusTopics,
+          questionsPerTopic: analyticsQuestionsPerTopic,
+          desiredCount: desiredQuestionCount,
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedQuiz,
+          normalizedQuestions: normalizedQuestionsForPostHog,
+        }),
+        posthogProperties: {
+          selectionMode:
+            analyticsFocusTopics.length === 1 &&
+            analyticsFocusTopics[0] === "all"
+              ? "all"
+              : "focused",
+          focusTopics: analyticsFocusTopics.join(", "),
+          requestedQuestionCount: desiredQuestionCount ?? 0,
+          questionsPerTopic: analyticsQuestionsPerTopic ?? 0,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          normalizedQuestions:
+            stringifyForPostHog(normalizedQuestionsForPostHog) ?? "[]",
         },
       });
       await flushTelemetry({
@@ -3222,10 +3414,15 @@ export const evaluateAnswer = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
+    let telemetryRound = 0;
+    let telemetryQuestion: QuestionForEvaluation | null = null;
+    let telemetryPrompt = "";
+    let telemetryEvaluation: AnswerEvaluationResult | null = null;
     let analyticsError: unknown;
 
     try {
@@ -3246,6 +3443,8 @@ export const evaluateAnswer = action({
       });
 
       const { round, question } = evaluationContext;
+      telemetryRound = round;
+      telemetryQuestion = question;
       const evaluationSystemPrompt =
         "Du bist ein sachlicher Prüfungs-Korrektor. Antworte auf Deutsch. Formuliere nüchtern und direkt. Verwende keine schmeichelnden, beschwichtigenden oder motivierenden Sätze. Erkläre kurz, was fachlich richtig ist oder was inhaltlich fehlt. Identifiziere zudem ein konkretes Missverständnis oder eine Wissenslücke aus der Antwort. Falls die Antwort vollständig korrekt ist oder kein spezifisches Missverständnis erkennbar ist, setze das Feld 'misunderstanding' auf 'Kein spezifisches Missverständnis'.";
       const evaluationPrompt = `Thema: ${question.topic}
@@ -3265,6 +3464,7 @@ Antwort der lernenden Person:
 ${args.userAnswer}
 
 Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antwort der lernenden Person ist.`;
+      telemetryPrompt = evaluationPrompt;
 
       trace.log("info", "context_loaded", {
         round,
@@ -3335,6 +3535,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
           });
 
           generated = result.output;
+          telemetryEvaluation = generated;
           break;
         } catch (error) {
           if (isNoOutputGeneratedError(error)) {
@@ -3413,6 +3614,7 @@ Pflichtregeln:
             fallbackIdealAnswer: question.idealAnswer,
             answeredWithDontKnow: args.answeredWithDontKnow,
           });
+          telemetryEvaluation = generated;
 
           trace.log("info", "llm_fallback_response", {
             ...fallbackLog.details,
@@ -3490,6 +3692,8 @@ Pflichtregeln:
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "evaluateAnswer",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -3507,6 +3711,23 @@ Pflichtregeln:
           questionId: args.questionId,
           answerLength: args.userAnswer.length,
           timeSpentSeconds: args.timeSpentSeconds,
+        },
+        posthogInput: stringifyForPostHog({
+          round: telemetryRound,
+          question: telemetryQuestion,
+          userAnswer: args.userAnswer,
+          prompt: telemetryPrompt,
+        }),
+        posthogOutput: stringifyForPostHog(telemetryEvaluation),
+        posthogProperties: {
+          round: telemetryRound,
+          questionTopic: telemetryQuestion?.topic ?? "",
+          questionPrompt: telemetryQuestion?.prompt ?? "",
+          expectedAnswer: telemetryQuestion?.idealAnswer ?? "",
+          explanationHint: telemetryQuestion?.explanationHint ?? "",
+          userAnswer: args.userAnswer,
+          prompt: telemetryPrompt,
+          evaluationResult: stringifyForPostHog(telemetryEvaluation) ?? "",
         },
       });
       await flushTelemetry({
@@ -3531,6 +3752,7 @@ export const analyzePerformance = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -3539,6 +3761,13 @@ export const analyzePerformance = action({
     let usedFallback = false;
     let analysisMode: AnalysisMode = args.mode ?? "full";
     let resolvedFocusTopic = toTrimmedString(args.focusTopic);
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
+    let responsesForPostHog: FullModeResponseContextInput[] = [];
+    let analysisSystemPrompt = "";
+    let analysisPrompt = "";
+    let generatedAnalysis: AnalysisResult | null = null;
     let analyticsError: unknown;
 
     try {
@@ -3547,30 +3776,49 @@ export const analyzePerformance = action({
         requestedFocusTopic: args.focusTopic ?? null,
       });
 
-      let { session, responses } = await ctx.runQuery(
-        internal.study.getAnalysisContext,
-        {
-          grantToken: args.grantToken,
-          sessionId: args.sessionId,
-          mode: analysisMode,
-          focusTopic: resolvedFocusTopic || undefined,
-        },
-      );
+      const result = await ctx.runQuery(internal.study.getAnalysisContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+        mode: analysisMode,
+        focusTopic: resolvedFocusTopic || undefined,
+      });
+
+      let { session, responses } = result;
+      const { documents } = result;
+      responsesForPostHog = responses;
 
       trace.log("info", "context_loaded", {
         responseCount: responses.length,
         currentFocusTopic: session.focusTopics?.[0] ?? null,
         round: session.round,
         requestedMode: args.mode ?? "full",
+        totalDocuments: documents.length,
+        readyDocuments: documents.filter(
+          (document: SessionDocumentInput) =>
+            document.extractionStatus === "ready",
+        ).length,
       });
       responseCount = responses.length;
+      documentIds = documents.map((document: SessionDocumentInput) =>
+        String(document._id),
+      );
+      readyDocumentIds = documents
+        .filter(
+          (document: SessionDocumentInput) =>
+            document.extractionStatus === "ready",
+        )
+        .map((document: SessionDocumentInput) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
       if (!resolvedFocusTopic) {
         resolvedFocusTopic = toTrimmedString(session.focusTopics?.[0]);
       }
 
       let focusTopicInsight =
         analysisMode === "focus" && session.analysis && resolvedFocusTopic
-          ? (session.analysis.topics.find((topic) =>
+          ? (session.analysis.topics.find((topic: AnalysisTopicInsight) =>
               topicsMatchForFocusMode(topic.topic, resolvedFocusTopic),
             ) ?? null)
           : null;
@@ -3587,6 +3835,7 @@ export const analyzePerformance = action({
 
         session = fullContext.session;
         responses = fullContext.responses;
+        responsesForPostHog = responses;
         responseCount = responses.length;
 
         trace.log("info", "context_reloaded_for_full_mode", {
@@ -3623,8 +3872,9 @@ export const analyzePerformance = action({
       );
 
       if (analysisMode === "focus" && session.analysis && resolvedFocusTopic) {
-        const topicResponses = responses.filter((response) =>
-          topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
+        const topicResponses = responses.filter(
+          (response: FullModeResponseContextInput) =>
+            topicsMatchForFocusMode(response.topic, resolvedFocusTopic),
         );
 
         if (topicResponses.length === 0) {
@@ -3637,7 +3887,8 @@ export const analyzePerformance = action({
         } else {
           const fallbackAverage =
             topicResponses.reduce(
-              (total, response) => total + response.score,
+              (total: number, response: FullModeResponseContextInput) =>
+                total + response.score,
               0,
             ) / topicResponses.length;
           const fallbackTopicInsight = buildTopicInsightFromScore(
@@ -3701,6 +3952,8 @@ Pflichtregeln:
                         retrySourceError,
                         invalidOutput,
                       );
+                analysisSystemPrompt = focusSystemPrompt;
+                analysisPrompt = prompt;
 
                 const result = await generateText({
                   model: model("gemini-3-flash-preview"),
@@ -3795,6 +4048,7 @@ Pflichtregeln:
               ...summary,
               topics: mergedTopics,
             };
+            generatedAnalysis = analysis;
           } catch (error) {
             trace.addUsage(extractUsageFromError(error));
             usedFallback = true;
@@ -3815,7 +4069,11 @@ Pflichtregeln:
 
         try {
           const coveredTopics = [
-            ...new Set(responses.map((response) => response.topic)),
+            ...new Set(
+              responses.map(
+                (response: FullModeResponseContextInput) => response.topic,
+              ),
+            ),
           ];
           const fullModePromptContext =
             buildFullModePromptResponseContext(responses);
@@ -3865,6 +4123,8 @@ Pflichtregeln:
                       retrySourceError,
                       invalidOutput,
                     );
+              analysisSystemPrompt = fullSystemPrompt;
+              analysisPrompt = prompt;
 
               const result = await generateText({
                 model: model("gemini-3-flash-preview"),
@@ -3944,6 +4204,7 @@ Pflichtregeln:
           }
 
           analysis = generated;
+          generatedAnalysis = analysis;
         } catch (error) {
           trace.addUsage(extractUsageFromError(error));
           usedFallback = true;
@@ -3969,6 +4230,7 @@ Pflichtregeln:
         topicCount: analysis.topics.length,
         usageTotals: trace.getUsageTotals(),
       });
+      generatedAnalysis = analysis;
 
       return analysis;
     } catch (error) {
@@ -3978,6 +4240,8 @@ Pflichtregeln:
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "analyzePerformance",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -3997,6 +4261,23 @@ Pflichtregeln:
           usedFallback,
           analysisMode,
           topic: resolvedFocusTopic || undefined,
+          ...documentCorrelationMetadata,
+        },
+        posthogInput: stringifyForPostHog({
+          analysisMode,
+          resolvedFocusTopic,
+          prompt: analysisPrompt,
+          system: analysisSystemPrompt,
+          responses: responsesForPostHog,
+        }),
+        posthogOutput: stringifyForPostHog(generatedAnalysis),
+        posthogProperties: {
+          analysisMode,
+          resolvedFocusTopic,
+          prompt: analysisPrompt,
+          system: analysisSystemPrompt,
+          responses: stringifyForPostHog(responsesForPostHog) ?? "[]",
+          analysisResult: stringifyForPostHog(generatedAnalysis) ?? "",
         },
       });
       await flushTelemetry({
@@ -4020,15 +4301,23 @@ export const generateTopicDeepDive = action({
       args.sessionId,
       args.clientRequestId,
     );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
     let finishReason: string | undefined;
     let totalDocuments = 0;
     let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
     let filePartCount = 0;
     let sourceContextLength = 0;
     let outputQuestionCount: number | undefined;
+    let sourceContext = "";
+    let generatedDeepDive: DeepDiveGenerationResult | null = null;
+    let deepDiveQuestionsForPostHog: QuestionForEvaluation[] = [];
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
     let analyticsError: unknown;
 
     try {
@@ -4058,6 +4347,12 @@ export const generateTopicDeepDive = action({
           document.extractionStatus === "ready",
       );
       readyDocumentsCount = readyDocuments.length;
+      documentIds = documents.map((document) => String(document._id));
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
 
       // Calculate recent performance for adaptive difficulty
       const topicResponses = (responses ?? [])
@@ -4105,6 +4400,7 @@ export const generateTopicDeepDive = action({
         avgScore,
         difficultyLevel,
         documents: documents.map((document) => ({
+          documentId: document._id,
           fileName: document.fileName,
           fileType: document.fileType,
           fileSizeBytes: document.fileSizeBytes,
@@ -4148,8 +4444,6 @@ export const generateTopicDeepDive = action({
         mediaType: string;
         filename: string;
       }> = [];
-      let sourceContext = "";
-
       try {
         const modelInput = await buildModelInputFromDocuments(
           ctx,
@@ -4187,6 +4481,7 @@ export const generateTopicDeepDive = action({
 
       filePartCount = fileParts.length;
       sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
 
       if (fileParts.length === 0 && !sourceContext) {
         trace.log("error", "no_usable_input");
@@ -4257,6 +4552,7 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
               appScope: "generateTopicDeepDive",
               topic: args.topic,
               readyDocuments: readyDocuments.length,
+              ...documentCorrelationMetadata,
               filePartCount: fileParts.length,
               sourceContextLength: sourceContext.length,
               difficultyLevel,
@@ -4287,6 +4583,7 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
         }
 
         generated = result.output;
+        generatedDeepDive = result.output;
       } catch (error) {
         if (isNoOutputGeneratedError(error)) {
           trace.addUsage(extractUsageFromError(error));
@@ -4340,6 +4637,7 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
         usageTotals: trace.getUsageTotals(),
       });
 
+      deepDiveQuestionsForPostHog = deepDiveQuestions;
       outputQuestionCount = deepDiveQuestions.length;
 
       return {
@@ -4353,6 +4651,8 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
       await persistAiAnalyticsEvent(ctx, {
         traceId: trace.traceId,
         sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
         scope: "generateTopicDeepDive",
         status: analyticsError ? "error" : "success",
         modelId: analyticsModelId,
@@ -4373,6 +4673,24 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
         metadata: {
           clientRequestId: args.clientRequestId,
           topic: args.topic,
+          ...documentCorrelationMetadata,
+        },
+        posthogInput: stringifyForPostHog({
+          topic: args.topic,
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedDeepDive,
+          deepDiveQuestions: deepDiveQuestionsForPostHog,
+        }),
+        posthogProperties: {
+          topic: args.topic,
+          sourceContext,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          generatedDeepDive: stringifyForPostHog(generatedDeepDive) ?? "",
+          deepDiveQuestions:
+            stringifyForPostHog(deepDiveQuestionsForPostHog) ?? "[]",
         },
       });
       await flushTelemetry({

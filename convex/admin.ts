@@ -8,6 +8,10 @@ import {
 import { v } from "convex/values";
 import { assertAdminSecret } from "./adminAuth";
 import { deleteManagedFile } from "./fileStorage";
+import {
+  assertMeaningfulIdentityLabel,
+  normalizeIdentityEmail,
+} from "../shared/identity";
 
 const resolveTarget = async (
   ctx: QueryCtx | MutationCtx,
@@ -49,8 +53,10 @@ const resolveTarget = async (
     throw new Error("Lernsitzung wurde nicht gefunden.");
   }
 
+  const grant = await ctx.db.get(session.grantId);
+
   return {
-    grant: null,
+    grant,
     sessions: [session],
   };
 };
@@ -128,6 +134,7 @@ export const deleteData = mutation({
       grantToken: args.grantToken,
       sessionId: args.sessionId,
     });
+    const shouldRevokeGrant = Boolean(args.grantToken);
 
     let deletedSessions = 0;
     let deletedDocuments = 0;
@@ -186,7 +193,7 @@ export const deleteData = mutation({
       deletedSessions += 1;
     }
 
-    if (target.grant) {
+    if (shouldRevokeGrant && target.grant) {
       await ctx.db.patch(target.grant._id, {
         token: `deleted-${crypto.randomUUID()}`,
         revokedAt: Date.now(),
@@ -199,7 +206,7 @@ export const deleteData = mutation({
       deletedResponses,
       deletedAnalyticsEvents,
       deletedStorageFiles,
-      revokedGrant: Boolean(target.grant),
+      revokedGrant: shouldRevokeGrant && Boolean(target.grant),
     };
   },
 });
@@ -221,10 +228,18 @@ export const verifySecret = query({
 export const generateMagicLink = mutation({
   args: {
     adminSecret: v.string(),
+    identityLabel: v.string(),
+    identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     assertAdminSecret(args.adminSecret);
+
+    const identityLabel = assertMeaningfulIdentityLabel(args.identityLabel);
+    const identityEmail = args.identityEmail
+      ? normalizeIdentityEmail(args.identityEmail)
+      : undefined;
+    const note = args.note?.trim();
 
     const code = Math.random().toString(36).substring(2, 10).toUpperCase();
     const now = Date.now();
@@ -232,7 +247,9 @@ export const generateMagicLink = mutation({
     await ctx.db.insert("accessCodes", {
       code,
       normalizedCode: "SMARTNOTES-" + code,
-      note: args.note,
+      identityLabel,
+      ...(identityEmail ? { identityEmail } : {}),
+      ...(note ? { note } : {}),
       createdAt: now,
     });
 

@@ -49,6 +49,8 @@ export default defineSchema({
     createdAt: v.number(),
     consumedAt: v.optional(v.number()),
     consumedByGrantId: v.optional(v.id("accessGrants")),
+    identityLabel: v.optional(v.string()),
+    identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
   }).index("by_normalizedCode", ["normalizedCode"]),
 
@@ -56,6 +58,9 @@ export default defineSchema({
   accessGrants: defineTable({
     token: v.string(),
     createdAt: v.number(),
+    identityLabel: v.optional(v.string()),
+    identityEmail: v.optional(v.string()),
+    note: v.optional(v.string()),
     revokedAt: v.optional(v.number()),
   }).index("by_token", ["token"]),
 
@@ -169,4 +174,31 @@ export default defineSchema({
     .index("by_traceId", ["traceId"])
     .index("by_scope_createdAt", ["scope", "createdAt"])
     .index("by_status_createdAt", ["status", "createdAt"]),
+
+  /** Persistente Outbox für Backend-PostHog-Events mit Retry-Status */
+  posthogEventOutbox: defineTable({
+    scope: v.string(),
+    event: v.string(),
+    distinctId: v.string(),
+    propertiesJson: v.string(),
+    personPropertiesJson: v.optional(v.string()),
+    insertId: v.string(),
+    deliveryStatus: v.union(
+      v.literal("pending"),
+      v.literal("retry"),
+      v.literal("delivered"),
+      v.literal("dead_letter"),
+    ),
+    attemptCount: v.number(),
+    lastErrorMessage: v.optional(v.string()),
+    nextRetryAt: v.optional(v.number()),
+    deliveredAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_deliveryStatus_nextRetryAt", ["deliveryStatus", "nextRetryAt"])
+    .index("by_deliveryStatus_createdAt", ["deliveryStatus", "createdAt"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_scope_createdAt", ["scope", "createdAt"])
+    .index("by_insertId", ["insertId"]),
 });

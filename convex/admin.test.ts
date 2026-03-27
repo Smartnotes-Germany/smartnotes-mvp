@@ -195,4 +195,74 @@ describe("convex/admin", () => {
     expect(unchangedGrant).not.toHaveProperty("identityEmail");
     expect(unchangedGrant).not.toHaveProperty("note");
   });
+
+  it("backfillt die E-Mail aus dem Zugangscode wenn der Grant nur Leerzeichen enthält", async () => {
+    const t = createTestHarness();
+    const code = "grant-backfill-email-whitespace";
+    const now = Date.now();
+
+    const { grantId } = await t.run(async (ctx) => {
+      await ctx.db.insert("accessCodes", {
+        code,
+        normalizedCode: normalizeAccessCode(code),
+        createdAt: now - 100,
+        consumedAt: now,
+        identityLabel: "Jakob Rössner",
+        identityEmail: " Jakob.Roessner@Outlook.de ",
+        consumedByGrantId: await ctx.db.insert("accessGrants", {
+          token: "legacy-whitespace-email-token",
+          createdAt: now,
+          identityLabel: "Jakob Rössner",
+          identityEmail: "   ",
+        }),
+      });
+
+      const grant = await ctx.db
+        .query("accessGrants")
+        .withIndex("by_token", (q) => q.eq("token", "legacy-whitespace-email-token"))
+        .first();
+
+      if (!grant) {
+        throw new Error("Grant wurde nicht gefunden.");
+      }
+
+      return { grantId: grant._id };
+    });
+
+    const result = await t.mutation(api.admin.backfillGrantAnalyticsIdentity, {
+      adminSecret: "test-secret",
+      dryRun: false,
+      paginationOpts: {
+        cursor: null,
+        numItems: 10,
+      },
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      updated: 1,
+      labelsBackfilled: 0,
+      emailsBackfilled: 1,
+      notesBackfilled: 0,
+      skipped: 0,
+    });
+    expect(result.samples[0]).toMatchObject({
+      grantId,
+      before: {
+        identityLabel: "Jakob Rössner",
+        identityEmail: "   ",
+      },
+      after: {
+        identityLabel: "Jakob Rössner",
+        identityEmail: "jakob.roessner@outlook.de",
+      },
+    });
+
+    const patchedGrant = await t.run(async (ctx) => ctx.db.get(grantId));
+
+    expect(patchedGrant).toMatchObject({
+      identityLabel: "Jakob Rössner",
+      identityEmail: "jakob.roessner@outlook.de",
+    });
+  });
 });

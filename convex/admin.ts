@@ -42,7 +42,8 @@ const normalizeOptionalIdentityEmail = (value: string | undefined) => {
     return undefined;
   }
 
-  return normalizeIdentityEmail(value);
+  const normalized = normalizeIdentityEmail(value);
+  return normalized ? normalized : undefined;
 };
 
 const normalizeOptionalNote = (value: string | undefined) => {

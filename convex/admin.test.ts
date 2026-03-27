@@ -81,4 +81,118 @@ describe("convex/admin", () => {
     expect(deletedSession).toBeNull();
     expect(remainingSession?._id).toBe(secondSessionId);
   });
+
+  it("backfillt Legacy-Grants mit Fallback-Label sowie optionaler E-Mail und Notiz aus dem Zugangscode", async () => {
+    const t = createTestHarness();
+    const code = "grant-backfill-legacy";
+    const now = Date.now();
+
+    const { grantId } = await t.run(async (ctx) => {
+      await ctx.db.insert("accessCodes", {
+        code,
+        normalizedCode: normalizeAccessCode(code),
+        createdAt: now - 100,
+        consumedAt: now,
+        identityLabel: "  Jakob Rössner  ",
+        identityEmail: " Jakob.Roessner@Outlook.de ",
+        note: " Legacy-Hinweis ",
+        consumedByGrantId: await ctx.db.insert("accessGrants", {
+          token: "legacy-grant-token",
+          createdAt: now,
+        }),
+      });
+
+      const grant = await ctx.db
+        .query("accessGrants")
+        .withIndex("by_token", (q) => q.eq("token", "legacy-grant-token"))
+        .first();
+
+      if (!grant) {
+        throw new Error("Grant wurde nicht gefunden.");
+      }
+
+      return { grantId: grant._id };
+    });
+
+    const result = await t.mutation(api.admin.backfillGrantAnalyticsIdentity, {
+      adminSecret: "test-secret",
+      dryRun: false,
+      paginationOpts: {
+        cursor: null,
+        numItems: 10,
+      },
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      updated: 1,
+      labelsBackfilled: 1,
+      emailsBackfilled: 1,
+      notesBackfilled: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(result.samples).toHaveLength(1);
+    expect(result.samples[0]).toMatchObject({
+      grantId,
+      before: {},
+      after: {
+        identityLabel: "Jakob Rössner",
+        identityEmail: "jakob.roessner@outlook.de",
+        note: "Legacy-Hinweis",
+      },
+    });
+
+    const patchedGrant = await t.run(async (ctx) => ctx.db.get(grantId));
+
+    expect(patchedGrant).toMatchObject({
+      identityLabel: "Jakob Rössner",
+      identityEmail: "jakob.roessner@outlook.de",
+      note: "Legacy-Hinweis",
+    });
+  });
+
+  it("verwendet im Dry-Run ein deterministisches Fallback-Label ohne den Grant zu ändern", async () => {
+    const t = createTestHarness();
+    const now = Date.now();
+
+    const grantId = await t.run(async (ctx) =>
+      ctx.db.insert("accessGrants", {
+        token: "legacy-dry-run-token",
+        createdAt: now,
+      }),
+    );
+
+    const result = await t.mutation(api.admin.backfillGrantAnalyticsIdentity, {
+      adminSecret: "test-secret",
+      dryRun: true,
+      paginationOpts: {
+        cursor: null,
+        numItems: 10,
+      },
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      updated: 1,
+      labelsBackfilled: 1,
+      emailsBackfilled: 0,
+      notesBackfilled: 0,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(result.samples[0]).toMatchObject({
+      grantId,
+      after: {
+        identityLabel: `Unbekannte Nutzerkennung (${grantId})`,
+      },
+    });
+
+    const unchangedGrant = await t.run(async (ctx) => ctx.db.get(grantId));
+
+    expect(unchangedGrant?.token).toBe("legacy-dry-run-token");
+    expect(unchangedGrant).not.toHaveProperty("identityLabel");
+    expect(unchangedGrant).not.toHaveProperty("identityEmail");
+    expect(unchangedGrant).not.toHaveProperty("note");
+  });
 });

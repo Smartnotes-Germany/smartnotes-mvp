@@ -1,7 +1,10 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
-import { serializeAnalyticsMetadata } from "./ai";
+import {
+  resolvePostHogPersonProperties,
+  serializeAnalyticsMetadata,
+} from "./ai";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -58,6 +61,38 @@ describe("convex/ai analytics metadata contract", () => {
     expect(serialized).toBeDefined();
     expect(JSON.parse(serialized ?? "null")).toEqual(metadata);
     expect(serialized).toContain(`"longText":"${"x".repeat(600)}"`);
+  });
+
+  it("erstellt PostHog-Person-Properties auch ohne identityLabel nur aus vorhandenen Feldern", () => {
+    expect(
+      resolvePostHogPersonProperties({
+        analyticsGrantId: "grant-123",
+        identityQuality: "app_only",
+      }),
+    ).toEqual({
+      analyticsGrantId: "grant-123",
+      identity_quality: "app_only",
+    });
+  });
+
+  it("erstellt vollständige PostHog-Person-Properties wenn Label und E-Mail vorhanden sind", () => {
+    expect(
+      resolvePostHogPersonProperties({
+        analyticsGrantId: "grant-123",
+        identityLabel: "Jakob Rössner",
+        identityEmail: "jakob.roessner@outlook.de",
+        note: "Der Beste",
+        identityQuality: "email",
+      }),
+    ).toEqual({
+      analyticsGrantId: "grant-123",
+      identityLabel: "Jakob Rössner",
+      identityEmail: "jakob.roessner@outlook.de",
+      note: "Der Beste",
+      identity_quality: "email",
+      $name: "Jakob Rössner",
+      $email: "jakob.roessner@outlook.de",
+    });
   });
 
   it("liefert rohe metadataJson-Werte über die Session-Analytics-Abfrage zurück", async () => {

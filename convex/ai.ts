@@ -1149,6 +1149,34 @@ export const serializeAnalyticsMetadata = (
   return JSON.stringify(metadata);
 };
 
+export const resolvePostHogPersonProperties = (identity: {
+  analyticsGrantId?: string;
+  identityLabel?: string;
+  identityEmail?: string;
+  note?: string;
+  identityQuality?: string;
+}) => ({
+  ...(identity.analyticsGrantId
+    ? { analyticsGrantId: identity.analyticsGrantId }
+    : {}),
+  ...(identity.identityLabel
+    ? {
+        identityLabel: identity.identityLabel,
+        $name: identity.identityLabel,
+      }
+    : {}),
+  ...(identity.identityEmail
+    ? {
+        identityEmail: identity.identityEmail,
+        $email: identity.identityEmail,
+      }
+    : {}),
+  ...(identity.note ? { note: identity.note } : {}),
+  ...(identity.identityQuality
+    ? { identity_quality: identity.identityQuality }
+    : {}),
+});
+
 const stringifyForPostHog = (value: unknown) => {
   if (value === null || value === undefined) {
     return undefined;
@@ -1803,25 +1831,21 @@ const getGrantPostHogIdentity = async (
     },
   );
 
-  if (!identity.analyticsDistinctId || !identity.identityLabel) {
+  if (!identity.analyticsDistinctId) {
     return null;
   }
 
+  const personProperties = resolvePostHogPersonProperties({
+    analyticsGrantId: identity.analyticsGrantId,
+    identityLabel: identity.identityLabel,
+    identityEmail: identity.identityEmail,
+    note: identity.note,
+    identityQuality: identity.identityQuality,
+  });
+
   return {
     distinctId: identity.analyticsDistinctId,
-    personProperties: {
-      analyticsGrantId: identity.analyticsGrantId,
-      identityLabel: identity.identityLabel,
-      ...(identity.identityEmail
-        ? {
-            identityEmail: identity.identityEmail,
-            $email: identity.identityEmail,
-          }
-        : {}),
-      ...(identity.note ? { note: identity.note } : {}),
-      identity_quality: identity.identityQuality,
-      $name: identity.identityLabel,
-    },
+    ...(Object.keys(personProperties).length > 0 ? { personProperties } : {}),
   };
 };
 

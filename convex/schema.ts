@@ -52,7 +52,9 @@ export default defineSchema({
     identityLabel: v.optional(v.string()),
     identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
-  }).index("by_normalizedCode", ["normalizedCode"]),
+  })
+    .index("by_normalizedCode", ["normalizedCode"])
+    .index("by_consumedByGrantId", ["consumedByGrantId"]),
 
   /** Aktive Zugriffsberechtigungen (Tokens), die einem Browser zugeordnet sind */
   accessGrants: defineTable({
@@ -62,7 +64,9 @@ export default defineSchema({
     identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
     revokedAt: v.optional(v.number()),
-  }).index("by_token", ["token"]),
+  })
+    .index("by_token", ["token"])
+    .index("by_createdAt", ["createdAt"]),
 
   /** Eine Lern-Sitzung, die mehrere Dokumente und mehrere Quiz-Batches umfasst. */
   studySessions: defineTable({

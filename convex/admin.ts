@@ -5,13 +5,51 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./errorTracking";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { assertAdminSecret } from "./adminAuth";
 import { deleteManagedFile } from "./fileStorage";
 import {
   assertMeaningfulIdentityLabel,
+  hasMeaningfulIdentityLabel,
   normalizeIdentityEmail,
+  normalizeIdentityLabel,
 } from "../shared/identity";
+
+const LEGACY_GRANT_IDENTITY_LABEL = "Unbekannte Nutzerkennung";
+const SAMPLE_LIMIT = 10;
+
+type BackfillSnapshot = {
+  identityLabel?: string;
+  identityEmail?: string;
+  note?: string;
+};
+
+const buildLegacyGrantIdentityLabel = (grantId: Id<"accessGrants">) =>
+  `${LEGACY_GRANT_IDENTITY_LABEL} (${grantId})`;
+
+const normalizeMeaningfulIdentityLabel = (value: string | undefined) => {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = normalizeIdentityLabel(value);
+  return hasMeaningfulIdentityLabel(normalized) ? normalized : undefined;
+};
+
+const normalizeOptionalIdentityEmail = (value: string | undefined) => {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = normalizeIdentityEmail(value);
+  return normalized ? normalized : undefined;
+};
+
+const normalizeOptionalNote = (value: string | undefined) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
 
 const resolveTarget = async (
   ctx: QueryCtx | MutationCtx,
@@ -296,6 +334,158 @@ export const backfillQuizResponseMisunderstanding = mutation({
       scanned,
       patched,
       limit: effectiveLimit,
+    };
+  },
+});
+
+export const backfillGrantAnalyticsIdentity = mutation({
+  args: {
+    adminSecret: v.string(),
+    dryRun: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    assertAdminSecret(args.adminSecret);
+
+    const dryRun = args.dryRun ?? false;
+    const page = await ctx.db
+      .query("accessGrants")
+      .withIndex("by_createdAt")
+      .order("asc")
+      .paginate(args.paginationOpts);
+
+    let scanned = 0;
+    let updated = 0;
+    let labelsBackfilled = 0;
+    let emailsBackfilled = 0;
+    let notesBackfilled = 0;
+    let skipped = 0;
+    const samples: Array<{
+      grantId: string;
+      before: BackfillSnapshot;
+      after: BackfillSnapshot;
+    }> = [];
+    const incompleteSamples: Array<{
+      grantId: string;
+      reason: string;
+      before: BackfillSnapshot;
+      after: BackfillSnapshot;
+    }> = [];
+
+    for (const grant of page.page) {
+      scanned += 1;
+
+      const relatedAccessCode = await ctx.db
+        .query("accessCodes")
+        .withIndex("by_consumedByGrantId", (q) =>
+          q.eq("consumedByGrantId", grant._id),
+        )
+        .order("asc")
+        .first();
+
+      const before: BackfillSnapshot = {
+        identityLabel: grant.identityLabel,
+        identityEmail: grant.identityEmail,
+        note: grant.note,
+      };
+
+      const currentLabel = normalizeMeaningfulIdentityLabel(grant.identityLabel);
+      const accessCodeLabel = normalizeMeaningfulIdentityLabel(
+        relatedAccessCode?.identityLabel,
+      );
+      const nextLabel =
+        currentLabel ??
+        accessCodeLabel ??
+        buildLegacyGrantIdentityLabel(grant._id);
+
+      const currentEmail = normalizeOptionalIdentityEmail(grant.identityEmail);
+      const accessCodeEmail = normalizeOptionalIdentityEmail(
+        relatedAccessCode?.identityEmail,
+      );
+      const nextEmail = currentEmail ?? accessCodeEmail;
+
+      const currentNote = normalizeOptionalNote(grant.note);
+      const accessCodeNote = normalizeOptionalNote(relatedAccessCode?.note);
+      const nextNote = currentNote ?? accessCodeNote;
+
+      const patch: Record<string, string> = {};
+      let grantUpdated = false;
+
+      if (nextLabel !== grant.identityLabel) {
+        patch.identityLabel = nextLabel;
+        labelsBackfilled += 1;
+        grantUpdated = true;
+      }
+
+      if (nextEmail && nextEmail !== grant.identityEmail) {
+        patch.identityEmail = nextEmail;
+        emailsBackfilled += 1;
+        grantUpdated = true;
+      }
+
+      if (nextNote && nextNote !== grant.note) {
+        patch.note = nextNote;
+        notesBackfilled += 1;
+        grantUpdated = true;
+      }
+
+      const after: BackfillSnapshot = {
+        identityLabel: nextLabel,
+        ...(nextEmail ? { identityEmail: nextEmail } : {}),
+        ...(nextNote ? { note: nextNote } : {}),
+      };
+
+      if (!normalizeMeaningfulIdentityLabel(after.identityLabel)) {
+        if (incompleteSamples.length < SAMPLE_LIMIT) {
+          incompleteSamples.push({
+            grantId: grant._id,
+            reason: "identityLabel fehlt weiterhin",
+            before,
+            after,
+          });
+        }
+      }
+
+      if (!grantUpdated) {
+        skipped += 1;
+        continue;
+      }
+
+      if (!dryRun) {
+        await ctx.db.patch(grant._id, patch);
+      }
+
+      updated += 1;
+
+      if (samples.length < SAMPLE_LIMIT) {
+        samples.push({
+          grantId: grant._id,
+          before,
+          after,
+        });
+      }
+    }
+
+    if (incompleteSamples.length > 0) {
+      console.warn("Grant-Analytics-Backfill konnte nicht alle Felder füllen.", {
+        scanned,
+        updated,
+        incompleteSamples,
+      });
+    }
+
+    return {
+      scanned,
+      updated,
+      labelsBackfilled,
+      emailsBackfilled,
+      notesBackfilled,
+      skipped,
+      dryRun,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+      samples,
+      incompleteSamples,
     };
   },
 });

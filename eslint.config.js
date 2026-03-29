@@ -20,6 +20,10 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2021,
       globals: globals.browser,
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
   },
   react.configs.flat.recommended,

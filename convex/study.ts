@@ -172,7 +172,7 @@ const ensureSessionOwnership = async (
   sessionId: Id<"studySessions">,
   grantId: Id<"accessGrants">,
 ) => {
-  const session = await ctx.db.get(sessionId);
+  const session = await ctx.db.get("studySessions", sessionId);
   if (!session) {
     throw new Error("Lernsitzung nicht gefunden.");
   }
@@ -301,7 +301,7 @@ export const getSessionSnapshot = query({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ctx.db.get(args.sessionId);
+    const session = await ctx.db.get("studySessions", args.sessionId);
 
     if (!session || session.grantId !== grant._id) {
       return null;
@@ -494,7 +494,7 @@ export const removeDocument = mutation({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
-    const document = await ctx.db.get(args.documentId);
+    const document = await ctx.db.get("sessionDocuments", args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
@@ -510,7 +510,7 @@ export const removeDocument = mutation({
       );
     }
 
-    await ctx.db.delete(args.documentId);
+    await ctx.db.delete("sessionDocuments", args.documentId);
   },
 });
 
@@ -524,7 +524,7 @@ export const setFocusTopics = mutation({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
-    await ctx.db.patch(args.sessionId, {
+    await ctx.db.patch("studySessions", args.sessionId, {
       focusTopics: args.focusTopics,
       updatedAt: Date.now(),
     });
@@ -543,7 +543,7 @@ export const createDocumentDownloadUrl = mutation({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
-    const document = await ctx.db.get(args.documentId);
+    const document = await ctx.db.get("sessionDocuments", args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
@@ -578,7 +578,7 @@ export const getDocumentExtractionContext = internalQuery({
     const grant = await ensureGrant(ctx, args.grantToken);
     await ensureSessionOwnership(ctx, args.sessionId, grant._id);
 
-    const document = await ctx.db.get(args.documentId);
+    const document = await ctx.db.get("sessionDocuments", args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
       throw new Error("Dokument gehört nicht zu dieser Sitzung.");
     }
@@ -620,7 +620,7 @@ export const setDocumentExtractionResult = internalMutation({
       patch.extractionError = args.extractionError;
     }
 
-    await ctx.db.patch(args.documentId, {
+    await ctx.db.patch("sessionDocuments", args.documentId, {
       ...patch,
     });
   },
@@ -671,7 +671,7 @@ export const storeGeneratedQuiz = internalMutation({
     incrementRound: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
+    const session = await ctx.db.get("studySessions", args.sessionId);
     if (!session) {
       throw new Error("Lernsitzung nicht gefunden.");
     }
@@ -708,7 +708,7 @@ export const storeGeneratedQuiz = internalMutation({
       ? newUniqueQuestions
       : [...session.quizQuestions, ...newUniqueQuestions];
 
-    await ctx.db.patch(args.sessionId, {
+    await ctx.db.patch("studySessions", args.sessionId, {
       stage: "quiz",
       round: nextRound,
       sourceSummary: args.sourceSummary,
@@ -781,14 +781,12 @@ export const storeQuizResponse = internalMutation({
       )
       .first();
 
-      if (existing) {
+    if (existing) {
       const misunderstanding =
         args.misunderstanding ??
-        (args.isCorrect
-          ? "Kein spezifisches Missverständnis"
-          : "Keine Angabe");
+        (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
 
-      await ctx.db.patch(existing._id, {
+      await ctx.db.patch("quizResponses", existing._id, {
         topic: args.topic,
         prompt: args.prompt,
         userAnswer: args.userAnswer,
@@ -805,9 +803,7 @@ export const storeQuizResponse = internalMutation({
 
     const misunderstanding =
       args.misunderstanding ??
-      (args.isCorrect
-        ? "Kein spezifisches Missverständnis"
-        : "Keine Angabe");
+      (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
 
     await ctx.db.insert("quizResponses", {
       sessionId: args.sessionId,
@@ -897,7 +893,7 @@ export const storeSessionAnalysis = internalMutation({
     analysis: analysisValidator,
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.sessionId, {
+    await ctx.db.patch("studySessions", args.sessionId, {
       stage: "analysis",
       analysis: args.analysis,
       updatedAt: Date.now(),

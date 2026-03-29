@@ -57,7 +57,7 @@ export const redeemAccessCode = mutation({
           createdAt: now,
           note: "Auto-seeded demo code for local development",
         });
-        accessCode = await ctx.db.get(seededId);
+        accessCode = await ctx.db.get("accessCodes", seededId);
       }
     }
 
@@ -77,7 +77,7 @@ export const redeemAccessCode = mutation({
       createdAt: now,
     });
 
-    await ctx.db.patch(accessCode._id, {
+    await ctx.db.patch("accessCodes", accessCode._id, {
       consumedAt: now,
       consumedByGrantId: grantId,
     });
@@ -121,7 +121,7 @@ export const consumeMagicLink = mutation({
 
     // 4. DELETE everything immediately
     // Delete the magic link itself
-    await ctx.db.delete(accessToken._id);
+    await ctx.db.delete("accessCodes", accessToken._id);
 
     // Return the session token. The 'obfuscatedCodes' are returned
     // just for front-end feedback, they no longer exist in the DB.

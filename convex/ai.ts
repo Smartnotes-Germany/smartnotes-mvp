@@ -237,7 +237,7 @@ function normalizeDontKnowExplanation(
 }
 
 const answerEvaluationFieldRules = [
-  'Antworte ausschließlich als JSON-Objekt ohne Markdown oder Code-Fences.',
+  "Antworte ausschließlich als JSON-Objekt ohne Markdown oder Code-Fences.",
   'Pflichtfelder: "isCorrect" (boolean), "score" (number 0-100), "explanation" (string), "idealAnswer" (string), "misunderstanding" (string).',
   'Das Feld "score" muss eine Zahl zwischen 0 und 100 sein.',
   'Wenn kein spezifisches Missverständnis erkennbar ist, setze "misunderstanding" auf "Kein spezifisches Missverständnis".',
@@ -2807,7 +2807,9 @@ Anforderungen:
           .map((response) =>
             previousQuestionPromptById.get(response.questionId),
           )
-          .filter((prompt): prompt is string => Boolean(prompt && prompt.length)),
+          .filter((prompt): prompt is string =>
+            Boolean(prompt && prompt.length),
+          ),
       );
       const previousFocusedPrompts = [...previousFocusedPromptSet].slice(0, 50);
       const avoidRepeatsInstruction =
@@ -2940,9 +2942,9 @@ Anforderungen:
       for (let attemptIndex = 0; attemptIndex < 3; attemptIndex += 1) {
         const attemptInstruction =
           attemptIndex === 0
-            ? [quizInstruction, avoidRepeatsInstruction].filter(Boolean).join(
-                "\n\n",
-              )
+            ? [quizInstruction, avoidRepeatsInstruction]
+                .filter(Boolean)
+                .join("\n\n")
             : `${quizInstruction}
 
 Korrektur zur vorherigen Ausgabe:

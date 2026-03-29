@@ -44,7 +44,10 @@ const resolveTarget = async (
     };
   }
 
-  const session = await ctx.db.get(args.sessionId as Id<"studySessions">);
+  const session = await ctx.db.get(
+    "studySessions",
+    args.sessionId as Id<"studySessions">,
+  );
   if (!session) {
     throw new Error("Lernsitzung wurde nicht gefunden.");
   }
@@ -158,7 +161,7 @@ export const deleteData = mutation({
           // Continue deleting DB records even if storage deletion fails.
         }
 
-        await ctx.db.delete(document._id);
+        await ctx.db.delete("sessionDocuments", document._id);
         deletedDocuments += 1;
       }
 
@@ -167,7 +170,7 @@ export const deleteData = mutation({
         .withIndex("by_session_round", (q) => q.eq("sessionId", session._id))
         .collect();
       for (const response of responses) {
-        await ctx.db.delete(response._id);
+        await ctx.db.delete("quizResponses", response._id);
         deletedResponses += 1;
       }
 
@@ -178,16 +181,16 @@ export const deleteData = mutation({
         )
         .collect();
       for (const event of analyticsEvents) {
-        await ctx.db.delete(event._id);
+        await ctx.db.delete("aiAnalyticsEvents", event._id);
         deletedAnalyticsEvents += 1;
       }
 
-      await ctx.db.delete(session._id);
+      await ctx.db.delete("studySessions", session._id);
       deletedSessions += 1;
     }
 
     if (target.grant) {
-      await ctx.db.patch(target.grant._id, {
+      await ctx.db.patch("accessGrants", target.grant._id, {
         token: `deleted-${crypto.randomUUID()}`,
         revokedAt: Date.now(),
       });
@@ -268,7 +271,7 @@ export const backfillQuizResponseMisunderstanding = mutation({
         ? "Kein spezifisches Missverständnis"
         : "Keine Angabe";
 
-      await ctx.db.patch(response._id, {
+      await ctx.db.patch("quizResponses", response._id, {
         misunderstanding: fallbackMisunderstanding,
         updatedAt: Date.now(),
       });

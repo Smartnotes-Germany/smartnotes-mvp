@@ -11,7 +11,7 @@ export const normalizePostHogHost = (value: string) => {
   return value;
 };
 
-export const isAbsoluteHttpUrl = (value: string) => {
+const isAbsoluteHttpUrl = (value: string) => {
   try {
     const parsedUrl = new URL(value);
     return parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:";

@@ -6,8 +6,9 @@ import {
   isPostHogHostValue,
   normalizePostHogHost,
 } from "../shared/posthogProxy";
+import type { PostHogAppArea } from "../shared/posthogRuntime";
 
-export const frontendEnv = createEnv({
+const frontendEnv = createEnv({
   clientPrefix: "VITE_",
   client: {
     VITE_CONVEX_URL: z.url("VITE_CONVEX_URL muss eine gültige URL sein."),
@@ -30,7 +31,7 @@ export const frontendEnv = createEnv({
 
 export const resolvedFrontendEnv = {
   convexUrl: frontendEnv.VITE_CONVEX_URL,
-  appArea: "app" as const,
+  appArea: "app" as PostHogAppArea,
   posthog: {
     key: frontendEnv.VITE_POSTHOG_KEY,
     host: normalizePostHogHost(

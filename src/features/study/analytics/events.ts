@@ -2,7 +2,7 @@ import { isPostHogEnabled, posthogClient } from "./posthogClient";
 
 type AnalyticsValue = string | number | boolean;
 type AnalyticsProperties = Record<string, AnalyticsValue | undefined>;
-export type AuthSource = "manual_code" | "magic_link";
+type AuthSource = "manual_code" | "magic_link";
 
 export type AnalyticsStage =
   | "auth"

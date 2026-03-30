@@ -1,3 +1,17 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/snph/static/:path(.*)",
+      "destination": "https://eu-assets.i.posthog.com/static/:path"
+    },
+    {
+      "source": "/snph/:path(.*)",
+      "destination": "https://eu.i.posthog.com/:path"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }

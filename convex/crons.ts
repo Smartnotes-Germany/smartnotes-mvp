@@ -7,10 +7,17 @@ const runDailyRetentionRef = makeFunctionReference<
     redactedDocuments: number;
     redactedResponses: number;
     deletedAnalyticsEvents: number;
+    deletedPostHogOutboxEvents: number;
     deletedManagedFiles: number;
     batches: number;
   }
 >("retention:runDailyRetention");
+
+const processPostHogOutboxRef = makeFunctionReference<
+  "action",
+  { limit?: number },
+  { processed: number }
+>("analyticsPosthog:processPostHogOutbox");
 
 const crons = cronJobs();
 
@@ -22,6 +29,17 @@ crons.daily(
   },
   runDailyRetentionRef,
   {},
+);
+
+crons.interval(
+  "posthog-outbox-delivery",
+  {
+    minutes: 1,
+  },
+  processPostHogOutboxRef,
+  {
+    limit: 50,
+  },
 );
 
 export default crons;

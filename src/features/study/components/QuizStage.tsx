@@ -6,7 +6,9 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
+import { useFeatureFlagVariantKey } from "@posthog/react";
 import type { FeedbackState, QuizQuestion } from "../types";
+import { ANALYTICS_FEATURE_FLAGS } from "../analytics";
 
 type QuizStageProps = {
   currentQuestion: QuizQuestion | null;
@@ -67,6 +69,11 @@ export function QuizStage({
         : feedback.score > 0
           ? "partial"
           : "incorrect";
+
+  const analysisCtaVariant = useFeatureFlagVariantKey(
+    ANALYTICS_FEATURE_FLAGS.analysisCtaVariant,
+  );
+  const useCompactAnalysisCopy = analysisCtaVariant === "kompakt";
 
   const progressPercentage = Math.min(
     100,
@@ -304,7 +311,9 @@ export function QuizStage({
                     <ArrowRight size={20} className="md:h-[22px] md:w-[22px]" />
                   )}
                   {shouldContinueToAnalysis
-                    ? "Weiter zur Lernanalyse"
+                    ? useCompactAnalysisCopy
+                      ? "Analyse erstellen"
+                      : "Weiter zur Lernanalyse"
                     : "Nächste Frage"}
                 </button>
               </div>

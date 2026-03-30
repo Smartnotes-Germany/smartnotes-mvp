@@ -9,6 +9,14 @@ import {
 } from "../../../../shared/uploadPolicy";
 import { topicsMatchForFocusMode } from "../../../../shared/topicMatching";
 import type { QuizQuestion, StudyDocument, StudySessionId } from "../types";
+import {
+  trackAnalysisFailed,
+  trackAnalysisRequested,
+  trackAnalysisSucceeded,
+  trackDeepDiveFailed,
+  trackDeepDiveRequested,
+  trackDeepDiveSucceeded,
+} from "../analytics";
 
 type UseAnalysisFlowArgs = {
   grantToken: string | null;
@@ -17,6 +25,8 @@ type UseAnalysisFlowArgs = {
   quizQuestions: QuizQuestion[];
   currentFocusTopic?: string | null;
   hasExistingAnalysis: boolean;
+  answeredQuestions?: number;
+  totalQuestions?: number;
 };
 
 export function useAnalysisFlow({
@@ -26,6 +36,8 @@ export function useAnalysisFlow({
   quizQuestions,
   currentFocusTopic,
   hasExistingAnalysis,
+  answeredQuestions,
+  totalQuestions,
 }: UseAnalysisFlowArgs) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -39,6 +51,7 @@ export function useAnalysisFlow({
       return;
     }
 
+    const startedAt = Date.now();
     const normalizedFocusTopic = currentFocusTopic?.trim() ?? "";
     const hasFocusTopic = normalizedFocusTopic.length > 0;
     const matchingQuestionCount = hasFocusTopic
@@ -56,6 +69,7 @@ export function useAnalysisFlow({
     const clientRequestId = createClientRequestId("analyzePerformance");
     setIsAnalyzing(true);
     setAnalysisError(null);
+    trackAnalysisRequested({ answeredQuestions, totalQuestions });
 
     try {
       await analyzePerformance({
@@ -65,7 +79,15 @@ export function useAnalysisFlow({
         ...(shouldRunFocusAnalysis ? { focusTopic: normalizedFocusTopic } : {}),
         clientRequestId,
       });
+      trackAnalysisSucceeded(Date.now() - startedAt, {
+        answeredQuestions,
+        totalQuestions,
+      });
     } catch (error: unknown) {
+      trackAnalysisFailed(Date.now() - startedAt, {
+        answeredQuestions,
+        totalQuestions,
+      });
       setAnalysisError(
         formatError(error, {
           fallback:
@@ -79,10 +101,12 @@ export function useAnalysisFlow({
   }, [
     analyzePerformance,
     currentFocusTopic,
+    answeredQuestions,
     grantToken,
     hasExistingAnalysis,
     quizQuestions,
     sessionId,
+    totalQuestions,
   ]);
 
   const deepDiveTopic = useCallback(
@@ -111,19 +135,24 @@ export function useAnalysisFlow({
         return;
       }
 
+      const startedAt = Date.now();
       const clientRequestId = createClientRequestId("generateDeepDive");
       setTopicLoading(topic);
       setAnalysisError(null);
+      trackDeepDiveRequested(topic.length);
 
       try {
-        await generateFocusedQuiz({
+        const result = (await generateFocusedQuiz({
           grantToken,
           sessionId,
           focusTopics: [topic],
           questionsPerTopic: 5,
           clientRequestId,
-        });
+        })) as { questionCount?: number };
+
+        trackDeepDiveSucceeded(Date.now() - startedAt, result.questionCount);
       } catch (error: unknown) {
+        trackDeepDiveFailed(Date.now() - startedAt);
         setAnalysisError(
           formatError(error, {
             fallback:

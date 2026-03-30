@@ -1,5 +1,6 @@
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./errorTracking";
+import { readOptionalEnv } from "./env";
 
 export type StorageProvider = "convex" | "r2";
 
@@ -35,8 +36,9 @@ const STORAGE_PROVIDER_VALUES = new Set<StorageProvider>(["convex", "r2"]);
 const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
 export const getConfiguredStorageProvider = (): StorageProvider => {
-  const configuredValue =
-    process.env.FILE_STORAGE_PROVIDER?.trim().toLowerCase();
+  const configuredValue = readOptionalEnv(
+    "FILE_STORAGE_PROVIDER",
+  )?.toLowerCase();
   if (!configuredValue) {
     return "r2";
   }
@@ -51,10 +53,10 @@ export const getConfiguredStorageProvider = (): StorageProvider => {
 };
 
 export const getR2ConfigOrThrow = (): R2Config => {
-  const accountId = process.env.R2_ACCOUNT_ID?.trim();
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
-  const bucketName = process.env.R2_BUCKET_NAME?.trim();
+  const accountId = readOptionalEnv("R2_ACCOUNT_ID");
+  const accessKeyId = readOptionalEnv("R2_ACCESS_KEY_ID");
+  const secretAccessKey = readOptionalEnv("R2_SECRET_ACCESS_KEY");
+  const bucketName = readOptionalEnv("R2_BUCKET_NAME");
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
     throw new Error(

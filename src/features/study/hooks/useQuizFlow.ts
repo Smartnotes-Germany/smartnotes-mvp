@@ -3,12 +3,20 @@ import { useAction } from "convex/react";
 import { evaluateAnswerRef } from "../convexRefs";
 import { createClientRequestId, formatError } from "../errorUtils";
 import type { FeedbackState, QuizQuestion, StudySessionId } from "../types";
+import {
+  trackQuizAnswerEvaluated,
+  trackQuizAnswerEvaluationFailed,
+  trackQuizAnswerSubmitted,
+  trackQuizQuestionViewed,
+} from "../analytics";
 
 type UseQuizFlowArgs = {
   grantToken: string | null;
   sessionId: StudySessionId | null;
   currentQuestion: QuizQuestion | null;
   isQuizActive: boolean;
+  answeredQuestions?: number;
+  totalQuestions?: number;
 };
 
 export function useQuizFlow({
@@ -16,6 +24,8 @@ export function useQuizFlow({
   sessionId,
   currentQuestion,
   isQuizActive,
+  answeredQuestions,
+  totalQuestions,
 }: UseQuizFlowArgs) {
   const [answerInput, setAnswerInput] = useState("");
   const [displayQuestion, setDisplayQuestion] = useState<QuizQuestion | null>(
@@ -31,6 +41,8 @@ export function useQuizFlow({
   });
   const latestQuestionRef = useRef(currentQuestion);
   const lastQuestionIdRef = useRef<string | null>(currentQuestion?.id ?? null);
+  const seenQuestionIdsRef = useRef(new Set<string>());
+  const progressRef = useRef({ answeredQuestions, totalQuestions });
 
   const evaluateAnswer = useAction(evaluateAnswerRef);
 
@@ -46,9 +58,14 @@ export function useQuizFlow({
   }, [currentQuestion]);
 
   useEffect(() => {
+    progressRef.current = { answeredQuestions, totalQuestions };
+  }, [answeredQuestions, totalQuestions]);
+
+  useEffect(() => {
     setAnswerInput("");
     setDisplayQuestion(null);
     lastQuestionIdRef.current = null;
+    seenQuestionIdsRef.current.clear();
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);
@@ -63,6 +80,7 @@ export function useQuizFlow({
     setAnswerInput("");
     setDisplayQuestion(null);
     lastQuestionIdRef.current = null;
+    seenQuestionIdsRef.current.clear();
     setFeedback(null);
     setQuizError(null);
     setIsSubmittingAnswer(false);
@@ -80,6 +98,15 @@ export function useQuizFlow({
       setAnswerInput("");
       setQuestionStartedAt(Date.now());
       lastQuestionIdRef.current = questionId;
+
+      if (
+        currentQuestion?.id &&
+        !seenQuestionIdsRef.current.has(currentQuestion.id)
+      ) {
+        seenQuestionIdsRef.current.add(currentQuestion.id);
+        trackQuizQuestionViewed(progressRef.current);
+      }
+
       return;
     }
 
@@ -89,8 +116,18 @@ export function useQuizFlow({
       return;
     }
 
+    if (!currentQuestion?.id) {
+      return;
+    }
+
+    if (seenQuestionIdsRef.current.has(currentQuestion.id)) {
+      return;
+    }
+
     setDisplayQuestion(currentQuestion);
-  }, [currentQuestion, feedback, isSubmittingAnswer]);
+    seenQuestionIdsRef.current.add(currentQuestion.id);
+    trackQuizQuestionViewed(progressRef.current);
+  }, [currentQuestion?.id, currentQuestion, feedback, isSubmittingAnswer]);
 
   const submitAnswer = useCallback(
     async (dontKnowSubmission: boolean = false) => {
@@ -112,12 +149,18 @@ export function useQuizFlow({
       setDisplayQuestion(submittedQuestion);
       setIsSubmittingAnswer(true);
       setQuizError(null);
+      const evaluationStartedAt = Date.now();
 
       try {
         const timeSpentSeconds = Math.max(
           1,
           Math.round((Date.now() - questionStartedAt) / 1000),
         );
+
+        trackQuizAnswerSubmitted(timeSpentSeconds, dontKnowSubmission, {
+          answeredQuestions,
+          totalQuestions,
+        });
 
         const result = await evaluateAnswer({
           grantToken,
@@ -141,6 +184,16 @@ export function useQuizFlow({
           ...result,
           answeredWithDontKnow: dontKnowSubmission,
         });
+        trackQuizAnswerEvaluated(
+          result.score,
+          Date.now() - evaluationStartedAt,
+          result.isCorrect,
+          dontKnowSubmission,
+          {
+            answeredQuestions,
+            totalQuestions,
+          },
+        );
       } catch (error: unknown) {
         const latestContext = latestSessionContextRef.current;
         if (
@@ -150,6 +203,14 @@ export function useQuizFlow({
           return;
         }
 
+        trackQuizAnswerEvaluationFailed(
+          Date.now() - evaluationStartedAt,
+          dontKnowSubmission,
+          {
+            answeredQuestions,
+            totalQuestions,
+          },
+        );
         setQuizError(
           formatError(error, {
             fallback:
@@ -173,8 +234,10 @@ export function useQuizFlow({
       currentQuestion,
       evaluateAnswer,
       grantToken,
+      answeredQuestions,
       questionStartedAt,
       sessionId,
+      totalQuestions,
     ],
   );
 

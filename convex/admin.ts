@@ -94,7 +94,7 @@ const resolveTarget = async (
     throw new Error("Lernsitzung wurde nicht gefunden.");
   }
 
-  const grant = await ctx.db.get(session.grantId);
+  const grant = await ctx.db.get("accessGrants", session.grantId);
 
   return {
     grant,
@@ -455,7 +455,7 @@ export const backfillGrantAnalyticsIdentity = mutation({
       }
 
       if (!dryRun) {
-        await ctx.db.patch(grant._id, patch);
+        await ctx.db.patch("accessGrants", grant._id, patch);
       }
 
       updated += 1;

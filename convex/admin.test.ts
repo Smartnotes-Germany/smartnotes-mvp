@@ -72,10 +72,10 @@ describe("convex/admin", () => {
     expect(latestSessionId).toBe(secondSessionId);
 
     const deletedSession = await t.run(async (ctx) =>
-      ctx.db.get(firstSessionId),
+      ctx.db.get("studySessions", firstSessionId),
     );
     const remainingSession = await t.run(async (ctx) =>
-      ctx.db.get(secondSessionId),
+      ctx.db.get("studySessions", secondSessionId),
     );
 
     expect(deletedSession).toBeNull();
@@ -143,7 +143,9 @@ describe("convex/admin", () => {
       },
     });
 
-    const patchedGrant = await t.run(async (ctx) => ctx.db.get(grantId));
+    const patchedGrant = await t.run(async (ctx) =>
+      ctx.db.get("accessGrants", grantId),
+    );
 
     expect(patchedGrant).toMatchObject({
       identityLabel: "Jakob Rössner",
@@ -188,7 +190,9 @@ describe("convex/admin", () => {
       },
     });
 
-    const unchangedGrant = await t.run(async (ctx) => ctx.db.get(grantId));
+    const unchangedGrant = await t.run(async (ctx) =>
+      ctx.db.get("accessGrants", grantId),
+    );
 
     expect(unchangedGrant?.token).toBe("legacy-dry-run-token");
     expect(unchangedGrant).not.toHaveProperty("identityLabel");
@@ -258,7 +262,9 @@ describe("convex/admin", () => {
       },
     });
 
-    const patchedGrant = await t.run(async (ctx) => ctx.db.get(grantId));
+    const patchedGrant = await t.run(async (ctx) =>
+      ctx.db.get("accessGrants", grantId),
+    );
 
     expect(patchedGrant).toMatchObject({
       identityLabel: "Jakob Rössner",

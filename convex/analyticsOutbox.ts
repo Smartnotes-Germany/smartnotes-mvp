@@ -103,7 +103,7 @@ export const markDelivered = internalMutation({
     deliveredAt: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.outboxId, {
+    await ctx.db.patch("posthogEventOutbox", args.outboxId, {
       deliveryStatus: "delivered",
       attemptCount: args.attemptCount,
       deliveredAt: args.deliveredAt,
@@ -129,7 +129,7 @@ export const markRetry = internalMutation({
       );
     }
 
-    await ctx.db.patch(args.outboxId, {
+    await ctx.db.patch("posthogEventOutbox", args.outboxId, {
       deliveryStatus: "retry",
       attemptCount: args.attemptCount,
       lastErrorMessage: args.lastErrorMessage,
@@ -147,7 +147,7 @@ export const markDeadLetter = internalMutation({
     now: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.outboxId, {
+    await ctx.db.patch("posthogEventOutbox", args.outboxId, {
       deliveryStatus: "dead_letter",
       attemptCount: args.attemptCount,
       lastErrorMessage: args.lastErrorMessage,

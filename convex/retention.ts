@@ -133,7 +133,7 @@ export const runRetentionBatch = internalMutation({
       .slice(0, args.batchSize);
 
     for (const event of eligibleOutboxEvents) {
-      await ctx.db.delete(event._id);
+      await ctx.db.delete("posthogEventOutbox", event._id);
     }
 
     const deletedPostHogOutboxEvents = eligibleOutboxEvents.length;

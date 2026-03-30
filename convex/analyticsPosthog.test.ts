@@ -155,7 +155,9 @@ describe("convex/analyticsPosthog delivery contract", () => {
     expect(requestBody.properties.$set).toMatchObject(personProperties);
     expect(requestBody.properties.$insert_id).toBe("insert-retry-1");
 
-    const storedEvent = await t.run(async (ctx) => await ctx.db.get(outboxId));
+    const storedEvent = await t.run(async (ctx) =>
+      await ctx.db.get("posthogEventOutbox", outboxId),
+    );
 
     expect(storedEvent).toMatchObject({
       deliveryStatus: "delivered",

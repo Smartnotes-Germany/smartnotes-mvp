@@ -1,4 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["only-allow"],
+  "ignoreDependencies": ["@total-typescript/ts-reset"],
+  "ignoreFiles": ["reset.d.ts"],
   "tags": ["-lintignore"]
 }

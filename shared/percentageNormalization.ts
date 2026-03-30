@@ -3,7 +3,7 @@ export type PercentageScale = "percent" | "fraction";
 export const clampPercentage = (value: number) =>
   Math.round(Math.max(0, Math.min(100, value)));
 
-export const isFractionalPercentageValue = (value: number) =>
+const isFractionalPercentageValue = (value: number) =>
   Number.isFinite(value) && value > 0 && value < 1 && !Number.isInteger(value);
 
 export const normalizePercentageValue = (value: number) =>

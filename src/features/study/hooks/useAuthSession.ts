@@ -11,7 +11,7 @@ import { STORAGE_KEYS } from "../constants";
 import { formatError } from "../errorUtils";
 import type { GrantStatus, StudySessionId } from "../types";
 
-export type AuthSessionReturn = {
+type AuthSessionReturn = {
   grantToken: string | null;
   sessionId: StudySessionId | null;
   grantStatus: GrantStatus | undefined;

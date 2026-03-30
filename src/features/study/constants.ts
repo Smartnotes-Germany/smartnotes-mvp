@@ -2,7 +2,6 @@ import type { ThemePreference } from "./types";
 import {
   ACCEPTED_FILE_TYPES,
   ACCEPTED_FILE_TYPES_LABEL,
-  MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
 } from "../../../shared/uploadPolicy";
 
@@ -21,6 +20,5 @@ export const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 export {
   ACCEPTED_FILE_TYPES,
   ACCEPTED_FILE_TYPES_LABEL,
-  MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_LABEL,
 };

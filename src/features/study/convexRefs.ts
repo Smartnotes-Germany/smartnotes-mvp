@@ -26,5 +26,3 @@ export const generateFocusedQuizRef = api.ai.generateFocusedQuiz;
 export const evaluateAnswerRef = api.ai.evaluateAnswer;
 
 export const analyzePerformanceRef = api.ai.analyzePerformance;
-
-export const generateTopicDeepDiveRef = api.ai.generateTopicDeepDive;

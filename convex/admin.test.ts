@@ -223,7 +223,9 @@ describe("convex/admin", () => {
 
       const grant = await ctx.db
         .query("accessGrants")
-        .withIndex("by_token", (q) => q.eq("token", "legacy-whitespace-email-token"))
+        .withIndex("by_token", (q) =>
+          q.eq("token", "legacy-whitespace-email-token"),
+        )
         .first();
 
       if (!grant) {

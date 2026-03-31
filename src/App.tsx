@@ -77,7 +77,7 @@ function StudyApp() {
     () => snapshot?.documents ?? [],
     [snapshot?.documents],
   );
-  const responses = snapshot?.responses;
+  const answeredQuestionIds = snapshot?.answeredQuestionIds;
   const stats = snapshot?.stats ?? null;
   const readyDocumentCount = useMemo(
     () =>
@@ -93,11 +93,10 @@ function StudyApp() {
     }
   }, [snapshot, sessionId]);
 
-  const responseByQuestionId = useMemo(() => {
-    return new Map(
-      (responses ?? []).map((response) => [response.questionId, response]),
-    );
-  }, [responses]);
+  const answeredQuestionIdSet = useMemo(
+    () => new Set(answeredQuestionIds ?? []),
+    [answeredQuestionIds],
+  );
 
   const minQuestionsRequired = useMemo(() => {
     if (!session || !session.focusTopics || session.focusTopics.length === 0) {
@@ -125,13 +124,13 @@ function StudyApp() {
   }, [session]);
 
   const answeredQuestionsInFocus = useMemo(() => {
-    if (!session || !responses) {
+    if (!session) {
       return 0;
     }
 
     const focusTopics = session.focusTopics ?? [];
     return session.quizQuestions.filter((question) => {
-      if (!responseByQuestionId.has(question.id)) {
+      if (!answeredQuestionIdSet.has(question.id)) {
         return false;
       }
 
@@ -143,7 +142,7 @@ function StudyApp() {
         topicsMatchForFocusMode(question.topic, topic),
       );
     }).length;
-  }, [responseByQuestionId, responses, session]);
+  }, [answeredQuestionIdSet, session]);
 
   const activeTopic = useMemo(() => {
     if (!session || !session.focusTopics || session.focusTopics.length === 0) {
@@ -159,7 +158,7 @@ function StudyApp() {
       const hasUnanswered = session.quizQuestions.some(
         (q) =>
           topicsMatchForFocusMode(q.topic, topic) &&
-          !responseByQuestionId.has(q.id),
+          !answeredQuestionIdSet.has(q.id),
       );
 
       if (hasUnanswered) {
@@ -169,7 +168,7 @@ function StudyApp() {
 
     // If all topics are complete, there's no active topic
     return null;
-  }, [session, responseByQuestionId]);
+  }, [answeredQuestionIdSet, session]);
 
   const currentQuestion = useMemo(() => {
     if (!session || !activeTopic) {
@@ -183,7 +182,7 @@ function StudyApp() {
 
     return (
       session.quizQuestions.find((question) => {
-        if (responseByQuestionId.has(question.id)) {
+        if (answeredQuestionIdSet.has(question.id)) {
           return false;
         }
 
@@ -196,9 +195,9 @@ function StudyApp() {
     );
   }, [
     activeTopic,
+    answeredQuestionIdSet,
     answeredQuestionsInFocus,
     minQuestionsRequired,
-    responseByQuestionId,
     session,
   ]);
 

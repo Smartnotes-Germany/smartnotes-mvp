@@ -392,7 +392,9 @@ export const backfillGrantAnalyticsIdentity = mutation({
         note: grant.note,
       };
 
-      const currentLabel = normalizeMeaningfulIdentityLabel(grant.identityLabel);
+      const currentLabel = normalizeMeaningfulIdentityLabel(
+        grant.identityLabel,
+      );
       const accessCodeLabel = normalizeMeaningfulIdentityLabel(
         relatedAccessCode?.identityLabel,
       );
@@ -470,11 +472,14 @@ export const backfillGrantAnalyticsIdentity = mutation({
     }
 
     if (incompleteSamples.length > 0) {
-      console.warn("Grant-Analytics-Backfill konnte nicht alle Felder füllen.", {
-        scanned,
-        updated,
-        incompleteSamples,
-      });
+      console.warn(
+        "Grant-Analytics-Backfill konnte nicht alle Felder füllen.",
+        {
+          scanned,
+          updated,
+          incompleteSamples,
+        },
+      );
     }
 
     return {

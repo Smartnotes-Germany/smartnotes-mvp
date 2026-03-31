@@ -132,19 +132,19 @@ const findAccessCode = async (
     )
     .first();
 
-    if (!accessCode) {
-      const existingCode = await ctx.db.query("accessCodes").first();
-      if (!existingCode && normalizedCode === DEMO_ACCESS_CODE) {
-        const seededId = await ctx.db.insert("accessCodes", {
-          code: DEMO_ACCESS_CODE,
-          normalizedCode: DEMO_ACCESS_CODE,
-          createdAt: now,
-          identityLabel: "Lokale Demo",
-          note: "Auto-seeded demo code for local development",
-        });
-        accessCode = await ctx.db.get("accessCodes", seededId);
-      }
+  if (!accessCode) {
+    const existingCode = await ctx.db.query("accessCodes").first();
+    if (!existingCode && normalizedCode === DEMO_ACCESS_CODE) {
+      const seededId = await ctx.db.insert("accessCodes", {
+        code: DEMO_ACCESS_CODE,
+        normalizedCode: DEMO_ACCESS_CODE,
+        createdAt: now,
+        identityLabel: "Lokale Demo",
+        note: "Auto-seeded demo code for local development",
+      });
+      accessCode = await ctx.db.get("accessCodes", seededId);
     }
+  }
 
   return accessCode;
 };
@@ -177,15 +177,15 @@ const redeemStoredAccessCode = async (
     ...(identity.note ? { note: identity.note } : {}),
   });
 
-    await ctx.db.patch("accessCodes", accessCode._id, {
-      identityLabel: identity.identityLabel,
-      ...(identity.identityEmail
-          ? { identityEmail: identity.identityEmail }
-          : {}),
-      ...(identity.note ? { note: identity.note } : {}),
-      consumedAt: now,
-      consumedByGrantId: grantId,
-    });
+  await ctx.db.patch("accessCodes", accessCode._id, {
+    identityLabel: identity.identityLabel,
+    ...(identity.identityEmail
+      ? { identityEmail: identity.identityEmail }
+      : {}),
+    ...(identity.note ? { note: identity.note } : {}),
+    consumedAt: now,
+    consumedByGrantId: grantId,
+  });
 
   return {
     ok: true,

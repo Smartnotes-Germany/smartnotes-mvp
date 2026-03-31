@@ -168,6 +168,107 @@ const extractClientRequestId = (
     : null;
 };
 
+const areStringArraysEqual = (
+  left: string[] | undefined,
+  right: string[] | undefined,
+) => {
+  const resolvedLeft = left ?? [];
+  const resolvedRight = right ?? [];
+
+  if (resolvedLeft.length !== resolvedRight.length) {
+    return false;
+  }
+
+  return resolvedLeft.every((value, index) => value === resolvedRight[index]);
+};
+
+const areQuizQuestionsEqual = (
+  left: Array<{
+    id: string;
+    topic: string;
+    prompt: string;
+    idealAnswer: string;
+    explanationHint: string;
+  }>,
+  right: Array<{
+    id: string;
+    topic: string;
+    prompt: string;
+    idealAnswer: string;
+    explanationHint: string;
+  }>,
+) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((question, index) => {
+    const candidate = right[index];
+    return (
+      candidate?.id === question.id &&
+      candidate.topic === question.topic &&
+      candidate.prompt === question.prompt &&
+      candidate.idealAnswer === question.idealAnswer &&
+      candidate.explanationHint === question.explanationHint
+    );
+  });
+};
+
+const buildSessionSnapshot = (session: {
+  _id: Id<"studySessions">;
+  stage: "upload" | "quiz" | "analysis";
+  focusTopics?: string[];
+  sourceTopics: string[];
+  quizQuestions: Array<{
+    id: string;
+    topic: string;
+    prompt: string;
+    idealAnswer: string;
+    explanationHint: string;
+  }>;
+  analysis?: {
+    overallReadiness: number;
+    strongestTopics: string[];
+    weakestTopics: string[];
+    topics: Array<{
+      topic: string;
+      comfortScore: number;
+      rationale: string;
+      recommendation: string;
+    }>;
+    recommendedNextStep: string;
+  };
+}) => ({
+  _id: session._id,
+  stage: session.stage,
+  ...(session.focusTopics ? { focusTopics: session.focusTopics } : {}),
+  sourceTopics: session.sourceTopics,
+  quizQuestions: session.quizQuestions.map((question) => ({
+    id: question.id,
+    topic: question.topic,
+    prompt: question.prompt,
+  })),
+  ...(session.analysis ? { analysis: session.analysis } : {}),
+});
+
+const buildSessionDocumentSnapshot = (document: {
+  _id: Id<"sessionDocuments">;
+  fileName: string;
+  fileType: string;
+  fileSizeBytes: number;
+  extractionStatus: "pending" | "processing" | "ready" | "failed";
+  extractionError?: string;
+}) => ({
+  _id: document._id,
+  fileName: document.fileName,
+  fileType: document.fileType,
+  fileSizeBytes: document.fileSizeBytes,
+  extractionStatus: document.extractionStatus,
+  ...(document.extractionError
+    ? { extractionError: document.extractionError }
+    : {}),
+});
+
 const ensureGrant = async (
   ctx: QueryCtx | MutationCtx,
   grantToken: string,
@@ -357,16 +458,21 @@ export const getSessionSnapshot = query({
       )
       .collect();
 
+    const answeredQuestionIds = responses.map(
+      (response) => response.questionId,
+    );
+    const readyDocumentCount = documents.filter(
+      (doc) => doc.extractionStatus === "ready",
+    ).length;
+
     return {
-      session,
-      documents,
-      responses,
+      session: buildSessionSnapshot(session),
+      documents: documents.map(buildSessionDocumentSnapshot),
+      answeredQuestionIds,
       stats: {
         totalQuestions: session.quizQuestions.length,
-        answeredQuestions: responses.length,
-        readyDocuments: documents.filter(
-          (doc) => doc.extractionStatus === "ready",
-        ).length,
+        answeredQuestions: answeredQuestionIds.length,
+        readyDocuments: readyDocumentCount,
       },
     };
   },
@@ -559,7 +665,15 @@ export const setFocusTopics = mutation({
   },
   handler: async (ctx, args) => {
     const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const session = await ensureSessionOwnership(
+      ctx,
+      args.sessionId,
+      grant._id,
+    );
+
+    if (areStringArraysEqual(session.focusTopics, args.focusTopics)) {
+      return;
+    }
 
     await ctx.db.patch("studySessions", args.sessionId, {
       focusTopics: args.focusTopics,
@@ -639,6 +753,31 @@ export const setDocumentExtractionResult = internalMutation({
     extractionError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const existingDocument = await ctx.db.get(
+      "sessionDocuments",
+      args.documentId,
+    );
+    if (!existingDocument) {
+      throw new Error("Dokument wurde nicht gefunden.");
+    }
+
+    const hasStatusChanged =
+      existingDocument.extractionStatus !== args.extractionStatus;
+    const hasExtractedTextChanged =
+      args.extractedText !== undefined &&
+      existingDocument.extractedText !== args.extractedText;
+    const hasExtractionErrorChanged =
+      args.extractionError !== undefined &&
+      existingDocument.extractionError !== args.extractionError;
+
+    if (
+      !hasStatusChanged &&
+      !hasExtractedTextChanged &&
+      !hasExtractionErrorChanged
+    ) {
+      return;
+    }
+
     const now = Date.now();
     const patch: {
       extractionStatus: "processing" | "ready" | "failed";
@@ -713,9 +852,6 @@ export const storeGeneratedQuiz = internalMutation({
       throw new Error("Lernsitzung nicht gefunden.");
     }
 
-    const nextRound = args.incrementRound ? session.round + 1 : session.round;
-    const now = Date.now();
-
     // Merge source topics to keep all extracted topics throughout the session
     const updatedSourceTopics = [
       ...new Set([...session.sourceTopics, ...args.sourceTopics]),
@@ -745,17 +881,40 @@ export const storeGeneratedQuiz = internalMutation({
       ? newUniqueQuestions
       : [...session.quizQuestions, ...newUniqueQuestions];
 
+    const resolvedFocusTopics = args.focusTopics
+      ? args.focusTopics
+      : args.currentFocusTopic
+        ? [args.currentFocusTopic]
+        : session.focusTopics;
+    const hasQuestionSetChanged = !areQuizQuestionsEqual(
+      session.quizQuestions,
+      updatedQuestions,
+    );
+    const nextRound =
+      args.incrementRound && hasQuestionSetChanged
+        ? session.round + 1
+        : session.round;
+    const shouldSkipPatch =
+      session.stage === "quiz" &&
+      session.round === nextRound &&
+      session.sourceSummary === args.sourceSummary &&
+      areStringArraysEqual(session.sourceTopics, updatedSourceTopics) &&
+      areQuizQuestionsEqual(session.quizQuestions, updatedQuestions) &&
+      areStringArraysEqual(session.focusTopics, resolvedFocusTopics);
+
+    if (shouldSkipPatch) {
+      return;
+    }
+
+    const now = Date.now();
+
     await ctx.db.patch("studySessions", args.sessionId, {
       stage: "quiz",
       round: nextRound,
       sourceSummary: args.sourceSummary,
       sourceTopics: updatedSourceTopics,
       quizQuestions: updatedQuestions,
-      ...(args.focusTopics
-        ? { focusTopics: args.focusTopics }
-        : args.currentFocusTopic
-          ? { focusTopics: [args.currentFocusTopic] }
-          : {}),
+      ...(resolvedFocusTopics ? { focusTopics: resolvedFocusTopics } : {}),
       updatedAt: now,
     });
   },
@@ -822,6 +981,21 @@ export const storeQuizResponse = internalMutation({
       const misunderstanding =
         args.misunderstanding ??
         (args.isCorrect ? "Kein spezifisches Missverständnis" : "Keine Angabe");
+
+      const shouldSkipPatch =
+        existing.topic === args.topic &&
+        existing.prompt === args.prompt &&
+        existing.userAnswer === args.userAnswer &&
+        existing.isCorrect === args.isCorrect &&
+        existing.score === args.score &&
+        existing.explanation === args.explanation &&
+        existing.idealAnswer === args.idealAnswer &&
+        existing.misunderstanding === misunderstanding &&
+        existing.timeSpentSeconds === args.timeSpentSeconds;
+
+      if (shouldSkipPatch) {
+        return;
+      }
 
       await ctx.db.patch("quizResponses", existing._id, {
         topic: args.topic,
@@ -930,6 +1104,18 @@ export const storeSessionAnalysis = internalMutation({
     analysis: analysisValidator,
   },
   handler: async (ctx, args) => {
+    const session = await ctx.db.get("studySessions", args.sessionId);
+    if (!session) {
+      throw new Error("Lernsitzung nicht gefunden.");
+    }
+
+    if (
+      session.stage === "analysis" &&
+      JSON.stringify(session.analysis) === JSON.stringify(args.analysis)
+    ) {
+      return;
+    }
+
     await ctx.db.patch("studySessions", args.sessionId, {
       stage: "analysis",
       analysis: args.analysis,

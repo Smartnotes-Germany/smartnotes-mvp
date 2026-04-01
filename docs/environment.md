@@ -45,6 +45,8 @@ Frontend proxy behavior:
 - In Vercel deployments, `vercel.json` rewrites `/snph/*` to `https://eu.i.posthog.com/*`.
 - In local Vite dev and `vite preview`, the same `/snph` path is proxied through `server.proxy` / `preview.proxy`.
 - If you override `VITE_POSTHOG_HOST` with an absolute URL, browser traffic bypasses the local proxy and Vercel rewrites.
+- Local `pnpm dev` is fixed to `http://localhost:5173`; local `pnpm preview` is fixed to `http://localhost:4173`.
+- Local file uploads are sent through a Vite proxy on the same origin before they are forwarded to Convex or R2. This avoids browser-specific CORS failures during development.
 
 Frontend PostHog runtime behavior:
 

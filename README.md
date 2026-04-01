@@ -143,6 +143,12 @@ The source-map upload variables are validated as a pair:
 pnpm dev
 ```
 
+Lokale Entwicklungs-URL:
+
+- `pnpm dev` läuft fest auf `http://localhost:5173`
+- `pnpm preview` läuft fest auf `http://localhost:4173`
+- Datei-Uploads laufen lokal über einen Vite-Proxy auf derselben Origin, damit Browser nicht direkt gegen externe Storage-CORS-Regeln laufen
+
 ## Access Codes
 
 - The app has no classic account system, but access is no longer anonymous.
@@ -162,11 +168,12 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 
 ## Scripts
 
-- `pnpm dev` - start Vite + Convex dev server
+- `pnpm dev` - start Vite + Convex dev server on `http://localhost:5173`
 - `pnpm build` - typecheck + production build
 - `pnpm lint` - run ESLint
 - `pnpm format` - format code with Prettier
 - `pnpm format:check` - check code formatting
+- `pnpm preview` - preview the production build locally on `http://localhost:4173`
 - `pnpm test:once` - run the Vitest suite once
 - `pnpm observability:debug-window:start -- --minutes 45` - set debug-window env vars for bounded troubleshooting
 - `pnpm observability:debug-window:stop` - clear debug-window env vars immediately
@@ -303,5 +310,5 @@ ORDER BY scope, status;
   - analysis failure rate threshold
   - quiz generation failure threshold
 
-See `docs/observability-balanced-mode.md` for implementation details and admin operations.
+See `docs/observability-mode.md` for implementation details and admin operations.
 See `docs/posthog-proxy.md` for the full routing matrix, supported env combinations, and failure modes.

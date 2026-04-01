@@ -1,3 +1,21 @@
+const LOCAL_UPLOAD_PROXY_PATH = "/__smartnotes_dev__/upload";
+
+const isLocalDevelopmentHostname = (hostname: string) =>
+  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+
+const resolveUploadRequestUrl = (uploadUrl: string) => {
+  if (!isLocalDevelopmentHostname(window.location.hostname)) {
+    return uploadUrl;
+  }
+
+  const proxiedUploadUrl = new URL(
+    LOCAL_UPLOAD_PROXY_PATH,
+    window.location.origin,
+  );
+  proxiedUploadUrl.searchParams.set("target", uploadUrl);
+  return proxiedUploadUrl.toString();
+};
+
 export const uploadFileToManagedStorage = (
   uploadUrl: string,
   file: File,
@@ -10,7 +28,7 @@ export const uploadFileToManagedStorage = (
     const request = new XMLHttpRequest();
     request.open(
       options.storageProvider === "r2" ? "PUT" : "POST",
-      uploadUrl,
+      resolveUploadRequestUrl(uploadUrl),
       true,
     );
     request.timeout = 130000;

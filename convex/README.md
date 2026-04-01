@@ -8,7 +8,7 @@ Important current assumptions:
 - Backend PostHog capture is persisted to a Convex outbox first and only sent
   from Node actions, never from queries or mutations.
 - Treat the persisted outbox payload as the backend PostHog delivery contract.
-- If that contract changes, update `../docs/observability-balanced-mode.md` in
+- If that contract changes, update `../docs/observability-mode.md` in
   the same patch.
 - If an observability sink changes its stored payload contract, update the
   matching tests in the same patch as well.

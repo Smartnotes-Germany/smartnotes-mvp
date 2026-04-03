@@ -143,11 +143,11 @@ The source-map upload variables are validated as a pair:
 pnpm dev
 ```
 
-Lokale Entwicklungs-URL:
+Local development URLs:
 
-- `pnpm dev` läuft fest auf `http://localhost:5173`
-- `pnpm preview` läuft fest auf `http://localhost:4173`
-- Datei-Uploads laufen lokal über einen Vite-Proxy auf derselben Origin, damit Browser nicht direkt gegen externe Storage-CORS-Regeln laufen
+- `pnpm dev` is always running on `http://localhost:5173`
+- `pnpm preview` is always running on `http://localhost:4173`
+- File uploads always go over a Vite proxy on the same origin so that the browser doesn't run against external storage CORS rules
 
 ## Access Codes
 

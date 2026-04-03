@@ -151,7 +151,8 @@ Process only matching documents instead of the full table:
 ```typescript
 export const fixEmptyNames = migrations.define({
   table: "users",
-  customRange: (query) => query.withIndex("by_name", (q) => q.eq("name", "")),
+  customRange: (query) =>
+    query.withIndex("by_name", (q) => q.eq("name", "")),
   migrateOne: () => ({ name: "<unknown>" }),
 });
 ```

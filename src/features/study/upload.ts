@@ -1,4 +1,4 @@
-const LOCAL_UPLOAD_PROXY_PATH = "/__smartnotes_dev__/upload";
+import { DEV_UPLOAD_PROXY_PATH } from "../../../shared/uploadProxy";
 
 const normalizeHostname = (hostname: string) => {
   const normalizedHostname = hostname.trim().toLowerCase();
@@ -26,7 +26,7 @@ const resolveUploadRequest = (uploadUrl: string) => {
   }
 
   const proxiedUploadUrl = new URL(
-    LOCAL_UPLOAD_PROXY_PATH,
+    DEV_UPLOAD_PROXY_PATH,
     window.location.origin,
   );
   proxiedUploadUrl.searchParams.set("target", uploadUrl);

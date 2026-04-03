@@ -11,6 +11,7 @@ import {
   isRelativeProxyPath,
   normalizePostHogHost,
 } from "./shared/posthogProxy";
+import { DEV_UPLOAD_PROXY_PATH } from "./shared/uploadProxy";
 import { shouldForwardUploadProxyResponseHeader } from "./shared/uploadProxyResponseHeaders";
 
 const resolveBuildEnv = (mode: string) => {
@@ -66,7 +67,6 @@ const createProxyRewrite = (sourcePrefix: string, targetPrefix: string) => {
 const LOCAL_DEV_HOST = "localhost";
 const LOCAL_DEV_PORT = 5173;
 const LOCAL_PREVIEW_PORT = 4173;
-const DEV_UPLOAD_PROXY_PATH = "/__smartnotes_dev__/upload";
 
 const isAllowedUploadTarget = (target: string) => {
   try {

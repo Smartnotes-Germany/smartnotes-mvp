@@ -11,6 +11,7 @@ import {
   isRelativeProxyPath,
   normalizePostHogHost,
 } from "./shared/posthogProxy";
+import { shouldForwardUploadProxyResponseHeader } from "./shared/uploadProxyResponseHeaders";
 
 const resolveBuildEnv = (mode: string) => {
   const runtimeEnv = {
@@ -147,11 +148,7 @@ const createUploadProxyPlugin = (): Plugin => {
           res.statusCode = response.status;
 
           response.headers.forEach((value, key) => {
-            if (
-              key === "connection" ||
-              key === "keep-alive" ||
-              key === "transfer-encoding"
-            ) {
+            if (!shouldForwardUploadProxyResponseHeader(key)) {
               return;
             }
             res.setHeader(key, value);

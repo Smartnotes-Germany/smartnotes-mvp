@@ -193,7 +193,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `quizResponses.round` links each stored answer to the quiz batch it belongs to.
 - The UI uses the current round to decide which questions are still unanswered, while analysis can still inspect responses across multiple rounds in the same session.
 
-## Balanced Observability
+## Observability
 
 - AI calls are traced with Langfuse telemetry in `balanced` mode.
 - Langfuse captures full AI inputs and outputs for every traced backend call.
@@ -310,5 +310,5 @@ ORDER BY scope, status;
   - analysis failure rate threshold
   - quiz generation failure threshold
 
-See `docs/observability-mode.md` for implementation details and admin operations.
+See `docs/observability.md` for implementation details and admin operations.
 See `docs/posthog-proxy.md` for the full routing matrix, supported env combinations, and failure modes.

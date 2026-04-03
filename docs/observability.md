@@ -1,8 +1,8 @@
-# Observability Mode
+# Observability
 
 ## Goal
 
-Balanced mode keeps deep product and runtime insights to maximise the data collection and improve decision making.
+Observability keeps deep product and runtime insights to maximise the data collection and improve decision making.
 
 For the complete environment matrix and scope rules, see `docs/environment.md`.
 For frontend PostHog proxy routing behavior across prod and dev, see `docs/posthog-proxy.md`.

@@ -1,11 +1,28 @@
 const LOCAL_UPLOAD_PROXY_PATH = "/__smartnotes_dev__/upload";
 
-const isLocalDevelopmentHostname = (hostname: string) =>
-  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+const normalizeHostname = (hostname: string) => {
+  const normalizedHostname = hostname.trim().toLowerCase();
 
-const resolveUploadRequestUrl = (uploadUrl: string) => {
+  if (normalizedHostname.startsWith("[") && normalizedHostname.endsWith("]")) {
+    return normalizedHostname.slice(1, -1);
+  }
+
+  return normalizedHostname;
+};
+
+const isLocalDevelopmentHostname = (hostname: string) => {
+  const normalizedHostname = normalizeHostname(hostname);
+
+  return (
+    normalizedHostname === "localhost" ||
+    normalizedHostname === "127.0.0.1" ||
+    normalizedHostname === "::1"
+  );
+};
+
+const resolveUploadRequest = (uploadUrl: string) => {
   if (!isLocalDevelopmentHostname(window.location.hostname)) {
-    return uploadUrl;
+    return { requestUrl: uploadUrl, isLocalProxied: false };
   }
 
   const proxiedUploadUrl = new URL(
@@ -13,7 +30,42 @@ const resolveUploadRequestUrl = (uploadUrl: string) => {
     window.location.origin,
   );
   proxiedUploadUrl.searchParams.set("target", uploadUrl);
-  return proxiedUploadUrl.toString();
+  return { requestUrl: proxiedUploadUrl.toString(), isLocalProxied: true };
+};
+
+const extractErrorText = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+    return trimmedValue || null;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["reason", "message", "error", "detail"]) {
+    const nestedValue = extractErrorText(record[key]);
+    if (nestedValue) {
+      return nestedValue;
+    }
+  }
+
+  return null;
+};
+
+const getLocalProxyUploadErrorReason = (responseText: string) => {
+  const trimmedResponse = responseText.trim();
+  if (!trimmedResponse) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmedResponse) as unknown;
+    return extractErrorText(parsed) ?? trimmedResponse;
+  } catch {
+    return trimmedResponse;
+  }
 };
 
 export const uploadFileToManagedStorage = (
@@ -25,17 +77,24 @@ export const uploadFileToManagedStorage = (
   },
 ): Promise<{ storageId: string }> => {
   return new Promise((resolve, reject) => {
+    const { requestUrl, isLocalProxied } = resolveUploadRequest(uploadUrl);
     const request = new XMLHttpRequest();
     request.open(
       options.storageProvider === "r2" ? "PUT" : "POST",
-      resolveUploadRequestUrl(uploadUrl),
+      requestUrl,
       true,
     );
     request.timeout = 130000;
 
     request.onload = () => {
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error(`Upload fehlgeschlagen (${request.status}).`));
+        const proxyErrorReason = isLocalProxied
+          ? getLocalProxyUploadErrorReason(request.responseText ?? "")
+          : null;
+        const message = proxyErrorReason
+          ? `Upload fehlgeschlagen (${request.status}): ${proxyErrorReason}`
+          : `Upload fehlgeschlagen (${request.status}).`;
+        reject(new Error(message));
         return;
       }
 

@@ -88,7 +88,6 @@ export function useQuizFlow({
   }, [isQuizActive]);
 
   useEffect(() => {
-    setQuizError(null);
     const questionId = currentQuestion?.id ?? null;
     const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
 
@@ -97,6 +96,7 @@ export function useQuizFlow({
     }
 
     if (hasQuestionChanged) {
+      setQuizError(null);
       setFeedback(null);
       setDisplayQuestion(currentQuestion);
       setAnswerInput("");

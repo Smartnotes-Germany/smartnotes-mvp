@@ -92,6 +92,10 @@ export function useQuizFlow({
     const questionId = currentQuestion?.id ?? null;
     const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
 
+    if (hasQuestionChanged && (feedback || isSubmittingAnswer)) {
+      return;
+    }
+
     if (hasQuestionChanged) {
       setFeedback(null);
       setDisplayQuestion(currentQuestion);

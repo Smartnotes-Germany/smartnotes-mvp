@@ -247,6 +247,7 @@ export function useQuizFlow({
 
   const continueAfterFeedback = useCallback(() => {
     setFeedback(null);
+    setAnswerInput("");
     setDisplayQuestion(latestQuestionRef.current);
   }, []);
 

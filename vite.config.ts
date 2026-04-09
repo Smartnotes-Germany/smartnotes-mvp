@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import posthogRollupPlugin from "@posthog/rollup-plugin";
@@ -11,6 +11,8 @@ import {
   isRelativeProxyPath,
   normalizePostHogHost,
 } from "./shared/posthogProxy";
+import { DEV_UPLOAD_PROXY_PATH } from "./shared/uploadProxy";
+import { shouldForwardUploadProxyResponseHeader } from "./shared/uploadProxyResponseHeaders";
 
 const resolveBuildEnv = (mode: string) => {
   const runtimeEnv = {
@@ -59,6 +61,117 @@ const createProxyRewrite = (sourcePrefix: string, targetPrefix: string) => {
   return (path: string) => {
     const rewrittenPath = path.replace(sourcePattern, targetPrefix);
     return rewrittenPath.length > 0 ? rewrittenPath : "/";
+  };
+};
+
+const LOCAL_DEV_HOST = "localhost";
+const LOCAL_DEV_PORT = 5173;
+const LOCAL_PREVIEW_PORT = 4173;
+
+const isAllowedUploadTarget = (target: string) => {
+  try {
+    const url = new URL(target);
+    if (url.protocol !== "https:") {
+      return false;
+    }
+
+    return [".cloudflarestorage.com", ".convex.cloud", ".convex.site"].some(
+      (suffix) => url.hostname.endsWith(suffix),
+    );
+  } catch {
+    return false;
+  }
+};
+
+const createUploadProxyPlugin = (): Plugin => {
+  const registerMiddleware = (middlewares: {
+    use: (
+      handler: (
+        req: {
+          method?: string;
+          url?: string;
+          headers: Record<string, string | string[] | undefined>;
+        },
+        res: {
+          end: (body?: string | Buffer) => void;
+          setHeader: (name: string, value: string) => void;
+          statusCode: number;
+        },
+        next: () => void,
+      ) => void,
+    ) => void;
+  }) => {
+    middlewares.use((req, res, next) => {
+      const requestUrl = req.url
+        ? new URL(req.url, `http://${LOCAL_DEV_HOST}`)
+        : null;
+
+      if (requestUrl?.pathname !== DEV_UPLOAD_PROXY_PATH) {
+        next();
+        return;
+      }
+
+      const method = req.method?.toUpperCase();
+      if (method !== "POST" && method !== "PUT") {
+        res.statusCode = 405;
+        res.end("Methode nicht erlaubt.");
+        return;
+      }
+
+      const target = requestUrl.searchParams.get("target");
+      if (!target || !isAllowedUploadTarget(target)) {
+        res.statusCode = 400;
+        res.end("Ungültiges Upload-Ziel.");
+        return;
+      }
+
+      const headers = new Headers();
+      const contentType = req.headers["content-type"];
+      const contentLength = req.headers["content-length"];
+
+      if (typeof contentType === "string") {
+        headers.set("content-type", contentType);
+      }
+      if (typeof contentLength === "string") {
+        headers.set("content-length", contentLength);
+      }
+
+      const upstreamRequest = {
+        method,
+        headers,
+        body: req,
+        duplex: "half",
+      } as unknown as RequestInit & { duplex: "half" };
+
+      void fetch(target, upstreamRequest)
+        .then(async (response) => {
+          res.statusCode = response.status;
+
+          response.headers.forEach((value, key) => {
+            if (!shouldForwardUploadProxyResponseHeader(key)) {
+              return;
+            }
+            res.setHeader(key, value);
+          });
+
+          const body = Buffer.from(await response.arrayBuffer());
+          res.end(body);
+        })
+        .catch(() => {
+          res.statusCode = 502;
+          res.end("Lokaler Upload-Proxy konnte das Ziel nicht erreichen.");
+        });
+    });
+  };
+
+  return {
+    name: "smartnotes-dev-upload-proxy",
+    configureServer(server) {
+      registerMiddleware(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      registerMiddleware(server.middlewares);
+    },
   };
 };
 
@@ -143,11 +256,17 @@ export default defineConfig(({ mode }) => {
   const posthogProxy = resolvePostHogProxy(frontendPostHogHost);
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [createUploadProxyPlugin(), react(), tailwindcss()],
     server: {
+      host: LOCAL_DEV_HOST,
+      port: LOCAL_DEV_PORT,
+      strictPort: true,
       proxy: posthogProxy,
     },
     preview: {
+      host: LOCAL_DEV_HOST,
+      port: LOCAL_PREVIEW_PORT,
+      strictPort: true,
       proxy: posthogProxy,
     },
     build: {

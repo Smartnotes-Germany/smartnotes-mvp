@@ -143,6 +143,12 @@ The source-map upload variables are validated as a pair:
 pnpm dev
 ```
 
+Local development URLs:
+
+- `pnpm dev` is always running on `http://localhost:5173`
+- `pnpm preview` is always running on `http://localhost:4173`
+- File uploads always go over a Vite proxy on the same origin so that the browser doesn't run against external storage CORS rules
+
 ## Access Codes
 
 - The app has no classic account system, but access is no longer anonymous.
@@ -162,11 +168,12 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 
 ## Scripts
 
-- `pnpm dev` - start Vite + Convex dev server
+- `pnpm dev` - start Vite + Convex dev server on `http://localhost:5173`
 - `pnpm build` - typecheck + production build
 - `pnpm lint` - run ESLint
 - `pnpm format` - format code with Prettier
 - `pnpm format:check` - check code formatting
+- `pnpm preview` - preview the production build locally on `http://localhost:4173`
 - `pnpm test:once` - run the Vitest suite once
 - `pnpm observability:debug-window:start -- --minutes 45` - set debug-window env vars for bounded troubleshooting
 - `pnpm observability:debug-window:stop` - clear debug-window env vars immediately
@@ -186,7 +193,7 @@ pnpm exec convex run access:createAccessCodes "{adminSecret:'<admin-secret>',cod
 - `quizResponses.round` links each stored answer to the quiz batch it belongs to.
 - The UI uses the current round to decide which questions are still unanswered, while analysis can still inspect responses across multiple rounds in the same session.
 
-## Balanced Observability
+## Observability
 
 - AI calls are traced with Langfuse telemetry in `balanced` mode.
 - Langfuse captures full AI inputs and outputs for every traced backend call.
@@ -303,5 +310,5 @@ ORDER BY scope, status;
   - analysis failure rate threshold
   - quiz generation failure threshold
 
-See `docs/observability-balanced-mode.md` for implementation details and admin operations.
+See `docs/observability.md` for implementation details and admin operations.
 See `docs/posthog-proxy.md` for the full routing matrix, supported env combinations, and failure modes.

@@ -88,11 +88,15 @@ export function useQuizFlow({
   }, [isQuizActive]);
 
   useEffect(() => {
-    setQuizError(null);
     const questionId = currentQuestion?.id ?? null;
     const hasQuestionChanged = questionId !== lastQuestionIdRef.current;
 
+    if (hasQuestionChanged && (feedback || isSubmittingAnswer)) {
+      return;
+    }
+
     if (hasQuestionChanged) {
+      setQuizError(null);
       setFeedback(null);
       setDisplayQuestion(currentQuestion);
       setAnswerInput("");
@@ -243,6 +247,7 @@ export function useQuizFlow({
 
   const continueAfterFeedback = useCallback(() => {
     setFeedback(null);
+    setAnswerInput("");
     setDisplayQuestion(latestQuestionRef.current);
   }, []);
 

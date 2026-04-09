@@ -25,5 +25,5 @@
     "noUncheckedSideEffectImports": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src", "shared", "vite.config.ts"]
+  "include": ["src", "shared", "reset.d.ts", "vite.config.ts"]
 }

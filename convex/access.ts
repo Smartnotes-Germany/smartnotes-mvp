@@ -142,7 +142,7 @@ const findAccessCode = async (
         identityLabel: "Lokale Demo",
         note: "Auto-seeded demo code for local development",
       });
-      accessCode = await ctx.db.get(seededId);
+      accessCode = await ctx.db.get("accessCodes", seededId);
     }
   }
 
@@ -177,7 +177,7 @@ const redeemStoredAccessCode = async (
     ...(identity.note ? { note: identity.note } : {}),
   });
 
-  await ctx.db.patch(accessCode._id, {
+  await ctx.db.patch("accessCodes", accessCode._id, {
     identityLabel: identity.identityLabel,
     ...(identity.identityEmail
       ? { identityEmail: identity.identityEmail }

@@ -2,8 +2,6 @@ import { api } from "../../../convex/_generated/api";
 
 export const redeemAccessCodeRef = api.accessActions.redeemAccessCode;
 
-export const consumeMagicLinkRef = api.accessActions.consumeMagicLink;
-
 export const startSessionRef = api.study.startSession;
 
 export const generateUploadUrlRef = api.study.generateUploadUrl;
@@ -26,5 +24,3 @@ export const generateFocusedQuizRef = api.ai.generateFocusedQuiz;
 export const evaluateAnswerRef = api.ai.evaluateAnswer;
 
 export const analyzePerformanceRef = api.ai.analyzePerformance;
-
-export const generateTopicDeepDiveRef = api.ai.generateTopicDeepDive;

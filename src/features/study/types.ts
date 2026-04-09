@@ -42,38 +42,6 @@ export type SessionAnalysis = {
   topics: SessionAnalysisTopic[];
 };
 
-export type SummarySection = {
-  title: string;
-  content: string;
-  keyPoints: string[];
-  table?: {
-    headers: string[];
-    rows: string[][];
-  };
-  chart?: {
-    type: "bar" | "percentage";
-    data: { label: string; value: number }[];
-  };
-  imageQuery?: string;
-};
-
-export type StudySummary = {
-  title: string;
-  overview: string;
-  sections: SummarySection[];
-};
-
-export type StudySession = {
-  title: string;
-  stage: StudyStage;
-  round: number; // Aktiver Quiz-Batch innerhalb derselben Lernsitzung.
-  sourceTopics: string[];
-  focusTopics?: string[];
-  quizQuestions: QuizQuestion[];
-  analysis?: SessionAnalysis;
-  summary?: StudySummary;
-};
-
 export type StudyDocument = {
   _id: StudyDocumentId;
   fileName: string;
@@ -81,25 +49,6 @@ export type StudyDocument = {
   fileSizeBytes: number;
   extractionStatus: ExtractionStatus;
   extractionError?: string;
-};
-
-export type StudyResponse = {
-  questionId: string;
-  score: number;
-  topic: string;
-};
-
-export type StudyStats = {
-  totalQuestions: number;
-  answeredQuestions: number;
-  readyDocuments: number;
-};
-
-export type SessionSnapshot = {
-  session: StudySession;
-  documents: StudyDocument[];
-  responses: StudyResponse[];
-  stats: StudyStats;
 };
 
 export type GrantStatus = {

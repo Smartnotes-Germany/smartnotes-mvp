@@ -77,7 +77,7 @@ export const runRetentionBatch = internalMutation({
         continue;
       }
 
-      await ctx.db.patch(document._id, {
+      await ctx.db.patch("sessionDocuments", document._id, {
         extractedText: undefined,
         updatedAt: now,
       });
@@ -96,7 +96,7 @@ export const runRetentionBatch = internalMutation({
         continue;
       }
 
-      await ctx.db.patch(response._id, {
+      await ctx.db.patch("quizResponses", response._id, {
         userAnswer: "[entfernt]",
         updatedAt: now,
       });
@@ -110,7 +110,7 @@ export const runRetentionBatch = internalMutation({
       .take(args.batchSize);
 
     for (const event of analyticsEvents) {
-      await ctx.db.delete(event._id);
+      await ctx.db.delete("aiAnalyticsEvents", event._id);
     }
 
     const eligibleOutboxEvents = (
@@ -133,7 +133,7 @@ export const runRetentionBatch = internalMutation({
       .slice(0, args.batchSize);
 
     for (const event of eligibleOutboxEvents) {
-      await ctx.db.delete(event._id);
+      await ctx.db.delete("posthogEventOutbox", event._id);
     }
 
     const deletedPostHogOutboxEvents = eligibleOutboxEvents.length;

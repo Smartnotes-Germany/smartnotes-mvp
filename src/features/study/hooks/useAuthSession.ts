@@ -22,7 +22,7 @@ import {
   trackSessionStarted,
 } from "../analytics";
 
-export type AuthSessionReturn = {
+type AuthSessionReturn = {
   grantToken: string | null;
   sessionId: StudySessionId | null;
   grantStatus: GrantStatus | undefined;

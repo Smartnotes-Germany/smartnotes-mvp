@@ -1,7 +1,7 @@
 export const MAX_UPLOAD_FILE_BYTES = 7 * 1024 * 1024;
 export const MAX_UPLOAD_FILE_LABEL = "7 MiB";
 
-export const ACCEPTED_UPLOAD_EXTENSIONS = [
+const ACCEPTED_UPLOAD_EXTENSIONS = [
   "pdf",
   "ppt",
   "pptx",
@@ -47,12 +47,12 @@ type UploadFileLike = {
 
 const extensionPattern = /\.([a-z0-9]+)$/i;
 
-export const getFileExtension = (fileName: string) => {
+const getFileExtension = (fileName: string) => {
   const match = fileName.match(extensionPattern);
   return match?.[1]?.toLowerCase() ?? "";
 };
 
-export const isAcceptedUploadFileName = (fileName: string) => {
+const isAcceptedUploadFileName = (fileName: string) => {
   const extension = getFileExtension(fileName);
   return ACCEPTED_UPLOAD_EXTENSIONS.includes(
     extension as (typeof ACCEPTED_UPLOAD_EXTENSIONS)[number],

@@ -494,10 +494,6 @@ const buildModelInputFromDocuments = async (
         await createDocumentReadUrl(ctx, document, accessKey, trace);
       if (!fileUrl) {
         if (document.extractedText) {
-          textOnlyDocuments.push({
-            fileName: document.fileName,
-            extractedText: document.extractedText,
-          });
           continue;
         }
         throw new Error(
@@ -516,10 +512,6 @@ const buildModelInputFromDocuments = async (
       const response = await fetch(fileUrl);
       if (!response.ok) {
         if (document.extractedText) {
-          textOnlyDocuments.push({
-            fileName: document.fileName,
-            extractedText: document.extractedText,
-          });
           continue;
         }
         throw new Error(

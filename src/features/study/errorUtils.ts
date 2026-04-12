@@ -43,11 +43,17 @@ export const createClientRequestId = (scope: string) => {
 
 const isTransportError = (normalizedMessage: string) => {
   return (
-    normalizedMessage.includes("connection lost while action was in flight") ||
     normalizedMessage.includes("network error") ||
     normalizedMessage.includes("failed to fetch") ||
     normalizedMessage.includes("load failed") ||
     normalizedMessage.includes("netzwerkfehler")
+  );
+};
+
+const isInterruptedBackendActionError = (normalizedMessage: string) => {
+  return (
+    normalizedMessage.includes("connection lost while action was in flight") ||
+    normalizedMessage.includes("your request couldn't be completed")
   );
 };
 
@@ -166,6 +172,13 @@ export const formatError = (error: unknown, options?: FormatErrorOptions) => {
   ) {
     return withErrorReferences(
       "Dieser Dateityp wird nicht unterstützt. Bitte nutze eines der erlaubten Formate.",
+      references,
+    );
+  }
+
+  if (isInterruptedBackendActionError(normalizedMessage)) {
+    return withErrorReferences(
+      "Die Verarbeitung wurde unterbrochen. Bitte versuche es erneut.",
       references,
     );
   }

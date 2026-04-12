@@ -418,7 +418,11 @@ function StudyApp() {
           onAnswerInputChange={quizFlow.setAnswerInput}
           onSubmitAnswer={quizFlow.submitAnswer}
           isSubmittingAnswer={quizFlow.isSubmittingAnswer}
-          quizError={quizFlow.quizError || analysisFlow.analysisError}
+          quizError={
+            quizFlow.quizError ||
+            uploadFlow.uploadError ||
+            analysisFlow.analysisError
+          }
           isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
           onContinueAfterFeedback={handleContinueAfterFeedback}
           sourceTopics={session.sourceTopics}

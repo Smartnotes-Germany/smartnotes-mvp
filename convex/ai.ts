@@ -2,6 +2,8 @@
 
 import { generateText, NoOutputGeneratedError, Output } from "ai";
 import { createVertex } from "@ai-sdk/google-vertex";
+// @ts-expect-error -- pdfjs-dist does not publish worker module types.
+import * as pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
@@ -305,6 +307,115 @@ type ExtractedDocumentContent = {
   metadata: Record<string, unknown>;
 };
 
+class PdfJsDomMatrix {
+  a = 1;
+  b = 0;
+  c = 0;
+  d = 1;
+  e = 0;
+  f = 0;
+
+  constructor(init?: unknown) {
+    if (Array.isArray(init) && init.length >= 6) {
+      const [a, b, c, d, e, f] = init;
+      this.a = typeof a === "number" ? a : 1;
+      this.b = typeof b === "number" ? b : 0;
+      this.c = typeof c === "number" ? c : 0;
+      this.d = typeof d === "number" ? d : 1;
+      this.e = typeof e === "number" ? e : 0;
+      this.f = typeof f === "number" ? f : 0;
+      return;
+    }
+
+    if (typeof init === "object" && init !== null) {
+      const matrix = init as Partial<PdfJsDomMatrix>;
+      this.a = typeof matrix.a === "number" ? matrix.a : this.a;
+      this.b = typeof matrix.b === "number" ? matrix.b : this.b;
+      this.c = typeof matrix.c === "number" ? matrix.c : this.c;
+      this.d = typeof matrix.d === "number" ? matrix.d : this.d;
+      this.e = typeof matrix.e === "number" ? matrix.e : this.e;
+      this.f = typeof matrix.f === "number" ? matrix.f : this.f;
+    }
+  }
+
+  multiplySelf(other: Partial<PdfJsDomMatrix>) {
+    const a = this.a * (other.a ?? 1) + this.c * (other.b ?? 0);
+    const b = this.b * (other.a ?? 1) + this.d * (other.b ?? 0);
+    const c = this.a * (other.c ?? 0) + this.c * (other.d ?? 1);
+    const d = this.b * (other.c ?? 0) + this.d * (other.d ?? 1);
+    const e = this.a * (other.e ?? 0) + this.c * (other.f ?? 0) + this.e;
+    const f = this.b * (other.e ?? 0) + this.d * (other.f ?? 0) + this.f;
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
+    this.e = e;
+    this.f = f;
+    return this;
+  }
+
+  preMultiplySelf(other: Partial<PdfJsDomMatrix>) {
+    const next = new PdfJsDomMatrix(other);
+    next.multiplySelf(this);
+    this.a = next.a;
+    this.b = next.b;
+    this.c = next.c;
+    this.d = next.d;
+    this.e = next.e;
+    this.f = next.f;
+    return this;
+  }
+
+  translate(x = 0, y = 0) {
+    return new PdfJsDomMatrix(this).translateSelf(x, y);
+  }
+
+  translateSelf(x = 0, y = 0) {
+    this.e += x;
+    this.f += y;
+    return this;
+  }
+
+  scale(scaleX = 1, scaleY = scaleX) {
+    return new PdfJsDomMatrix(this).scaleSelf(scaleX, scaleY);
+  }
+
+  scaleSelf(scaleX = 1, scaleY = scaleX) {
+    this.a *= scaleX;
+    this.b *= scaleX;
+    this.c *= scaleY;
+    this.d *= scaleY;
+    return this;
+  }
+
+  invertSelf() {
+    const determinant = this.a * this.d - this.b * this.c;
+    if (determinant === 0) {
+      this.a = Number.NaN;
+      this.b = Number.NaN;
+      this.c = Number.NaN;
+      this.d = Number.NaN;
+      this.e = Number.NaN;
+      this.f = Number.NaN;
+      return this;
+    }
+
+    const a = this.d / determinant;
+    const b = -this.b / determinant;
+    const c = -this.c / determinant;
+    const d = this.a / determinant;
+    const e = (this.c * this.f - this.d * this.e) / determinant;
+    const f = (this.b * this.e - this.a * this.f) / determinant;
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
+    this.e = e;
+    this.f = f;
+    return this;
+  }
+}
+
 const compactText = (value: string, maxChars: number) => {
   const normalized = value
     .replace(/\r/g, "")
@@ -457,6 +568,10 @@ const buildExtractedContent = (
 const extractPdfTextWithPdfjs = async (
   fileBuffer: Buffer,
 ): Promise<ExtractedDocumentContent> => {
+  const globalWithPdfPolyfills = globalThis as Record<string, unknown>;
+  globalWithPdfPolyfills.DOMMatrix ??= PdfJsDomMatrix;
+  globalWithPdfPolyfills.pdfjsWorker ??= pdfjsWorker;
+
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(fileBuffer),
@@ -541,6 +656,7 @@ const buildModelInputFromDocuments = async (
     runMutation: ActionCtx["runMutation"];
   },
   documents: Array<{
+    documentId?: Id<"sessionDocuments">;
     storageId: string;
     storageProvider: StorageProvider;
     fileName: string;
@@ -697,6 +813,22 @@ const buildModelInputFromDocuments = async (
               fileName: document.fileName,
               extractedText: extraction.text,
             });
+
+            if (document.documentId) {
+              await ctx.runMutation(
+                internal.study.setDocumentExtractionResult,
+                {
+                  documentId: document.documentId,
+                  extractionStatus: "ready",
+                  extractedText: extraction.text,
+                  extractionStrategy: extraction.strategy,
+                  extractionQuality: extraction.quality,
+                  extractedCharCount: extraction.charCount,
+                  extractionMetadataJson: JSON.stringify(extraction.metadata),
+                },
+              );
+            }
+
             trace?.log("info", "model_input_pdf_text_extracted", {
               fileName: document.fileName,
               extractionStrategy: extraction.strategy,
@@ -721,6 +853,12 @@ const buildModelInputFromDocuments = async (
             error: extractErrorForLog(error),
             elapsedMs: Date.now() - fileLoadStartedAt,
           });
+
+          if (!document.extractedText) {
+            throw new Error(
+              `PDF-Text konnte nicht extrahiert werden: ${document.fileName}. Bitte lade die Datei erneut hoch oder verwende eine PDF mit auswählbarem Text.`,
+            );
+          }
         }
       }
 
@@ -2707,6 +2845,7 @@ Aufgabe:
       const modelInput = await buildModelInputFromDocuments(
         ctx,
         readyDocuments.map((document: SessionDocumentInput) => ({
+          documentId: document._id,
           storageId: document.storageId,
           storageProvider: document.storageProvider,
           fileName: document.fileName,
@@ -3106,6 +3245,7 @@ Anforderungen:
         const modelInput = await buildModelInputFromDocuments(
           ctx,
           readyDocuments.map((document: SessionDocumentInput) => ({
+            documentId: document._id,
             storageId: document.storageId,
             storageProvider: document.storageProvider,
             fileName: document.fileName,
@@ -3704,6 +3844,7 @@ Anforderungen:
         const modelInput = await buildModelInputFromDocuments(
           ctx,
           readyDocuments.map((document: SessionDocumentInput) => ({
+            documentId: document._id,
             storageId: document.storageId,
             storageProvider: document.storageProvider,
             fileName: document.fileName,
@@ -5109,6 +5250,7 @@ export const generateTopicDeepDive = action({
         const modelInput = await buildModelInputFromDocuments(
           ctx,
           readyDocuments.map((document: SessionDocumentInput) => ({
+            documentId: document._id,
             storageId: document.storageId,
             storageProvider: document.storageProvider,
             fileName: document.fileName,

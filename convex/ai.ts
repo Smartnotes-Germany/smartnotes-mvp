@@ -46,6 +46,7 @@ const MAX_PROMPT_CONTEXT_CHARS = 90_000;
 const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
 const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
+const LLM_GENERATION_TIMEOUT_MS = 60_000;
 const vertexProviderOptions = {
   google: {
     thinkingConfig: {
@@ -69,6 +70,7 @@ const vertexNativeFileExtensions = new Set<string>(
 const vertexNativeMediaTypes = new Set<string>(
   VERTEX_NATIVE_UPLOAD_MEDIA_TYPES,
 );
+const pdfMediaTypes = new Set(["application/pdf"]);
 
 const extensionToMediaType: Record<string, string> = {
   pdf: "application/pdf",
@@ -333,6 +335,14 @@ const isVertexNativeCandidate = (fileType: string, fileName: string) => {
   );
 };
 
+const isPdfDocument = (fileType: string, fileName: string) => {
+  const normalizedMediaType = fileType.toLowerCase().split(";")[0]?.trim();
+  return (
+    (normalizedMediaType ? pdfMediaTypes.has(normalizedMediaType) : false) ||
+    filenameExtension(fileName) === "pdf"
+  );
+};
+
 const resolveMediaType = (fileType: string, fileName: string) => {
   if (fileType && fileType !== "application/octet-stream") {
     return fileType;
@@ -458,6 +468,13 @@ const buildModelInputFromDocuments = async (
         fileSizeBytes: document.fileSizeBytes,
       });
 
+      if (document.extractedText) {
+        textOnlyDocuments.push({
+          fileName: document.fileName,
+          extractedText: document.extractedText,
+        });
+      }
+
       if (
         Number.isFinite(document.fileSizeBytes) &&
         (document.fileSizeBytes ?? 0) > MAX_VERTEX_INLINE_FILE_BYTES
@@ -553,6 +570,37 @@ const buildModelInputFromDocuments = async (
 
       const mediaType = resolveMediaType(document.fileType, document.fileName);
       const documentBuffer = Buffer.from(arrayBuffer);
+
+      if (
+        !document.extractedText &&
+        isPdfDocument(mediaType, document.fileName)
+      ) {
+        try {
+          const extractedText = await extractTextFromBytes(
+            document.fileName,
+            mediaType,
+            documentBuffer,
+          );
+
+          if (extractedText) {
+            textOnlyDocuments.push({
+              fileName: document.fileName,
+              extractedText,
+            });
+            trace?.log("info", "model_input_pdf_text_extracted", {
+              fileName: document.fileName,
+              extractedLength: extractedText.length,
+              elapsedMs: Date.now() - fileLoadStartedAt,
+            });
+          }
+        } catch (error) {
+          trace?.log("warn", "model_input_pdf_text_extraction_failed", {
+            fileName: document.fileName,
+            error: extractErrorForLog(error),
+            elapsedMs: Date.now() - fileLoadStartedAt,
+          });
+        }
+      }
 
       fileParts.push({
         type: "file",
@@ -2249,9 +2297,13 @@ export const extractDocumentContent = action({
     });
 
     // Hybrid approach:
-    // - Native Vertex file path for PDF/image formats supported by Gemini.
-    // - officeparser/text extraction fallback for Office/text formats.
-    if (isVertexNativeCandidate(document.fileType, document.fileName)) {
+    // - PDFs are attached natively and also text-extracted when possible.
+    // - Images stay native-only because there is no useful text extraction path.
+    // - Office/text formats use extracted text.
+    if (
+      isVertexNativeCandidate(document.fileType, document.fileName) &&
+      !isPdfDocument(document.fileType, document.fileName)
+    ) {
       trace.log("info", "skip_text_extraction_vertex_native", {
         fileName: document.fileName,
         fileType: document.fileType,
@@ -2327,6 +2379,27 @@ export const extractDocumentContent = action({
         error instanceof Error
           ? error.message
           : "Unbekannter Fehler bei der Extraktion.";
+
+      if (isPdfDocument(document.fileType, document.fileName)) {
+        trace.log("warn", "pdf_text_extraction_failed_using_native_file", {
+          documentId: args.documentId,
+          fileName: document.fileName,
+          error: extractErrorForLog(error),
+        });
+
+        await ctx.runMutation(internal.study.setDocumentExtractionResult, {
+          documentId: args.documentId,
+          extractionStatus: "ready",
+          extractionError:
+            "PDF-Text konnte nicht extrahiert werden. Die Datei wird direkt an die KI übergeben.",
+        });
+
+        return {
+          documentId: args.documentId,
+          extractionStatus: "ready" as const,
+          error: message,
+        };
+      }
 
       trace.log("error", "extraction_failed", {
         documentId: args.documentId,
@@ -2557,6 +2630,7 @@ Anforderungen:
           temperature: 0.1,
           maxOutputTokens: 3_000,
           thinkingBudget: 0,
+          timeoutMs: LLM_GENERATION_TIMEOUT_MS,
           sourceContextLength: sourceContext.length,
           filePartCount: fileParts.length,
         });
@@ -2567,6 +2641,7 @@ Anforderungen:
           model: model("gemini-3-flash-preview"),
           temperature: 0.1,
           maxOutputTokens: 3_000,
+          timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: quizGenerationSchema,
@@ -2633,6 +2708,7 @@ Anforderungen:
               temperature: 0.2,
               maxOutputTokens: 2_000,
               thinkingBudget: 0,
+              timeoutMs: LLM_GENERATION_TIMEOUT_MS,
               sourceContextLength: sourceContext.length,
             });
 
@@ -2642,6 +2718,7 @@ Anforderungen:
               model: model("gemini-3-flash-preview"),
               temperature: 0.1,
               maxOutputTokens: 3_000,
+              timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
               providerOptions: vertexProviderOptions,
               output: Output.object({
                 schema: quizGenerationSchema,
@@ -2694,6 +2771,7 @@ Anforderungen:
               temperature: 0.1,
               maxOutputTokens: 3_000,
               thinkingBudget: 0,
+              timeoutMs: LLM_GENERATION_TIMEOUT_MS,
               sourceContextLength: 0,
             });
 
@@ -2703,6 +2781,7 @@ Anforderungen:
               model: model("gemini-3-flash-preview"),
               temperature: 0.1,
               maxOutputTokens: 3_000,
+              timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
               providerOptions: vertexProviderOptions,
               output: Output.json(),
               experimental_telemetry: buildAiSdkTelemetry(
@@ -3172,6 +3251,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
             temperature: 0.1,
             maxOutputTokens: 3_000,
             thinkingBudget: 0,
+            timeoutMs: LLM_GENERATION_TIMEOUT_MS,
             sourceContextLength: sourceContext.length,
             filePartCount: fileParts.length,
           });
@@ -3182,6 +3262,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
             model: model("gemini-3-flash-preview"),
             temperature: 0.1,
             maxOutputTokens: 3_000,
+            timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
             providerOptions: vertexProviderOptions,
             output: Output.object({
               schema: quizGenerationSchema,
@@ -3508,6 +3589,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
             temperature: 0.1,
             maxOutputTokens: 300,
             thinkingBudget: 0,
+            timeoutMs: LLM_GENERATION_TIMEOUT_MS,
             answeredWithDontKnow: args.answeredWithDontKnow,
             stage: attemptIndex === 0 ? "primary" : "retry",
           });
@@ -3518,6 +3600,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
             model: model("gemini-3-flash-preview"),
             temperature: 0.1,
             maxOutputTokens: 300,
+            timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
             providerOptions: vertexProviderOptions,
             output: Output.object({
               schema: answerEvaluationSchema,
@@ -3596,6 +3679,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
             temperature: 0.1,
             maxOutputTokens: 400,
             thinkingBudget: 0,
+            timeoutMs: LLM_GENERATION_TIMEOUT_MS,
             answeredWithDontKnow: args.answeredWithDontKnow,
           });
 
@@ -3605,6 +3689,7 @@ Gib eine objektive Bewertung mit einem Score zwischen 0 und 100 wie gut die Antw
             model: model("gemini-3-flash-preview"),
             temperature: 0.1,
             maxOutputTokens: 400,
+            timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
             providerOptions: vertexProviderOptions,
             output: Output.json(),
             experimental_telemetry: buildAiSdkTelemetry(
@@ -3963,6 +4048,7 @@ Pflichtregeln:
                 temperature: 0.2,
                 maxOutputTokens: 600,
                 thinkingBudget: 0,
+                timeoutMs: LLM_GENERATION_TIMEOUT_MS,
               });
 
               llmAttempts += 1;
@@ -3983,6 +4069,7 @@ Pflichtregeln:
                   model: model("gemini-3-flash-preview"),
                   temperature: 0.2,
                   maxOutputTokens: 600,
+                  timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
                   providerOptions: vertexProviderOptions,
                   output: Output.object({
                     schema: focusTopicAnalysisOutputSchema,
@@ -4134,6 +4221,7 @@ Pflichtregeln:
               temperature: 0.2,
               maxOutputTokens: 1_500,
               thinkingBudget: 0,
+              timeoutMs: LLM_GENERATION_TIMEOUT_MS,
             });
 
             llmAttempts += 1;
@@ -4154,6 +4242,7 @@ Pflichtregeln:
                 model: model("gemini-3-flash-preview"),
                 temperature: 0.2,
                 maxOutputTokens: 1_500,
+                timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
                 providerOptions: vertexProviderOptions,
                 output: Output.object({
                   schema: analysisOutputSchema,
@@ -4552,6 +4641,7 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
           temperature: 0.25,
           maxOutputTokens: 2_500,
           thinkingBudget: 0,
+          timeoutMs: LLM_GENERATION_TIMEOUT_MS,
           sourceContextLength: sourceContext.length,
           filePartCount: fileParts.length,
           avgScore,
@@ -4564,6 +4654,7 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
           model: model("gemini-3-flash-preview"),
           temperature: 0.25,
           maxOutputTokens: 2_500,
+          timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: deepDiveSchema,

@@ -12,6 +12,12 @@ export type StudyStage =
   | "summary";
 
 export type ExtractionStatus = "pending" | "processing" | "ready" | "failed";
+export type ExtractionQuality = "good" | "partial" | "empty" | "failed";
+export type ExtractionStrategy =
+  | "plain_text"
+  | "pdfjs"
+  | "officeparser"
+  | "native_file";
 
 export type FeedbackState = {
   isCorrect: boolean;
@@ -49,6 +55,8 @@ export type StudyDocument = {
   fileSizeBytes: number;
   extractionStatus: ExtractionStatus;
   extractionError?: string;
+  extractionQuality?: ExtractionQuality;
+  extractionStrategy?: ExtractionStrategy;
 };
 
 export type GrantStatus = {

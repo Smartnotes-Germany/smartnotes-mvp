@@ -216,7 +216,7 @@ const areQuizQuestionsEqual = (
 
 const buildSessionSnapshot = (session: {
   _id: Id<"studySessions">;
-  stage: "upload" | "quiz" | "analysis";
+  stage: "upload" | "mode_selection" | "quiz" | "analysis";
   focusTopics?: string[];
   sourceTopics: string[];
   quizQuestions: Array<{
@@ -258,12 +258,20 @@ const buildSessionDocumentSnapshot = (document: {
   fileSizeBytes: number;
   extractionStatus: "pending" | "processing" | "ready" | "failed";
   extractionError?: string;
+  extractionQuality?: "good" | "partial" | "empty" | "failed";
+  extractionStrategy?: "plain_text" | "pdfjs" | "officeparser" | "native_file";
 }) => ({
   _id: document._id,
   fileName: document.fileName,
   fileType: document.fileType,
   fileSizeBytes: document.fileSizeBytes,
   extractionStatus: document.extractionStatus,
+  ...(document.extractionQuality
+    ? { extractionQuality: document.extractionQuality }
+    : {}),
+  ...(document.extractionStrategy
+    ? { extractionStrategy: document.extractionStrategy }
+    : {}),
   ...(document.extractionError
     ? { extractionError: document.extractionError }
     : {}),
@@ -751,6 +759,24 @@ export const setDocumentExtractionResult = internalMutation({
     ),
     extractedText: v.optional(v.string()),
     extractionError: v.optional(v.string()),
+    extractionStrategy: v.optional(
+      v.union(
+        v.literal("plain_text"),
+        v.literal("pdfjs"),
+        v.literal("officeparser"),
+        v.literal("native_file"),
+      ),
+    ),
+    extractionQuality: v.optional(
+      v.union(
+        v.literal("good"),
+        v.literal("partial"),
+        v.literal("empty"),
+        v.literal("failed"),
+      ),
+    ),
+    extractedCharCount: v.optional(v.number()),
+    extractionMetadataJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existingDocument = await ctx.db.get(
@@ -769,11 +795,27 @@ export const setDocumentExtractionResult = internalMutation({
     const hasExtractionErrorChanged =
       args.extractionError !== undefined &&
       existingDocument.extractionError !== args.extractionError;
+    const hasExtractionStrategyChanged =
+      args.extractionStrategy !== undefined &&
+      existingDocument.extractionStrategy !== args.extractionStrategy;
+    const hasExtractionQualityChanged =
+      args.extractionQuality !== undefined &&
+      existingDocument.extractionQuality !== args.extractionQuality;
+    const hasExtractedCharCountChanged =
+      args.extractedCharCount !== undefined &&
+      existingDocument.extractedCharCount !== args.extractedCharCount;
+    const hasExtractionMetadataChanged =
+      args.extractionMetadataJson !== undefined &&
+      existingDocument.extractionMetadataJson !== args.extractionMetadataJson;
 
     if (
       !hasStatusChanged &&
       !hasExtractedTextChanged &&
-      !hasExtractionErrorChanged
+      !hasExtractionErrorChanged &&
+      !hasExtractionStrategyChanged &&
+      !hasExtractionQualityChanged &&
+      !hasExtractedCharCountChanged &&
+      !hasExtractionMetadataChanged
     ) {
       return;
     }
@@ -784,6 +826,14 @@ export const setDocumentExtractionResult = internalMutation({
       updatedAt: number;
       extractedText?: string;
       extractionError?: string;
+      extractionStrategy?:
+        | "plain_text"
+        | "pdfjs"
+        | "officeparser"
+        | "native_file";
+      extractionQuality?: "good" | "partial" | "empty" | "failed";
+      extractedCharCount?: number;
+      extractionMetadataJson?: string;
     } = {
       extractionStatus: args.extractionStatus,
       updatedAt: now,
@@ -794,6 +844,18 @@ export const setDocumentExtractionResult = internalMutation({
     }
     if (args.extractionError !== undefined) {
       patch.extractionError = args.extractionError;
+    }
+    if (args.extractionStrategy !== undefined) {
+      patch.extractionStrategy = args.extractionStrategy;
+    }
+    if (args.extractionQuality !== undefined) {
+      patch.extractionQuality = args.extractionQuality;
+    }
+    if (args.extractedCharCount !== undefined) {
+      patch.extractedCharCount = args.extractedCharCount;
+    }
+    if (args.extractionMetadataJson !== undefined) {
+      patch.extractionMetadataJson = args.extractionMetadataJson;
     }
 
     await ctx.db.patch("sessionDocuments", args.documentId, {
@@ -832,6 +894,44 @@ export const getQuizGenerationContext = internalQuery({
       responses,
       accessKey: buildGrantAccessKey(grant._id),
     };
+  },
+});
+
+export const storePreparedSourceTopics = internalMutation({
+  args: {
+    sessionId: v.id("studySessions"),
+    sourceSummary: v.string(),
+    sourceTopics: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("studySessions", args.sessionId);
+    if (!session) {
+      throw new Error("Lernsitzung nicht gefunden.");
+    }
+
+    const normalizedSourceTopics = [
+      ...new Set(
+        args.sourceTopics
+          .map((topic) => topic.trim())
+          .filter((topic) => topic.length > 0),
+      ),
+    ].slice(0, 15);
+
+    const shouldSkipPatch =
+      session.stage === "mode_selection" &&
+      session.sourceSummary === args.sourceSummary &&
+      areStringArraysEqual(session.sourceTopics, normalizedSourceTopics);
+
+    if (shouldSkipPatch) {
+      return;
+    }
+
+    await ctx.db.patch("studySessions", args.sessionId, {
+      stage: "mode_selection",
+      sourceSummary: args.sourceSummary,
+      sourceTopics: normalizedSourceTopics,
+      updatedAt: Date.now(),
+    });
   },
 });
 

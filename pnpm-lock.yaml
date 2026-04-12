@@ -41,6 +41,9 @@ importers:
       officeparser:
         specifier: ^6.0.4
         version: 6.0.4
+      pdfjs-dist:
+        specifier: 5.4.530
+        version: 5.4.530
       posthog-js:
         specifier: ^1.364.4
         version: 1.364.4

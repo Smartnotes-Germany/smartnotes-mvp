@@ -4,8 +4,8 @@ import { useAction, useMutation } from "convex/react";
 import {
   extractDocumentContentRef,
   generateFocusedQuizRef,
-  generateQuizRef,
   generateUploadUrlRef,
+  prepareSourceTopicsRef,
   registerUploadedDocumentRef,
   removeDocumentRef,
 } from "../convexRefs";
@@ -47,6 +47,11 @@ type ExtractionResult = {
 type FocusedQuizGenerationResult = {
   questionCount?: number;
   focusTopics?: string[];
+};
+
+type TopicPreparationResult = {
+  topicCount?: number;
+  sourceTopics?: string[];
 };
 
 const FOCUSED_QUESTIONS_PER_TOPIC = 5;
@@ -104,7 +109,7 @@ export function useUploadFlow({
   const registerUploadedDocument = useAction(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
-  const generateQuiz = useAction(generateQuizRef);
+  const prepareSourceTopics = useAction(prepareSourceTopicsRef);
   const generateFocusedQuiz = useAction(generateFocusedQuizRef);
 
   const uploadFiles = useCallback(
@@ -212,12 +217,15 @@ export function useUploadFlow({
       return;
     }
 
-    const oversizedReadyDocuments = documents.filter(
-      (document) =>
+    const oversizedReadyDocuments = documents.filter((document) => {
+      const needsNativeAttachment = document.extractionQuality !== "good";
+      return (
         document.extractionStatus === "ready" &&
+        needsNativeAttachment &&
         isVertexNativeCandidate(document.fileType, document.fileName) &&
-        document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
-    );
+        document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES
+      );
+    });
 
     if (oversizedReadyDocuments.length > 0) {
       const names = oversizedReadyDocuments
@@ -233,7 +241,7 @@ export function useUploadFlow({
     }
 
     const startedAt = Date.now();
-    const clientRequestId = createClientRequestId("generateQuiz");
+    const clientRequestId = createClientRequestId("prepareTopics");
     setIsGeneratingQuiz(true);
     setUploadError(null);
     trackTopicSelectionPreparationRequested({
@@ -242,12 +250,11 @@ export function useUploadFlow({
     });
 
     try {
-      await generateQuiz({
+      (await prepareSourceTopics({
         grantToken,
         sessionId,
-        questionCount: 1,
         clientRequestId,
-      });
+      })) as TopicPreparationResult;
       trackTopicSelectionPreparationSucceeded(Date.now() - startedAt, {
         documents: documentCount,
         readyDocuments: readyDocumentCount,
@@ -259,7 +266,7 @@ export function useUploadFlow({
       });
       setUploadError(
         formatError(error, {
-          fallback: "Quizfragen konnten nicht erstellt werden.",
+          fallback: "Die Themen konnten nicht vorbereitet werden.",
           clientRequestId,
         }),
       );
@@ -268,8 +275,8 @@ export function useUploadFlow({
     }
   }, [
     documents,
-    generateQuiz,
     grantToken,
+    prepareSourceTopics,
     sessionId,
     documentCount,
     readyDocumentCount,
@@ -291,12 +298,15 @@ export function useUploadFlow({
         return;
       }
 
-      const oversizedReadyDocuments = documents.filter(
-        (document) =>
+      const oversizedReadyDocuments = documents.filter((document) => {
+        const needsNativeAttachment = document.extractionQuality !== "good";
+        return (
           document.extractionStatus === "ready" &&
+          needsNativeAttachment &&
           isVertexNativeCandidate(document.fileType, document.fileName) &&
-          document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES,
-      );
+          document.fileSizeBytes > MAX_UPLOAD_FILE_BYTES
+        );
+      });
 
       if (oversizedReadyDocuments.length > 0) {
         const names = oversizedReadyDocuments

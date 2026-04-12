@@ -50,7 +50,7 @@ const createOwnedSession = async (
   t: ReturnType<typeof createTestHarness>,
   overrides?: Partial<{
     title: string;
-    stage: "upload" | "quiz" | "analysis";
+    stage: "upload" | "mode_selection" | "quiz" | "analysis";
     round: number;
     focusTopics: string[];
     sourceSummary: string;
@@ -277,6 +277,48 @@ describe("convex/study", () => {
     );
     expect(changedDocument?.updatedAt).toBeGreaterThan(initialUpdatedAt);
     expect(changedDocument?.extractedText).toBe("Aktualisierter Text");
+  });
+
+  it("speichert vorbereitete Quellenthemen ohne Quizfragen zu erzeugen", async () => {
+    const t = createTestHarness();
+    const initialUpdatedAt = Date.now() - 5_000;
+    const { sessionId } = await createOwnedSession(t, {
+      stage: "upload",
+      sourceSummary: "Alte Zusammenfassung",
+      sourceTopics: [],
+      quizQuestions: [],
+      updatedAt: initialUpdatedAt,
+    });
+
+    await t.mutation(internal.study.storePreparedSourceTopics, {
+      sessionId,
+      sourceSummary: "Neue Zusammenfassung",
+      sourceTopics: ["Gesetzgebung", "Bundestag", "Gesetzgebung", ""],
+    });
+
+    const preparedSession = await t.run(async (ctx) =>
+      ctx.db.get("studySessions", sessionId),
+    );
+    expect(preparedSession?.stage).toBe("mode_selection");
+    expect(preparedSession?.sourceSummary).toBe("Neue Zusammenfassung");
+    expect(preparedSession?.sourceTopics).toEqual([
+      "Gesetzgebung",
+      "Bundestag",
+    ]);
+    expect(preparedSession?.quizQuestions).toEqual([]);
+    expect(preparedSession?.updatedAt).toBeGreaterThan(initialUpdatedAt);
+
+    const preparedUpdatedAt = preparedSession?.updatedAt;
+    await t.mutation(internal.study.storePreparedSourceTopics, {
+      sessionId,
+      sourceSummary: "Neue Zusammenfassung",
+      sourceTopics: ["Gesetzgebung", "Bundestag"],
+    });
+
+    const unchangedSession = await t.run(async (ctx) =>
+      ctx.db.get("studySessions", sessionId),
+    );
+    expect(unchangedSession?.updatedAt).toBe(preparedUpdatedAt);
   });
 
   it("überspringt identische Quizgenerierung und erhöht bei neuen Fragen die Runde", async () => {

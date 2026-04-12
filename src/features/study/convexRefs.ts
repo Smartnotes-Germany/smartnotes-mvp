@@ -18,7 +18,7 @@ export const sessionSnapshotRef = api.study.getSessionSnapshot;
 
 export const extractDocumentContentRef = api.ai.extractDocumentContent;
 
-export const generateQuizRef = api.ai.generateQuiz;
+export const prepareSourceTopicsRef = api.ai.prepareSourceTopics;
 export const generateFocusedQuizRef = api.ai.generateFocusedQuiz;
 
 export const evaluateAnswerRef = api.ai.evaluateAnswer;

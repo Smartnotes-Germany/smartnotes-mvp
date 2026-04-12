@@ -47,6 +47,9 @@ const MAX_VERTEX_INLINE_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
 const MAX_VERTEX_INLINE_FILE_LABEL = MAX_UPLOAD_FILE_LABEL;
 const PRE_DOWNLOAD_CONTENT_LENGTH_TOLERANCE_BYTES = 128 * 1024;
 const LLM_GENERATION_TIMEOUT_MS = 60_000;
+const PDF_TEXT_EXTRACTION_MAX_PAGES = 80;
+const GOOD_EXTRACTION_MIN_CHARS = 400;
+const PARTIAL_EXTRACTION_MIN_CHARS = 60;
 const vertexProviderOptions = {
   google: {
     thinkingConfig: {
@@ -84,9 +87,12 @@ const extensionToMediaType: Record<string, string> = {
   webp: "image/webp",
 };
 
-const quizGenerationSchema = z.object({
+const sourcePreparationSchema = z.object({
   sourceSummary: z.string(),
   topics: z.array(z.string()).min(1).max(12),
+});
+
+const quizGenerationSchema = sourcePreparationSchema.extend({
   questions: z.array(
     z.object({
       topic: z.string(),
@@ -172,6 +178,10 @@ type SessionDocumentInput = {
   fileType: string;
   fileSizeBytes: number;
   extractedText?: string;
+  extractionStrategy?: ExtractionStrategy;
+  extractionQuality?: ExtractionQuality;
+  extractedCharCount?: number;
+  extractionMetadataJson?: string;
   extractionStatus: "pending" | "processing" | "ready" | "failed";
 };
 
@@ -183,6 +193,7 @@ type QuestionForEvaluation = {
   explanationHint: string;
 };
 
+type SourcePreparationResult = z.infer<typeof sourcePreparationSchema>;
 type QuizGenerationResult = z.infer<typeof quizGenerationSchema>;
 type AnswerEvaluationResult = z.infer<typeof answerEvaluationSchema>;
 
@@ -279,6 +290,20 @@ type FocusTopicAnalysisOutputResult = z.infer<
 type FocusTopicAnalysisResult = z.infer<typeof focusTopicAnalysisSchema>;
 type DeepDiveGenerationResult = z.infer<typeof deepDiveSchema>;
 type AnalysisMode = "full" | "focus";
+type ExtractionStrategy =
+  | "plain_text"
+  | "pdfjs"
+  | "officeparser"
+  | "native_file";
+type ExtractionQuality = "good" | "partial" | "empty" | "failed";
+
+type ExtractedDocumentContent = {
+  text: string;
+  strategy: ExtractionStrategy;
+  quality: ExtractionQuality;
+  charCount: number;
+  metadata: Record<string, unknown>;
+};
 
 const compactText = (value: string, maxChars: number) => {
   const normalized = value
@@ -318,11 +343,14 @@ const getOversizedInlineDocuments = (
     fileName: string;
     fileType: string;
     fileSizeBytes: number;
+    extractedText?: string;
+    extractionQuality?: ExtractionQuality;
   }>,
 ) => {
   return documents.filter(
     (document) =>
       isVertexNativeCandidate(document.fileType, document.fileName) &&
+      shouldAttachNativeDocument(document) &&
       document.fileSizeBytes > MAX_VERTEX_INLINE_FILE_BYTES,
   );
 };
@@ -342,6 +370,11 @@ const isPdfDocument = (fileType: string, fileName: string) => {
     filenameExtension(fileName) === "pdf"
   );
 };
+
+const shouldAttachNativeDocument = (document: {
+  extractedText?: string;
+  extractionQuality?: ExtractionQuality;
+}) => !document.extractedText || document.extractionQuality !== "good";
 
 const resolveMediaType = (fileType: string, fileName: string) => {
   if (fileType && fileType !== "application/octet-stream") {
@@ -395,22 +428,96 @@ const createVertexModel = () => {
   });
 };
 
+const classifyExtractedTextQuality = (text: string): ExtractionQuality => {
+  const compacted = compactText(text, MAX_EXTRACTED_TEXT_CHARS);
+  if (compacted.length >= GOOD_EXTRACTION_MIN_CHARS) {
+    return "good";
+  }
+  if (compacted.length >= PARTIAL_EXTRACTION_MIN_CHARS) {
+    return "partial";
+  }
+  return compacted.length > 0 ? "partial" : "empty";
+};
+
+const buildExtractedContent = (
+  text: string,
+  strategy: ExtractionStrategy,
+  metadata: Record<string, unknown> = {},
+): ExtractedDocumentContent => {
+  const compactedText = compactText(text, MAX_EXTRACTED_TEXT_CHARS);
+  return {
+    text: compactedText,
+    strategy,
+    quality: classifyExtractedTextQuality(compactedText),
+    charCount: compactedText.length,
+    metadata,
+  };
+};
+
+const extractPdfTextWithPdfjs = async (
+  fileBuffer: Buffer,
+): Promise<ExtractedDocumentContent> => {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(fileBuffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    disableFontFace: true,
+    useSystemFonts: true,
+  });
+  const pdf = await loadingTask.promise;
+  const pageCount = pdf.numPages;
+  const extractedPages = Math.min(pageCount, PDF_TEXT_EXTRACTION_MAX_PAGES);
+  const pageTexts: string[] = [];
+
+  try {
+    for (let pageNumber = 1; pageNumber <= extractedPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item) =>
+          typeof item === "object" &&
+          item !== null &&
+          "str" in item &&
+          typeof item.str === "string"
+            ? item.str
+            : "",
+        )
+        .join(" ");
+      pageTexts.push(pageText);
+      page.cleanup();
+    }
+  } finally {
+    await pdf.destroy();
+  }
+
+  return buildExtractedContent(pageTexts.join("\n\n"), "pdfjs", {
+    pageCount,
+    extractedPages,
+    truncatedPages: Math.max(0, pageCount - extractedPages),
+  });
+};
+
 const extractTextFromBytes = async (
   fileName: string,
   fileType: string,
   fileBuffer: Buffer,
-) => {
+): Promise<ExtractedDocumentContent> => {
   const extension = filenameExtension(fileName);
 
   if (fileType.startsWith("text/") || plainTextExtensions.has(extension)) {
-    return compactText(decodeUtf8(fileBuffer), MAX_EXTRACTED_TEXT_CHARS);
+    return buildExtractedContent(decodeUtf8(fileBuffer), "plain_text");
+  }
+
+  if (isPdfDocument(fileType, fileName)) {
+    return extractPdfTextWithPdfjs(fileBuffer);
   }
 
   const parsedAst = await parseOffice(fileBuffer, {
     newlineDelimiter: "\n",
     ignoreNotes: false,
   });
-  return compactText(parsedAst.toText(), MAX_EXTRACTED_TEXT_CHARS);
+  return buildExtractedContent(parsedAst.toText(), "officeparser");
 };
 
 const buildSourceContext = (
@@ -440,6 +547,7 @@ const buildModelInputFromDocuments = async (
     fileType: string;
     fileSizeBytes?: number;
     extractedText?: string;
+    extractionQuality?: ExtractionQuality;
   }>,
   accessKey?: string,
   trace?: {
@@ -475,6 +583,16 @@ const buildModelInputFromDocuments = async (
         });
       }
 
+      if (!shouldAttachNativeDocument(document)) {
+        trace?.log("info", "model_input_native_attachment_skipped_text_good", {
+          fileName: document.fileName,
+          fileType: document.fileType,
+          extractedTextLength: document.extractedText?.length ?? 0,
+          extractionQuality: document.extractionQuality,
+        });
+        continue;
+      }
+
       if (
         Number.isFinite(document.fileSizeBytes) &&
         (document.fileSizeBytes ?? 0) > MAX_VERTEX_INLINE_FILE_BYTES
@@ -494,10 +612,6 @@ const buildModelInputFromDocuments = async (
         await createDocumentReadUrl(ctx, document, accessKey, trace);
       if (!fileUrl) {
         if (document.extractedText) {
-          textOnlyDocuments.push({
-            fileName: document.fileName,
-            extractedText: document.extractedText,
-          });
           continue;
         }
         throw new Error(
@@ -516,10 +630,6 @@ const buildModelInputFromDocuments = async (
       const response = await fetch(fileUrl);
       if (!response.ok) {
         if (document.extractedText) {
-          textOnlyDocuments.push({
-            fileName: document.fileName,
-            extractedText: document.extractedText,
-          });
           continue;
         }
         throw new Error(
@@ -576,22 +686,34 @@ const buildModelInputFromDocuments = async (
         isPdfDocument(mediaType, document.fileName)
       ) {
         try {
-          const extractedText = await extractTextFromBytes(
+          const extraction = await extractTextFromBytes(
             document.fileName,
             mediaType,
             documentBuffer,
           );
 
-          if (extractedText) {
+          if (extraction.text) {
             textOnlyDocuments.push({
               fileName: document.fileName,
-              extractedText,
+              extractedText: extraction.text,
             });
             trace?.log("info", "model_input_pdf_text_extracted", {
               fileName: document.fileName,
-              extractedLength: extractedText.length,
+              extractionStrategy: extraction.strategy,
+              extractionQuality: extraction.quality,
+              extractedLength: extraction.text.length,
+              extractionMetadata: extraction.metadata,
               elapsedMs: Date.now() - fileLoadStartedAt,
             });
+
+            if (extraction.quality === "good") {
+              trace?.log("info", "model_input_document_attachment_skipped", {
+                fileName: document.fileName,
+                reason: "pdf_text_extraction_good",
+                elapsedMs: Date.now() - fileLoadStartedAt,
+              });
+              continue;
+            }
           }
         } catch (error) {
           trace?.log("warn", "model_input_pdf_text_extraction_failed", {
@@ -658,13 +780,13 @@ const buildModelInputFromDocuments = async (
     }
 
     const documentBuffer = Buffer.from(await response.arrayBuffer());
-    const extractedText = await extractTextFromBytes(
+    const extraction = await extractTextFromBytes(
       document.fileName,
       document.fileType,
       documentBuffer,
     );
 
-    if (!extractedText) {
+    if (!extraction.text) {
       throw new Error(
         `Aus dieser Datei konnte kein Text extrahiert werden: ${document.fileName}`,
       );
@@ -672,12 +794,15 @@ const buildModelInputFromDocuments = async (
 
     textOnlyDocuments.push({
       fileName: document.fileName,
-      extractedText,
+      extractedText: extraction.text,
     });
 
     trace?.log("info", "model_input_text_fallback_extracted", {
       fileName: document.fileName,
-      extractedLength: extractedText.length,
+      extractionStrategy: extraction.strategy,
+      extractionQuality: extraction.quality,
+      extractedLength: extraction.text.length,
+      extractionMetadata: extraction.metadata,
       elapsedMs: Date.now() - textLoadStartedAt,
     });
   }
@@ -1651,6 +1776,23 @@ const summarizeGeneratedQuiz = (
   };
 };
 
+const summarizePreparedSourceTopics = (
+  generated: SourcePreparationResult | null | undefined,
+) => {
+  if (!generated) {
+    return {
+      hasOutput: false,
+    };
+  }
+
+  return {
+    hasOutput: true,
+    sourceSummaryLength: generated.sourceSummary.length,
+    topicsCount: generated.topics.length,
+    firstTopic: generated.topics[0] ?? null,
+  };
+};
+
 const summarizeGeneratedDeepDive = (
   generated: DeepDiveGenerationResult | null | undefined,
 ) => {
@@ -2312,6 +2454,12 @@ export const extractDocumentContent = action({
       await ctx.runMutation(internal.study.setDocumentExtractionResult, {
         documentId: args.documentId,
         extractionStatus: "ready",
+        extractionStrategy: "native_file",
+        extractionQuality: "empty",
+        extractedCharCount: 0,
+        extractionMetadataJson: JSON.stringify({
+          reason: "vertex_native_non_pdf",
+        }),
       });
 
       return {
@@ -2348,26 +2496,33 @@ export const extractDocumentContent = action({
       });
 
       const fileBuffer = Buffer.from(await response.arrayBuffer());
-      const extractedText = await extractTextFromBytes(
+      const extraction = await extractTextFromBytes(
         document.fileName,
         document.fileType,
         fileBuffer,
       );
 
-      if (!extractedText) {
+      if (!extraction.text) {
         throw new Error("Aus dieser Datei konnte kein Text extrahiert werden.");
       }
 
       trace.log("info", "text_extracted", {
         fileName: document.fileName,
-        extractedLength: extractedText.length,
-        extractedTextStats: redactTextForLog(extractedText),
+        extractionStrategy: extraction.strategy,
+        extractionQuality: extraction.quality,
+        extractedLength: extraction.text.length,
+        extractionMetadata: extraction.metadata,
+        extractedTextStats: redactTextForLog(extraction.text),
       });
 
       await ctx.runMutation(internal.study.setDocumentExtractionResult, {
         documentId: args.documentId,
         extractionStatus: "ready",
-        extractedText,
+        extractedText: extraction.text,
+        extractionStrategy: extraction.strategy,
+        extractionQuality: extraction.quality,
+        extractedCharCount: extraction.charCount,
+        extractionMetadataJson: JSON.stringify(extraction.metadata),
       });
 
       return {
@@ -2392,6 +2547,13 @@ export const extractDocumentContent = action({
           extractionStatus: "ready",
           extractionError:
             "PDF-Text konnte nicht extrahiert werden. Die Datei wird direkt an die KI übergeben.",
+          extractionStrategy: "native_file",
+          extractionQuality: "failed",
+          extractedCharCount: 0,
+          extractionMetadataJson: JSON.stringify({
+            fallback: "native_file",
+            extractor: "pdfjs",
+          }),
         });
 
         return {
@@ -2411,6 +2573,8 @@ export const extractDocumentContent = action({
         documentId: args.documentId,
         extractionStatus: "failed",
         extractionError: message,
+        extractionQuality: "failed",
+        extractedCharCount: 0,
       });
 
       return {
@@ -2418,6 +2582,388 @@ export const extractDocumentContent = action({
         extractionStatus: "failed" as const,
         error: message,
       };
+    }
+  },
+});
+
+export const prepareSourceTopics = action({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    clientRequestId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const trace = createAiTraceLogger(
+      "prepareSourceTopics",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
+    const analyticsModelId = "gemini-3-flash-preview";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let fallbackUsed = false;
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let totalDocuments = 0;
+    let readyDocumentsCount = 0;
+    let documentIds: string[] = [];
+    let readyDocumentIds: string[] = [];
+    let documentCorrelationMetadata: DocumentCorrelationMetadata = {};
+    let filePartCount = 0;
+    let sourceContextLength = 0;
+    let sourceContext = "";
+    let generatedTopics: SourcePreparationResult | null = null;
+    let filePartSummaries: PostHogFileAttachmentSummary[] = [];
+    let analyticsError: unknown;
+
+    const topicInstruction = `Bereite die Themenauswahl für eine Lernsitzung vor.
+
+Aufgabe:
+- Lies das bereitgestellte Lernmaterial sorgfältig.
+- Erstelle eine kurze, sachliche Zusammenfassung der Quelle.
+- Erkenne 4 bis 10 prüfungsrelevante Themen, die Schüler direkt auswählen können.
+- Formuliere jedes Thema kurz, konkret und auf Deutsch.
+- Gib keine Quizfragen aus.`;
+
+    try {
+      trace.log("info", "start", {
+        instructionLength: topicInstruction.length,
+      });
+
+      const quizContext: {
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        grantToken: args.grantToken,
+        sessionId: args.sessionId,
+      });
+
+      const documents = quizContext.documents;
+      const accessKey = quizContext.accessKey;
+      totalDocuments = documents.length;
+
+      const readyDocuments = documents.filter(
+        (document: SessionDocumentInput) =>
+          document.extractionStatus === "ready",
+      );
+      readyDocumentsCount = readyDocuments.length;
+      documentIds = documents.map((document) => String(document._id));
+      readyDocumentIds = readyDocuments.map((document) => String(document._id));
+      documentCorrelationMetadata = buildDocumentCorrelationMetadata(
+        documentIds,
+        readyDocumentIds,
+      );
+
+      trace.log("info", "documents_loaded", {
+        totalDocuments: documents.length,
+        readyDocuments: readyDocuments.length,
+        documents: documents.map((document) => ({
+          documentId: document._id,
+          fileName: document.fileName,
+          fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
+          extractionStatus: document.extractionStatus,
+          extractionStrategy: document.extractionStrategy,
+          extractionQuality: document.extractionQuality,
+          extractedTextLength: document.extractedText?.length ?? 0,
+        })),
+      });
+
+      if (readyDocuments.length === 0) {
+        trace.log("warn", "no_ready_documents");
+        throw new Error(
+          "Lade mindestens ein Dokument hoch und verarbeite es, bevor du Themen vorbereitest.",
+        );
+      }
+
+      const oversizedDocuments = getOversizedInlineDocuments(readyDocuments);
+      if (oversizedDocuments.length > 0) {
+        trace.log("warn", "oversized_documents_blocked", {
+          oversizedCount: oversizedDocuments.length,
+          maxInlineBytes: MAX_VERTEX_INLINE_FILE_BYTES,
+          files: oversizedDocuments.map((document) => ({
+            fileName: document.fileName,
+            fileSizeBytes: document.fileSizeBytes,
+            extractionQuality: document.extractionQuality,
+          })),
+        });
+
+        const filesPreview = oversizedDocuments
+          .slice(0, 3)
+          .map((document) => document.fileName)
+          .join(", ");
+        const suffix = oversizedDocuments.length > 3 ? " ..." : "";
+
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}). Bitte verkleinere die Datei oder teile sie auf: ${filesPreview}${suffix}`,
+        );
+      }
+
+      const model = createVertexModel();
+      trace.log("info", "vertex_model_initialized", {
+        modelId: analyticsModelId,
+      });
+
+      const modelInput = await buildModelInputFromDocuments(
+        ctx,
+        readyDocuments.map((document: SessionDocumentInput) => ({
+          storageId: document.storageId,
+          storageProvider: document.storageProvider,
+          fileName: document.fileName,
+          fileType: document.fileType,
+          fileSizeBytes: document.fileSizeBytes,
+          extractedText: document.extractedText,
+          extractionQuality: document.extractionQuality,
+        })),
+        accessKey,
+        trace,
+      );
+      const fileParts = modelInput.fileParts;
+      sourceContext = modelInput.sourceContext;
+
+      trace.log("info", "model_input_prepared", {
+        sourceContextLength: sourceContext.length,
+        sourceContextStats: redactTextForLog(sourceContext),
+        filePartCount: fileParts.length,
+        fileParts: fileParts.map((part) => ({
+          filename: part.filename,
+          mediaType: part.mediaType,
+          sizeBytes: part.data.byteLength,
+        })),
+      });
+
+      filePartCount = fileParts.length;
+      sourceContextLength = sourceContext.length;
+      filePartSummaries = summarizeFilePartsForPostHog(fileParts);
+
+      if (fileParts.length === 0 && !sourceContext) {
+        trace.log("error", "no_usable_input");
+        throw new Error(
+          "Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.",
+        );
+      }
+
+      const userContent: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; data: Buffer; mediaType: string; filename: string }
+      > = [{ type: "text", text: topicInstruction }];
+
+      if (sourceContext) {
+        userContent.push({
+          type: "text",
+          text: `Textauszüge aus den Dateien:\n${sourceContext}`,
+        });
+      }
+
+      userContent.push(...fileParts);
+
+      try {
+        trace.log("info", "llm_primary_request", {
+          strategy: "structured_messages",
+          temperature: 0.1,
+          maxOutputTokens: 1_500,
+          thinkingBudget: 0,
+          timeoutMs: LLM_GENERATION_TIMEOUT_MS,
+          sourceContextLength: sourceContext.length,
+          filePartCount: fileParts.length,
+        });
+
+        llmAttempts += 1;
+
+        const result = await generateText({
+          model: model("gemini-3-flash-preview"),
+          temperature: 0.1,
+          maxOutputTokens: 1_500,
+          timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
+          providerOptions: vertexProviderOptions,
+          output: Output.object({
+            schema: sourcePreparationSchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "prepareSourceTopics.primary",
+            args.sessionId,
+            trace.traceId,
+            {
+              appScope: "prepareSourceTopics",
+              stage: "primary",
+              readyDocuments: readyDocuments.length,
+              ...documentCorrelationMetadata,
+              filePartCount: fileParts.length,
+              sourceContextLength: sourceContext.length,
+            },
+          ),
+          system:
+            "Du bist ein akademischer Tutor. Bereite eine knappe, prüfungsnahe Themenauswahl auf Deutsch vor.",
+          messages: [{ role: "user", content: userContent }],
+        });
+
+        const resultLog = extractGenerationResultForLog(result);
+        trace.addUsage(resultLog.usage);
+        finishReason = resultLog.details.finishReason;
+        mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+        trace.log("info", "llm_primary_response", {
+          ...resultLog.details,
+          outputSummary: summarizePreparedSourceTopics(result.output),
+        });
+
+        generatedTopics = result.output;
+      } catch (error) {
+        if (!isNoOutputGeneratedError(error) || !sourceContext) {
+          trace.addUsage(extractUsageFromError(error));
+          trace.log("error", "llm_primary_failed", {
+            error: extractErrorForLog(error),
+          });
+          throw error;
+        }
+
+        fallbackUsed = true;
+        trace.addUsage(extractUsageFromError(error));
+        trace.log("warn", "llm_primary_no_output", {
+          error: extractErrorForLog(error),
+        });
+
+        trace.log("info", "llm_fallback_request", {
+          strategy: "structured_prompt",
+          temperature: 0.1,
+          maxOutputTokens: 1_500,
+          thinkingBudget: 0,
+          timeoutMs: LLM_GENERATION_TIMEOUT_MS,
+          sourceContextLength: sourceContext.length,
+        });
+
+        llmAttempts += 1;
+
+        const fallbackResult = await generateText({
+          model: model("gemini-3-flash-preview"),
+          temperature: 0.1,
+          maxOutputTokens: 1_500,
+          timeout: { totalMs: LLM_GENERATION_TIMEOUT_MS },
+          providerOptions: vertexProviderOptions,
+          output: Output.object({
+            schema: sourcePreparationSchema,
+          }),
+          experimental_telemetry: buildAiSdkTelemetry(
+            "prepareSourceTopics.fallbackStructured",
+            args.sessionId,
+            trace.traceId,
+            {
+              appScope: "prepareSourceTopics",
+              stage: "fallback_structured",
+              readyDocuments: readyDocuments.length,
+              ...documentCorrelationMetadata,
+              filePartCount: 0,
+              sourceContextLength: sourceContext.length,
+            },
+          ),
+          system:
+            "Du bist ein akademischer Tutor. Bereite eine knappe, prüfungsnahe Themenauswahl auf Deutsch vor.",
+          prompt: `${topicInstruction}\n\nNutze ausschließlich dieses Lernmaterial:\n${sourceContext}`,
+        });
+
+        const fallbackLog = extractGenerationResultForLog(fallbackResult);
+        trace.addUsage(fallbackLog.usage);
+        finishReason = fallbackLog.details.finishReason;
+        mergeVertexUsage(vertexUsageTotals, fallbackLog.details.vertexUsage);
+        trace.log("info", "llm_fallback_response", {
+          ...fallbackLog.details,
+          outputSummary: summarizePreparedSourceTopics(fallbackResult.output),
+        });
+
+        generatedTopics = fallbackResult.output;
+      }
+
+      if (!generatedTopics) {
+        trace.log("error", "validation_no_output");
+        throw new Error(
+          "Die KI hat keine Themenauswahl erzeugt. Bitte versuche es erneut.",
+        );
+      }
+
+      const normalizedTopics = [
+        ...new Set(
+          generatedTopics.topics
+            .map((topic) => topic.trim())
+            .filter((topic) => topic.length > 0),
+        ),
+      ].slice(0, 10);
+
+      if (normalizedTopics.length === 0) {
+        trace.log("error", "validation_no_topics", {
+          outputSummary: summarizePreparedSourceTopics(generatedTopics),
+        });
+        throw new Error(
+          "Die KI hat keine auswählbaren Themen erkannt. Bitte versuche es erneut oder lade eine klarere Quelle hoch.",
+        );
+      }
+
+      generatedTopics = {
+        sourceSummary: generatedTopics.sourceSummary.trim(),
+        topics: normalizedTopics,
+      };
+
+      await ctx.runMutation(internal.study.storePreparedSourceTopics, {
+        sessionId: args.sessionId,
+        sourceSummary: generatedTopics.sourceSummary,
+        sourceTopics: generatedTopics.topics,
+      });
+
+      trace.log("info", "completed", {
+        outputSummary: summarizePreparedSourceTopics(generatedTopics),
+        usageTotals: trace.getUsageTotals(),
+      });
+
+      return {
+        topicCount: generatedTopics.topics.length,
+        sourceTopics: generatedTopics.topics,
+      };
+    } catch (error) {
+      analyticsError = error;
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
+        scope: "prepareSourceTopics",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        fallbackUsed,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        totalDocuments,
+        readyDocuments: readyDocumentsCount,
+        filePartCount,
+        sourceContextLength,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          clientRequestId: args.clientRequestId,
+          topicCount: generatedTopics?.topics.length,
+          ...documentCorrelationMetadata,
+        },
+        posthogInput: stringifyForPostHog({
+          sourceContext,
+          attachedFiles: filePartSummaries,
+        }),
+        posthogOutput: stringifyForPostHog({
+          generatedTopics,
+        }),
+        posthogProperties: {
+          sourceContext,
+          attachedFiles: stringifyForPostHog(filePartSummaries) ?? "[]",
+          generatedTopics: stringifyForPostHog(generatedTopics) ?? "",
+        },
+      });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "prepareSourceTopics",
+      });
     }
   },
 });
@@ -2566,6 +3112,7 @@ Anforderungen:
             fileType: document.fileType,
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
+            extractionQuality: document.extractionQuality,
           })),
           accessKey,
           trace,
@@ -3163,6 +3710,7 @@ Anforderungen:
             fileType: document.fileType,
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
+            extractionQuality: document.extractionQuality,
           })),
           accessKey,
           trace,
@@ -4567,6 +5115,7 @@ export const generateTopicDeepDive = action({
             fileType: document.fileType,
             fileSizeBytes: document.fileSizeBytes,
             extractedText: document.extractedText,
+            extractionQuality: document.extractionQuality,
           })),
           accessKey,
           trace,

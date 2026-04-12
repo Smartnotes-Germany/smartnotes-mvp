@@ -74,6 +74,7 @@ export default defineSchema({
     title: v.string(),
     stage: v.union(
       v.literal("upload"),
+      v.literal("mode_selection"),
       v.literal("quiz"),
       v.literal("analysis"),
     ),
@@ -105,6 +106,24 @@ export default defineSchema({
     ),
     extractedText: v.optional(v.string()), // Der von der KI extrahierte Textinhalt
     extractionError: v.optional(v.string()),
+    extractionStrategy: v.optional(
+      v.union(
+        v.literal("plain_text"),
+        v.literal("pdfjs"),
+        v.literal("officeparser"),
+        v.literal("native_file"),
+      ),
+    ),
+    extractionQuality: v.optional(
+      v.union(
+        v.literal("good"),
+        v.literal("partial"),
+        v.literal("empty"),
+        v.literal("failed"),
+      ),
+    ),
+    extractedCharCount: v.optional(v.number()),
+    extractionMetadataJson: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

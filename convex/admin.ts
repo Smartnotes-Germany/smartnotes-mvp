@@ -198,12 +198,9 @@ export const deleteData = mutation({
 
           if (deleteResult.deleted) {
             deletedStorageFiles += 1;
-          } else {
-            // Treat an unsuccessful deletion as a failure to keep counts accurate.
-            throw new Error("Failed to delete managed file");
           }
         } catch {
-          // Continue deleting DB records even if storage deletion fails.
+          continue;
         }
 
         await ctx.db.delete("sessionDocuments", document._id);

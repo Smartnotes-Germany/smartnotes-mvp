@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
-import logoImage from "../assets/images/logo.png";
+import logoImage from "../assets/images/stackprep-mark.svg";
 import { hasMeaningfulIdentityLabel } from "../../shared/identity";
 
 export default function Page() {
@@ -110,7 +110,7 @@ export default function Page() {
           <div className="text-center">
             <img
               src={logoImage}
-              alt="SmartNotes"
+              alt="StackPrep"
               className="mx-auto mb-4 h-12 w-auto rounded-xl"
             />
             <h2 className="flex items-center justify-center gap-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
@@ -165,7 +165,7 @@ export default function Page() {
           <div className="flex items-center gap-4">
             <img
               src={logoImage}
-              alt="SmartNotes"
+              alt="StackPrep"
               className="h-10 w-auto rounded-lg"
             />
             <div>

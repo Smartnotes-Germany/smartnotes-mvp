@@ -20,12 +20,10 @@ const convex = new ConvexReactClient(resolvedFrontendEnv.convexUrl);
 initializePostHog();
 
 const analyticsErrorFallback = (
-  <div className="bg-cream text-ink flex min-h-screen items-center justify-center px-6 text-center">
-    <div className="border-cream-border bg-surface-white w-full max-w-md rounded-2xl border p-6 shadow-sm">
-      <p className="text-accent mb-2 text-xs font-bold tracking-[0.2em] uppercase">
-        Fehler
-      </p>
-      <h1 className="mb-3 text-2xl font-bold tracking-tight">
+  <div className="app-glow text-ink flex min-h-screen items-center justify-center px-6 text-center">
+    <div className="sp-card w-full max-w-md p-6">
+      <p className="text-accent mb-2 text-sm font-semibold">Fehler</p>
+      <h1 className="mb-3 text-2xl font-medium tracking-[-0.04em]">
         Es ist ein unerwarteter Fehler aufgetreten.
       </h1>
       <p className="text-ink-secondary text-sm">

@@ -27,7 +27,7 @@ export function ThemeToggle({ preference, setPreference }: ThemeToggleProps) {
             title={option.label}
             className={`inline-flex items-center justify-center rounded-full p-2 transition ${
               isActive
-                ? "bg-accent text-white shadow-sm"
+                ? "bg-action text-white shadow-sm"
                 : "text-ink-muted hover:text-ink"
             }`}
           >

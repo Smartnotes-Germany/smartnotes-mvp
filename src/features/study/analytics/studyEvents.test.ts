@@ -16,7 +16,7 @@ import {
   trackFocusedQuizGenerationSucceeded,
   trackStudyStageViewed,
   trackTopicSelectionPreparationFailed,
-} from "./events";
+} from "./studyEvents";
 
 describe("study analytics event contract", () => {
   beforeEach(() => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Loader2, LogOut, Menu, RefreshCcw, X } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 import { StageBadge } from "./StageBadge";
 import { ThemeToggle } from "./ThemeToggle";
 import type { StudyStage, ThemePreference } from "../types";
@@ -53,18 +54,9 @@ export function NavigationShell({
   };
 
   return (
-    <div className="bg-cream text-ink flex min-h-dvh flex-col overflow-hidden md:h-screen md:min-h-screen md:flex-row">
-      <header className="bg-surface-white border-cream-border z-50 flex items-center justify-between border-b px-5 py-4 md:hidden">
-        <div className="flex items-center gap-2">
-          <img
-            src={logoImage}
-            alt="Logo"
-            className="border-cream-border h-8 w-8 rounded-lg border"
-          />
-          <p className="text-accent text-xs font-black tracking-[0.16em] uppercase">
-            Smartnotes
-          </p>
-        </div>
+    <div className="app-glow text-ink flex min-h-dvh flex-col overflow-hidden md:h-screen md:min-h-screen md:flex-row">
+      <header className="bg-cream/70 border-cream-border z-50 flex items-center justify-between border-b px-5 py-4 backdrop-blur-md md:hidden">
+        <BrandLogo logoImage={logoImage} size="sm" />
         <button
           type="button"
           onClick={() => setIsMobileMenuOpen((prev) => !prev)}
@@ -107,7 +99,7 @@ export function NavigationShell({
                 type="button"
                 onClick={() => void handleStartFreshSession()}
                 disabled={isCreatingSession}
-                className="border-cream-border bg-surface-white text-ink inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-3 text-xs font-bold tracking-[0.12em] uppercase transition disabled:opacity-60"
+                className="pill-button pill-button--quiet text-ink w-full justify-center gap-2"
               >
                 {isCreatingSession ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -120,7 +112,7 @@ export function NavigationShell({
                 type="button"
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                className="border-cream-border bg-surface-white text-ink-muted inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-3 text-xs font-bold tracking-[0.12em] uppercase transition disabled:opacity-60"
+                className="pill-button pill-button--quiet w-full justify-center gap-2"
               >
                 {isSigningOut ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -135,15 +127,8 @@ export function NavigationShell({
       )}
 
       <aside className="border-cream-border bg-surface-white hidden w-[300px] flex-shrink-0 flex-col border-r p-6 md:flex">
-        <div className="mb-8 flex items-center gap-3">
-          <img
-            src={logoImage}
-            alt="Smartnotes"
-            className="border-cream-border h-10 w-10 rounded-xl border"
-          />
-          <p className="text-accent text-base font-black tracking-[0.16em] uppercase">
-            Smartnotes
-          </p>
+        <div className="mb-10">
+          <BrandLogo logoImage={logoImage} />
         </div>
 
         <nav className="space-y-3">
@@ -175,7 +160,7 @@ export function NavigationShell({
             type="button"
             onClick={() => void handleStartFreshSession()}
             disabled={isCreatingSession}
-            className="border-cream-border bg-surface-white text-ink hover:bg-cream-light inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[10px] font-bold tracking-[0.12em] uppercase transition disabled:opacity-60"
+            className="pill-button pill-button--quiet text-ink w-full justify-center gap-2"
           >
             {isCreatingSession ? (
               <Loader2 size={14} className="animate-spin" />
@@ -188,7 +173,7 @@ export function NavigationShell({
             type="button"
             onClick={handleSignOut}
             disabled={isSigningOut}
-            className="border-cream-border bg-surface-white text-ink-muted hover:text-ink inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-[10px] font-bold tracking-[0.12em] uppercase transition disabled:opacity-60"
+            className="pill-button pill-button--quiet w-full justify-center gap-2"
           >
             {isSigningOut ? (
               <Loader2 size={14} className="animate-spin" />
@@ -200,7 +185,7 @@ export function NavigationShell({
         </div>
       </aside>
 
-      <main className="bg-cream flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:p-8 md:pb-8 lg:p-12 lg:pb-12">
+      <main className="flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:p-8 md:pb-8 lg:p-12 lg:pb-12">
         <div className="mx-auto h-full min-h-full max-w-5xl">{children}</div>
       </main>
     </div>

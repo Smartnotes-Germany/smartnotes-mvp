@@ -1,4 +1,5 @@
 import { ArrowRight, Loader2 } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 import { ThemeToggle } from "./ThemeToggle";
 import type { ThemePreference } from "../types";
 
@@ -26,28 +27,19 @@ export function AuthScreen({
   authError,
 }: AuthScreenProps) {
   return (
-    <div className="bg-cream text-ink flex min-h-screen flex-col items-center justify-center px-6 py-10 md:px-10">
+    <div className="app-glow text-ink flex min-h-screen flex-col items-center justify-center px-6 py-10 md:px-10">
       <div className="fixed top-4 right-4 z-50">
         <ThemeToggle preference={preference} setPreference={setPreference} />
       </div>
 
       <div className="w-full max-w-xl">
-        <div className="mb-10 flex items-center justify-center gap-3">
-          <img
-            src={logoImage}
-            alt="Smartnotes"
-            className="border-cream-border h-10 w-10 rounded-xl border"
-          />
-          <p className="text-accent text-lg font-black tracking-[0.16em] uppercase">
-            Smartnotes
-          </p>
+        <div className="mb-10 flex justify-center">
+          <BrandLogo logoImage={logoImage} />
         </div>
 
-        <div className="border-cream-border bg-surface-white rounded-[2rem] border p-6 shadow-sm md:p-10">
-          <p className="text-accent mb-2 text-xs font-bold tracking-[0.18em] uppercase">
-            Zugang
-          </p>
-          <h1 className="mb-3 text-2xl font-bold tracking-tight md:text-3xl">
+        <div className="sp-card p-6 md:p-10">
+          <p className="text-accent mb-2 text-sm font-semibold">Zugang</p>
+          <h1 className="mb-3 text-3xl leading-tight font-medium tracking-[-0.045em] md:text-4xl">
             {isConsumingMagicLink
               ? "Link wird verifiziert..."
               : "Zugangscode eingeben"}
@@ -65,7 +57,7 @@ export function AuthScreen({
             </div>
           ) : (
             <>
-              <label className="text-ink-muted mb-2 block text-xs font-bold tracking-[0.14em] uppercase">
+              <label className="text-ink-secondary mb-2 block text-sm font-medium">
                 Zugangscode
               </label>
               <input
@@ -76,8 +68,8 @@ export function AuthScreen({
                     void onRedeemCode();
                   }
                 }}
-                placeholder="SMARTNOTES-DEMO-2026"
-                className="border-cream-border bg-cream-light focus:border-accent mb-5 w-full rounded-2xl border px-4 py-3 text-sm font-medium transition outline-none"
+                placeholder="STACKPREP-DEMO-2026"
+                className="border-cream-border bg-cream-light focus:border-accent mb-5 min-h-12 w-full rounded-full border px-5 py-3 text-sm font-medium transition outline-none"
               />
 
               {authError && (
@@ -90,14 +82,16 @@ export function AuthScreen({
                 type="button"
                 onClick={() => void onRedeemCode()}
                 disabled={isRedeemingCode}
-                className="bg-accent inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 disabled:opacity-60"
+                className="pill-button w-full justify-between"
               >
-                {isRedeemingCode ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <ArrowRight size={18} />
-                )}
                 Weiter
+                <span className="pill-button__arrow" aria-hidden="true">
+                  {isRedeemingCode ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ArrowRight size={16} />
+                  )}
+                </span>
               </button>
             </>
           )}

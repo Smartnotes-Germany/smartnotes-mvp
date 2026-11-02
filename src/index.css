@@ -2,37 +2,44 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@font-face {
+  font-family: "Sora";
+  src: url("/fonts/Sora-Variable.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
 @theme {
-  --font-sans: "DM Sans", system-ui, sans-serif;
-  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans:
+    "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --font-serif: var(--font-sans);
 
-  /* Tighter global corner radius scale */
-  --radius-xs: 0.2rem;
-  --radius-sm: 0.35rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.65rem;
-  --radius-xl: 0.8rem;
-  --radius-2xl: 1rem;
+  /* StackPrep palette (from stackprep.de), mapped onto the existing token names */
+  --color-cream: #f7f8fc;
+  --color-cream-light: #f2f4fa;
+  --color-cream-dark: #e3e7f2;
+  --color-cream-border: #e3e7f2;
 
-  /* Warm cream palette inspired by the Smartnotes landing page */
-  --color-cream: #f5f5f0;
-  --color-cream-light: #fbfbf8;
-  --color-cream-dark: #ebebe5;
-  --color-cream-border: #e0e0d6;
+  /* Accent is for text and borders; action is the filled button colour */
+  --color-accent: #2e5bff;
+  --color-action: #2e5bff;
+  --color-action-hover: #1f47e0;
 
-  /* Deep blue accent */
-  --color-accent: #0b617e;
+  --color-ink: #0e1433;
+  --color-ink-secondary: #4a5480;
+  --color-ink-muted: #6b7499;
+  --color-ink-faint: #e3e7f2;
 
-  /* Warm text hierarchy */
-  --color-ink: #1c1917;
-  --color-ink-secondary: #57534e;
-  --color-ink-muted: #a8a29e;
-  --color-ink-faint: #d6d3d1;
+  --color-surface: #f2f4fa;
+  --color-surface-elevated: #ffffff;
+  --color-surface-white: #ffffff;
+  --color-surface-top: #ffffff;
 
-  /* Editorial surface colors */
-  --color-surface: #f7f3ee;
-  --color-surface-elevated: #faf8f5;
-  --color-surface-white: #fffefa;
+  --color-glow: rgba(46, 91, 255, 0.12);
+
+  --shadow-card:
+    0 1px 2px rgba(14, 20, 51, 0.04), 0 12px 32px -12px rgba(14, 20, 51, 0.12);
 }
 
 @layer base {
@@ -44,23 +51,32 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Dark mode palette — warm editorial dark */
+  /* Dark mode palette from stackprep.de */
   .dark {
-    --color-cream: #19181d;
-    --color-cream-light: #1f1e24;
-    --color-cream-dark: #131217;
-    --color-cream-border: #2e2d34;
+    --color-cream: #05070f;
+    --color-cream-light: rgba(255, 255, 255, 0.04);
+    --color-cream-dark: rgba(255, 255, 255, 0.08);
+    --color-cream-border: rgba(255, 255, 255, 0.09);
 
-    --color-accent: #0b617e;
+    --color-accent: #9db2ff;
+    --color-action: #2e5bff;
+    --color-action-hover: #4d74ff;
 
-    --color-ink: #ece9e4;
-    --color-ink-secondary: #a5a09a;
-    --color-ink-muted: #605c57;
-    --color-ink-faint: #3a3835;
+    --color-ink: #f2f4fa;
+    --color-ink-secondary: #9aa3bf;
+    --color-ink-muted: #8089a8;
+    --color-ink-faint: rgba(255, 255, 255, 0.08);
 
-    --color-surface: #1e1d23;
-    --color-surface-elevated: #252429;
-    --color-surface-white: #222127;
+    --color-surface: rgba(255, 255, 255, 0.04);
+    --color-surface-elevated: rgba(255, 255, 255, 0.06);
+    --color-surface-white: rgba(255, 255, 255, 0.025);
+    --color-surface-top: rgba(255, 255, 255, 0.06);
+
+    --color-glow: rgba(61, 107, 255, 0.22);
+
+    --shadow-card:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 24px 48px -24px rgba(0, 0, 0, 0.6);
 
     color-scheme: dark;
   }
@@ -78,9 +94,117 @@
     cursor: pointer;
   }
 
+  :focus-visible {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 3px;
+  }
+
   ::selection {
-    background-color: var(--color-accent);
+    background-color: var(--color-action);
     color: white;
+  }
+}
+
+@layer components {
+  /* Page background with the StackPrep blue glow */
+  .app-glow {
+    background:
+      radial-gradient(
+        70rem 40rem at 15% -10%,
+        var(--color-glow),
+        transparent 65%
+      ),
+      radial-gradient(
+        50rem 30rem at 95% 5%,
+        var(--color-glow),
+        transparent 70%
+      ),
+      var(--color-cream);
+    background-repeat: no-repeat;
+  }
+
+  /* Wordmark: "stack" bold, "prep" light */
+  .brand-mark {
+    border-radius: 8px;
+    outline: 1px solid var(--color-cream-border);
+    outline-offset: -1px;
+  }
+
+  .brand-word {
+    font-size: 1.3125rem;
+    letter-spacing: -0.045em;
+    line-height: 1;
+    color: var(--color-ink);
+  }
+
+  /* Card with a soft top highlight */
+  .sp-card {
+    border: 1px solid var(--color-cream-border);
+    border-radius: 22px;
+    background: linear-gradient(
+      180deg,
+      var(--color-surface-top),
+      var(--color-surface-white) 40%
+    );
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Pill buttons with a round arrow chip */
+  .pill-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    padding: 0.375rem 0.375rem 0.375rem 1.375rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-action);
+    color: #ffffff;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+      0 8px 24px -8px rgba(46, 91, 255, 0.6);
+    transition: background-color 150ms ease;
+  }
+
+  .pill-button:hover:not(:disabled) {
+    background: var(--color-action-hover);
+  }
+
+  .pill-button:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
+  .pill-button__arrow {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+  }
+
+  /* Secondary pill: outlined, no glow */
+  .pill-button--quiet {
+    min-height: 2.75rem;
+    padding: 0.5rem 1.125rem;
+    border: 1px solid var(--color-cream-border);
+    background: transparent;
+    color: var(--color-ink-secondary);
+    box-shadow: none;
+  }
+
+  .pill-button--quiet:hover:not(:disabled) {
+    background: var(--color-cream-light);
+    color: var(--color-ink);
+  }
+
+  .progress-fill {
+    background: linear-gradient(90deg, #2e5bff, #7a93ff);
   }
 }
 
@@ -97,33 +221,31 @@
   backface-visibility: hidden;
 }
 
-/* Editorial section label style (like "01 -- DAS PROBLEM") */
+/* Small accent label above a heading */
 .section-label {
   font-family: var(--font-sans);
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
   color: var(--color-accent);
 }
 
 /* Large editorial headline */
 .editorial-heading {
   font-family: var(--font-serif);
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.1;
   color: var(--color-ink);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.045em;
 }
 
-/* Thin elegant separator matching the landing page */
+/* Thin separator */
 .editorial-separator {
   height: 1px;
   background-color: var(--color-cream-border);
   border: none;
 }
 
-/* Warm scrollbar */
+/* Thin scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
 }

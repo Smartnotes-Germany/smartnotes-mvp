@@ -3,8 +3,17 @@ export type PostHogAppArea = "app" | "website";
 export type PostHogIdentityQuality = "anonymous" | "email" | "app_only";
 
 const LOCALHOST_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
-const SMARTNOTES_PRODUCTION_DOMAIN = "smartnotes.tech";
+// stackprep.de is the current product; smartnotes.tech redirects to it but is
+// kept so old links still count as production.
+const PRODUCTION_DOMAINS = ["stackprep.de", "smartnotes.tech"];
 const VERCEL_PREVIEW_DOMAIN = ".vercel.app";
+
+const findProductionDomain = (normalizedHostname: string) =>
+  PRODUCTION_DOMAINS.find(
+    (domain) =>
+      normalizedHostname === domain ||
+      normalizedHostname.endsWith(`.${domain}`),
+  );
 
 export const resolvePostHogEnvironment = (
   hostname: string,
@@ -20,10 +29,7 @@ export const resolvePostHogEnvironment = (
     return "development";
   }
 
-  if (
-    normalizedHostname === SMARTNOTES_PRODUCTION_DOMAIN ||
-    normalizedHostname.endsWith(`.${SMARTNOTES_PRODUCTION_DOMAIN}`)
-  ) {
+  if (findProductionDomain(normalizedHostname)) {
     return "production";
   }
 
@@ -37,16 +43,9 @@ export const resolvePostHogEnvironment = (
 // We only set an explicit cookie domain in production, where the website and
 // app live under the same parent domain and should share the browser identity.
 export const resolvePostHogCookieDomain = (hostname: string) => {
-  const normalizedHostname = hostname.trim().toLowerCase();
+  const productionDomain = findProductionDomain(hostname.trim().toLowerCase());
 
-  if (
-    normalizedHostname === SMARTNOTES_PRODUCTION_DOMAIN ||
-    normalizedHostname.endsWith(`.${SMARTNOTES_PRODUCTION_DOMAIN}`)
-  ) {
-    return `.${SMARTNOTES_PRODUCTION_DOMAIN}`;
-  }
-
-  return undefined;
+  return productionDomain ? `.${productionDomain}` : undefined;
 };
 
 export const getIdentityQuality = (args: {

@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react";
-import { Loader2, Sparkles, Upload, XCircle } from "lucide-react";
+import { ArrowRight, Loader2, Upload, XCircle } from "lucide-react";
 import {
   ACCEPTED_FILE_TYPES,
   ACCEPTED_FILE_TYPES_LABEL,
@@ -39,19 +39,21 @@ export function UploadStage({
   return (
     <section className="flex h-full min-h-full flex-col items-center py-4 text-center">
       <div className="my-auto w-full max-w-3xl">
-        <label className="border-cream-border bg-cream-light hover:border-accent/40 mb-6 flex w-full cursor-pointer flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed px-6 py-12 text-center transition md:py-24">
+        <label className="border-cream-border bg-surface-white hover:border-accent/60 mb-6 flex w-full cursor-pointer flex-col items-center justify-center gap-4 rounded-[22px] border-2 border-dashed px-6 py-12 text-center transition md:py-24">
           {isUploading ? (
             <Loader2 size={48} className="text-accent animate-spin" />
           ) : (
-            <Upload size={40} className="text-accent" />
+            <span className="bg-action/10 text-accent grid h-16 w-16 place-items-center rounded-full">
+              <Upload size={28} />
+            </span>
           )}
           <div>
-            <p className="text-xl font-bold md:text-2xl">
+            <p className="text-xl font-medium tracking-[-0.03em] md:text-2xl">
               {isUploading
                 ? "Inhalte werden verarbeitet..."
                 : "Dateien zum Hochladen auswählen"}
             </p>
-            <p className="text-ink-muted text-base">
+            <p className="text-ink-secondary mt-1 text-base">
               {ACCEPTED_FILE_TYPES_LABEL} - maximal {MAX_UPLOAD_FILE_LABEL} pro
               Datei
             </p>
@@ -74,20 +76,20 @@ export function UploadStage({
 
         <div className="mb-8 w-full space-y-2">
           {documents.length === 0 ? (
-            <p className="border-cream-border bg-cream-light text-ink-muted rounded-2xl border px-6 py-4 text-sm italic">
+            <p className="border-cream-border bg-cream-light text-ink-muted rounded-2xl border px-6 py-4 text-sm">
               Noch keine Dateien hochgeladen.
             </p>
           ) : (
             documents.map((document) => (
               <div
                 key={document._id}
-                className="border-cream-border bg-surface-white flex items-center justify-between rounded-xl border p-4 text-left shadow-sm"
+                className="border-cream-border bg-cream-light flex items-center justify-between rounded-2xl border p-4 text-left"
               >
                 <div className="min-w-0 pr-2">
                   <p className="text-ink truncate text-sm font-semibold">
                     {document.fileName}
                   </p>
-                  <p className="text-ink-muted flex items-center gap-1.5 text-[10px] font-bold tracking-wider uppercase">
+                  <p className="text-ink-muted flex items-center gap-1.5 text-xs font-medium">
                     {(document.extractionStatus === "pending" ||
                       document.extractionStatus === "processing") && (
                       <Loader2 size={10} className="text-accent animate-spin" />
@@ -124,16 +126,18 @@ export function UploadStage({
             type="button"
             onClick={() => void onGenerateQuiz()}
             disabled={isUploading || isGeneratingQuiz}
-            className="bg-accent shadow-accent/20 inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-lg transition hover:scale-105 active:scale-95 disabled:opacity-60"
+            className="pill-button"
           >
-            {isUploading || isGeneratingQuiz ? (
-              <Loader2 size={20} className="animate-spin" />
-            ) : (
-              <Sparkles size={20} />
-            )}
             {isGeneratingQuiz
               ? "Themen werden extrahiert..."
-              : "Themen Auswählen"}
+              : "Themen auswählen"}
+            <span className="pill-button__arrow" aria-hidden="true">
+              {isUploading || isGeneratingQuiz ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ArrowRight size={16} />
+              )}
+            </span>
           </button>
         )}
       </div>

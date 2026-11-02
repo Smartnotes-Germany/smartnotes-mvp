@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { Routes, Route, useLocation } from "react-router-dom";
-import logoImage from "./assets/images/logo.png";
+import logoImage from "./assets/images/stackprep-mark.svg";
 import {
   AnalysisStage,
   AuthScreen,

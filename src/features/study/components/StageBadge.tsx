@@ -9,11 +9,11 @@ type StageBadgeProps = {
 export function StageBadge({ label, active, done }: StageBadgeProps) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-2xl px-5 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all duration-300 ${
+      className={`flex items-center gap-3 rounded-full px-5 py-3.5 text-sm font-semibold transition-all duration-300 ${
         active
-          ? "bg-accent shadow-accent/20 translate-x-1 text-white shadow-lg"
+          ? "bg-action shadow-action/30 text-white shadow-lg"
           : done
-            ? "text-emerald-600 dark:text-emerald-400"
+            ? "text-accent"
             : "text-ink-muted"
       }`}
     >

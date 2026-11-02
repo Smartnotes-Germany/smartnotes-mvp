@@ -111,7 +111,7 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_createdAt", ["createdAt"])
     .index("by_storageProvider_createdAt", ["storageProvider", "createdAt"])
-    .index("by_storageState_createdAt", ["storageState", "createdAt"]),
+    .index("by_storageState_updatedAt", ["storageState", "updatedAt"]),
 
   /** Antworten des Benutzers auf generierte Quizfragen */
   quizResponses: defineTable({

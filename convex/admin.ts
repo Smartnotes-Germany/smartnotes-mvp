@@ -182,6 +182,7 @@ export const deleteData = mutation({
     let deletedResponses = 0;
     let deletedAnalyticsEvents = 0;
     let deletedStorageFiles = 0;
+    const failedStorageIds: string[] = [];
 
     for (const session of target.sessions) {
       const documents = await ctx.db
@@ -190,22 +191,35 @@ export const deleteData = mutation({
         .collect();
 
       for (const document of documents) {
+        let storageFileDeleted = false;
+
         try {
           const deleteResult = await deleteManagedFile(ctx, {
             storageId: document.storageId,
             storageProvider: document.storageProvider,
           });
-
-          if (deleteResult.deleted) {
-            deletedStorageFiles += 1;
-          } else {
-            // Treat an unsuccessful deletion as a failure to keep counts accurate.
-            throw new Error("Failed to delete managed file");
-          }
-        } catch {
-          // Continue deleting DB records even if storage deletion fails.
+          storageFileDeleted = deleteResult.deleted;
+        } catch (error) {
+          console.warn("Admin-Löschung: Datei konnte nicht entfernt werden.", {
+            storageId: document.storageId,
+            storageProvider: document.storageProvider,
+            error,
+          });
         }
 
+        if (!storageFileDeleted) {
+          failedStorageIds.push(document.storageId);
+          await ctx.db.patch("sessionDocuments", document._id, {
+            extractedText: undefined,
+            extractionError: undefined,
+            fileName: "[entfernt]",
+            storageState: "orphaned",
+            updatedAt: Date.now(),
+          });
+          continue;
+        }
+
+        deletedStorageFiles += 1;
         await ctx.db.delete("sessionDocuments", document._id);
         deletedDocuments += 1;
       }
@@ -247,6 +261,8 @@ export const deleteData = mutation({
       deletedResponses,
       deletedAnalyticsEvents,
       deletedStorageFiles,
+      failedDocuments: failedStorageIds.length,
+      failedStorageIds,
       revokedGrant: shouldRevokeGrant && Boolean(target.grant),
     };
   },

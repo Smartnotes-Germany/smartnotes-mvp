@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation } from "./errorTracking";
 import { readIntegerEnv } from "./env";
 import { components } from "./_generated/api";
+import { deleteManagedFile } from "./fileStorage";
 
 const DEFAULT_RAW_RETENTION_DAYS = 14;
 const DEFAULT_ANALYTICS_RETENTION_DAYS = 180;
@@ -27,6 +28,16 @@ const runRetentionBatchRef = makeFunctionReference<
     deletedPostHogOutboxEvents: number;
   }
 >("retention:runRetentionBatch");
+
+const cleanupOrphanedDocumentsRef = makeFunctionReference<
+  "mutation",
+  { batchSize: number },
+  {
+    done: boolean;
+    deletedDocuments: number;
+    failedDocuments: number;
+  }
+>("retention:cleanupOrphanedDocuments");
 
 const resolveRetentionConfig = () => {
   const rawRetentionDays = readIntegerEnv(
@@ -154,6 +165,60 @@ export const runRetentionBatch = internalMutation({
   },
 });
 
+export const cleanupOrphanedDocuments = internalMutation({
+  args: {
+    batchSize: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const documents = await ctx.db
+      .query("sessionDocuments")
+      .withIndex("by_storageState_updatedAt", (q) =>
+        q.eq("storageState", "orphaned"),
+      )
+      .order("asc")
+      .take(args.batchSize);
+
+    let deletedDocuments = 0;
+    let failedDocuments = 0;
+
+    for (const document of documents) {
+      let storageFileDeleted = false;
+
+      try {
+        const deleteResult = await deleteManagedFile(ctx, {
+          storageId: document.storageId,
+          storageProvider: document.storageProvider,
+        });
+        storageFileDeleted = deleteResult.deleted;
+      } catch (error) {
+        console.warn("Orphan-Cleanup: Datei konnte nicht entfernt werden.", {
+          storageId: document.storageId,
+          storageProvider: document.storageProvider,
+          error,
+        });
+      }
+
+      if (!storageFileDeleted) {
+        failedDocuments += 1;
+        await ctx.db.patch("sessionDocuments", document._id, {
+          updatedAt: now,
+        });
+        continue;
+      }
+
+      await ctx.db.delete("sessionDocuments", document._id);
+      deletedDocuments += 1;
+    }
+
+    return {
+      deletedDocuments,
+      failedDocuments,
+      done: documents.length < args.batchSize,
+    };
+  },
+});
+
 export const runDailyRetention = internalAction({
   args: {},
   handler: async (ctx) => {
@@ -164,6 +229,7 @@ export const runDailyRetention = internalAction({
       deletedAnalyticsEvents: 0,
       deletedPostHogOutboxEvents: 0,
       deletedManagedFiles: 0,
+      deletedOrphanedDocuments: 0,
       batches: 0,
     };
 
@@ -197,6 +263,18 @@ export const runDailyRetention = internalAction({
       totals.deletedManagedFiles += cleanupResult.deletedCount;
 
       if (!cleanupResult.hasMore) {
+        break;
+      }
+    }
+
+    for (let batch = 0; batch < MAX_BATCHES_PER_RUN; batch += 1) {
+      const orphanResult = await ctx.runMutation(cleanupOrphanedDocumentsRef, {
+        batchSize: DEFAULT_BATCH_SIZE,
+      });
+
+      totals.deletedOrphanedDocuments += orphanResult.deletedDocuments;
+
+      if (orphanResult.done) {
         break;
       }
     }

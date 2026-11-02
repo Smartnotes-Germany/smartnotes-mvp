@@ -82,6 +82,76 @@ describe("convex/admin", () => {
     expect(remainingSession?._id).toBe(secondSessionId);
   });
 
+  it("markiert Dokumente als verwaist, wenn die Datei nicht aus dem Speicher gelöscht werden kann", async () => {
+    const t = createTestHarness();
+    const code = "admin-delete-storage-failure";
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("accessCodes", {
+        code,
+        normalizedCode: normalizeAccessCode(code),
+        createdAt: Date.now(),
+        identityLabel: "Max Mustermann",
+      });
+    });
+
+    const redeemed = await t.mutation(
+      internal.access.redeemAccessCodeTransaction,
+      {
+        code,
+      },
+    );
+
+    if (!redeemed.ok) {
+      throw new Error(`Redeem fehlgeschlagen: ${redeemed.reason}`);
+    }
+
+    const sessionId = await t.mutation(api.study.startSession, {
+      grantToken: redeemed.grantToken,
+      title: "Sitzung mit verwaister Datei",
+    });
+
+    const documentId = await t.run(async (ctx) =>
+      ctx.db.insert("sessionDocuments", {
+        sessionId,
+        storageId: "nicht-registrierte-datei",
+        storageProvider: "convex",
+        fileName: "persoenlich.pdf",
+        fileType: "application/pdf",
+        fileSizeBytes: 1_024,
+        extractionStatus: "ready",
+        extractedText: "Persönlicher Inhalt",
+        extractionError: "Parserfehler mit Dateinamen",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+
+    const deletionResult = await t.mutation(api.admin.deleteData, {
+      adminSecret: "test-secret",
+      sessionId,
+    });
+
+    expect(deletionResult).toMatchObject({
+      deletedSessions: 1,
+      deletedDocuments: 0,
+      deletedStorageFiles: 0,
+      failedDocuments: 1,
+      failedStorageIds: ["nicht-registrierte-datei"],
+    });
+
+    const document = await t.run(async (ctx) =>
+      ctx.db.get("sessionDocuments", documentId),
+    );
+
+    expect(document).toMatchObject({
+      storageState: "orphaned",
+      fileName: "[entfernt]",
+    });
+    expect(document?.extractedText).toBeUndefined();
+    expect(document?.extractionError).toBeUndefined();
+  });
+
   it("backfillt Legacy-Grants mit Fallback-Label sowie optionaler E-Mail und Notiz aus dem Zugangscode", async () => {
     const t = createTestHarness();
     const code = "grant-backfill-legacy";

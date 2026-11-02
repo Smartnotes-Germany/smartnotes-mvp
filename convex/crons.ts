@@ -9,6 +9,7 @@ const runDailyRetentionRef = makeFunctionReference<
     deletedAnalyticsEvents: number;
     deletedPostHogOutboxEvents: number;
     deletedManagedFiles: number;
+    deletedOrphanedDocuments: number;
     batches: number;
   }
 >("retention:runDailyRetention");

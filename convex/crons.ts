@@ -20,6 +20,12 @@ const processPostHogOutboxRef = makeFunctionReference<
   { processed: number }
 >("analyticsPosthog:processPostHogOutbox");
 
+const cleanupWaitlistRateLimitsRef = makeFunctionReference<
+  "mutation",
+  Record<string, never>,
+  { deleted: number }
+>("waitlist:cleanupRateLimits");
+
 const crons = cronJobs();
 
 crons.daily(
@@ -41,6 +47,15 @@ crons.interval(
   {
     limit: 50,
   },
+);
+
+crons.interval(
+  "waitlist-rate-limit-cleanup",
+  {
+    minutes: 30,
+  },
+  cleanupWaitlistRateLimitsRef,
+  {},
 );
 
 export default crons;

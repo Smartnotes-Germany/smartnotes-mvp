@@ -19,9 +19,11 @@ import type * as crons from "../crons.js";
 import type * as env from "../env.js";
 import type * as errorTracking from "../errorTracking.js";
 import type * as fileStorage from "../fileStorage.js";
+import type * as http from "../http.js";
 import type * as observability from "../observability.js";
 import type * as retention from "../retention.js";
 import type * as study from "../study.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -41,9 +43,11 @@ declare const fullApi: ApiFromModules<{
   env: typeof env;
   errorTracking: typeof errorTracking;
   fileStorage: typeof fileStorage;
+  http: typeof http;
   observability: typeof observability;
   retention: typeof retention;
   study: typeof study;
+  waitlist: typeof waitlist;
 }>;
 
 /**

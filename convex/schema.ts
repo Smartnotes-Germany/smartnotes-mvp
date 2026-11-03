@@ -205,4 +205,29 @@ export default defineSchema({
     .index("by_createdAt", ["createdAt"])
     .index("by_scope_createdAt", ["scope", "createdAt"])
     .index("by_insertId", ["insertId"]),
+
+  /** Anmeldungen zur Warteliste von stackprep.de (Double-Opt-in). */
+  waitlistEntries: defineTable({
+    email: v.string(), // Normalisiert: getrimmt und kleingeschrieben.
+    status: v.union(v.literal("pending"), v.literal("confirmed")),
+    consentTextVersion: v.string(), // Version des Einwilligungstexts im Formular.
+    consentGivenAt: v.number(),
+    confirmationTokenHash: v.optional(v.string()), // SHA-256, nie der Token selbst.
+    confirmationTokenExpiresAt: v.optional(v.number()),
+    confirmationIssuedAt: v.optional(v.number()),
+    confirmedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_confirmationTokenHash", ["confirmationTokenHash"]),
+
+  /** Rate-Limit der Wartelisten-Anmeldung, ein Zähler pro gehashter IP. */
+  waitlistRateLimits: defineTable({
+    key: v.string(),
+    windowStartedAt: v.number(),
+    count: v.number(),
+  })
+    .index("by_key", ["key"])
+    .index("by_windowStartedAt", ["windowStartedAt"]),
 });

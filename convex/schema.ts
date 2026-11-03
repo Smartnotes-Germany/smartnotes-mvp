@@ -6,6 +6,10 @@
 
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  apprenticeCountValidator,
+  professionValidator,
+} from "./leadValidators";
 
 /** Validator für eine einzelne Quizfrage, die von der KI generiert wurde. */
 const quizQuestionValidator = v.object({
@@ -220,13 +224,43 @@ export default defineSchema({
     confirmationTokenExpiresAt: v.optional(v.number()),
     confirmationIssuedAt: v.optional(v.number()),
     confirmedAt: v.optional(v.number()),
+    profession: v.optional(professionValidator), // Freiwillige Angabe im Formular.
+    source: v.optional(v.string()), // utm_source oder Referrer beim ersten Eintrag; fehlt bei direkten Besuchen.
+    campaign: v.optional(v.string()), // utm_campaign beim ersten Eintrag.
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_email", ["email"])
     .index("by_confirmationTokenHash", ["confirmationTokenHash"]),
 
-  /** Rate-Limit der Wartelisten-Anmeldung, ein Zähler pro gehashter IP. */
+  /** Anfragen von Ausbildungsbetrieben über stackprep.de. */
+  companyInquiries: defineTable({
+    companyName: v.string(),
+    email: v.string(), // Normalisiert: getrimmt und kleingeschrieben.
+    apprenticeCount: apprenticeCountValidator,
+    professions: v.optional(v.string()), // Freitext aus dem Formular, zum Beispiel "FI AE, ITSE".
+    consentTextVersion: v.string(), // Version des Einwilligungstexts im Formular.
+    consentGivenAt: v.number(),
+    source: v.string(), // utm_source oder Referrer, sonst "direkt".
+    campaign: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_createdAt", ["createdAt"]),
+
+  /** Tageszähler pro Quelle und Kampagne: Besuche, Anmeldungen, Bestätigungen und Betriebsanfragen. */
+  campaignDailyStats: defineTable({
+    day: v.string(), // YYYY-MM-DD in UTC.
+    source: v.string(),
+    campaign: v.string(), // Leer, wenn der Link keine Kampagne hatte.
+    visits: v.number(),
+    signups: v.number(),
+    confirmations: v.number(),
+    companyInquiries: v.number(),
+  }).index("by_day_source_campaign", ["day", "source", "campaign"]),
+
+  /** Rate-Limit der Formulare auf stackprep.de, ein Zähler pro gehashter IP und Zweck. */
   waitlistRateLimits: defineTable({
     key: v.string(),
     windowStartedAt: v.number(),

@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { Key, Check, LogOut, Plus, Copy } from "lucide-react";
 import logoImage from "../assets/images/stackprep-mark.svg";
 import { hasMeaningfulIdentityLabel } from "../../shared/identity";
+import CampaignOverview from "./CampaignOverview";
 
 export default function Page() {
   const [draftSecret, setDraftSecret] = useState(
@@ -173,7 +174,7 @@ export default function Page() {
                 Admin-Dashboard
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Zugriffscodes und Analytics-Zuordnung verwalten
+                Zugriffscodes, Anmeldungen und Analytics-Zuordnung verwalten
               </p>
             </div>
           </div>
@@ -289,6 +290,8 @@ export default function Page() {
               )}
             </div>
           </section>
+
+          <CampaignOverview adminSecret={adminSecret} />
 
           <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mb-6 flex items-center justify-between">

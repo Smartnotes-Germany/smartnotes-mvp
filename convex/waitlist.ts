@@ -1,11 +1,13 @@
 import { v } from "convex/values";
+import { incrementCampaignStat, normalizeCampaignValue } from "./campaigns";
 import { internalMutation } from "./errorTracking";
+import { professionValidator } from "./leadValidators";
+import { RATE_LIMIT_WINDOW_MS, consumeRateLimit } from "./rateLimit";
 
 /** Bestätigungslinks gelten 48 Stunden. */
 const CONFIRMATION_TOKEN_TTL_MS = 1000 * 60 * 60 * 48;
 /** Frühestens nach 10 Minuten wird für dieselbe Adresse ein neuer Link ausgestellt. */
 const CONFIRMATION_REISSUE_COOLDOWN_MS = 1000 * 60 * 10;
-const RATE_LIMIT_WINDOW_MS = 1000 * 60 * 10;
 const RATE_LIMIT_MAX_REQUESTS = 5;
 const RATE_LIMIT_CLEANUP_BATCH_SIZE = 200;
 
@@ -30,6 +32,9 @@ export const signUp = internalMutation({
     consentTextVersion: v.string(),
     rateLimitKey: v.string(),
     confirmationTokenHash: v.string(),
+    profession: v.optional(professionValidator),
+    source: v.optional(v.string()), // utm_source oder Referrer, sonst "direkt".
+    campaign: v.optional(v.string()), // utm_campaign, falls vorhanden.
   },
   handler: async (ctx, args) => {
     const email = normalizeWaitlistEmail(args.email);
@@ -42,29 +47,10 @@ export const signUp = internalMutation({
 
     const now = Date.now();
 
-    const rateLimit = await ctx.db
-      .query("waitlistRateLimits")
-      .withIndex("by_key", (q) => q.eq("key", args.rateLimitKey))
-      .unique();
-    if (!rateLimit || now - rateLimit.windowStartedAt >= RATE_LIMIT_WINDOW_MS) {
-      if (rateLimit) {
-        await ctx.db.patch("waitlistRateLimits", rateLimit._id, {
-          windowStartedAt: now,
-          count: 1,
-        });
-      } else {
-        await ctx.db.insert("waitlistRateLimits", {
-          key: args.rateLimitKey,
-          windowStartedAt: now,
-          count: 1,
-        });
-      }
-    } else if (rateLimit.count >= RATE_LIMIT_MAX_REQUESTS) {
+    if (
+      !(await consumeRateLimit(ctx, args.rateLimitKey, RATE_LIMIT_MAX_REQUESTS))
+    ) {
       return { status: "rate_limited" as const, sendConfirmation: false };
-    } else {
-      await ctx.db.patch("waitlistRateLimits", rateLimit._id, {
-        count: rateLimit.count + 1,
-      });
     }
 
     const existing = await ctx.db
@@ -93,14 +79,25 @@ export const signUp = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch("waitlistEntries", existing._id, confirmationFields);
+      await ctx.db.patch("waitlistEntries", existing._id, {
+        ...confirmationFields,
+        profession: args.profession ?? existing.profession,
+      });
     } else {
+      // Die Quelle gilt für den ersten Eintrag, spätere Versuche überschreiben sie nicht.
+      const attribution = {
+        source: normalizeCampaignValue(args.source),
+        campaign: normalizeCampaignValue(args.campaign),
+      };
       await ctx.db.insert("waitlistEntries", {
         email,
         status: "pending",
+        profession: args.profession,
+        ...attribution,
         createdAt: now,
         ...confirmationFields,
       });
+      await incrementCampaignStat(ctx, attribution, "signups");
     }
 
     return { status: "pending" as const, sendConfirmation: true };
@@ -141,6 +138,7 @@ export const confirm = internalMutation({
       confirmationTokenExpiresAt: undefined,
       updatedAt: now,
     });
+    await incrementCampaignStat(ctx, entry, "confirmations");
 
     return { status: "confirmed" as const };
   },

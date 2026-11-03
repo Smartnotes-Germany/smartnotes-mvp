@@ -22,6 +22,19 @@ import {
   getR2ConfigOrThrow,
 } from "./fileStorage";
 import { topicsMatchForFocusMode } from "../shared/topicMatching";
+import {
+  buildLinkFileName,
+  extractHtmlTitle,
+  findMdBookPrintUrl,
+  htmlToMarkdown,
+  parseImportUrl,
+  resolveGithubRawCandidates,
+} from "../shared/linkImport";
+
+const LINK_FETCH_TIMEOUT_MS = 15_000;
+const LINK_FETCH_MAX_REDIRECTS = 5;
+const LINK_FETCH_MAX_BYTES = 5 * 1024 * 1024;
+const MAX_LINK_CONTENT_CHARS = 500_000;
 
 const MAX_ANALYSIS_FULL_RESPONSES = 240;
 const MAX_ANALYSIS_FOCUS_RESPONSES = 180;
@@ -337,6 +350,133 @@ const tryDeleteUploadedFile = async (
   }
 };
 
+type FetchedLink = {
+  url: string;
+  contentType: string;
+  body: string;
+};
+
+/** Lädt einen öffentlichen Link und prüft jede Weiterleitung erneut. */
+const fetchPublicLink = async (rawUrl: string): Promise<FetchedLink | null> => {
+  let url = parseImportUrl(rawUrl);
+
+  for (let redirect = 0; redirect <= LINK_FETCH_MAX_REDIRECTS; redirect += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(LINK_FETCH_TIMEOUT_MS),
+        headers: {
+          Accept: "text/html,text/markdown,text/plain;q=0.9,*/*;q=0.5",
+          "User-Agent": "StackPrep-LinkImport/1.0",
+        },
+      });
+    } catch {
+      throw new Error(
+        "Der Link konnte nicht abgerufen werden. Bitte prüfe die Adresse.",
+      );
+    }
+
+    const location = response.headers.get("location");
+    if (response.status >= 300 && response.status < 400 && location) {
+      url = parseImportUrl(new URL(location, url).toString());
+      continue;
+    }
+
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Der Link konnte nicht abgerufen werden (HTTP ${response.status}). Ist die Seite öffentlich?`,
+      );
+    }
+
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (declaredLength > LINK_FETCH_MAX_BYTES) {
+      throw new Error("Die verlinkte Seite ist zu groß für den Import.");
+    }
+
+    const body = await response.text();
+    if (body.length > LINK_FETCH_MAX_BYTES) {
+      throw new Error("Die verlinkte Seite ist zu groß für den Import.");
+    }
+
+    return {
+      url: url.toString(),
+      contentType: response.headers.get("content-type")?.toLowerCase() ?? "",
+      body,
+    };
+  }
+
+  throw new Error("Der Link leitet zu oft weiter.");
+};
+
+const isHtmlContent = (fetched: FetchedLink) =>
+  fetched.contentType.includes("html") ||
+  /^\s*<(!doctype html|html)\b/i.test(fetched.body);
+
+const isTextContent = (fetched: FetchedLink) =>
+  fetched.contentType === "" ||
+  fetched.contentType.startsWith("text/") ||
+  /json|xml|yaml|markdown/.test(fetched.contentType);
+
+const loadLinkAsMarkdown = async (rawUrl: string) => {
+  const url = parseImportUrl(rawUrl);
+  const githubCandidates = resolveGithubRawCandidates(url);
+
+  if (githubCandidates) {
+    for (const candidate of githubCandidates) {
+      const fetched = await fetchPublicLink(candidate);
+      if (fetched) {
+        const fileName = decodeURIComponent(
+          new URL(fetched.url).pathname.split("/").pop() ?? "",
+        );
+        const repoTitle = url.pathname.split("/").filter(Boolean).join(" ");
+        return {
+          title: /^readme(\.md)?$/i.test(fileName)
+            ? `${repoTitle} README`
+            : fileName,
+          markdown: fetched.body,
+        };
+      }
+    }
+    throw new Error(
+      "Auf GitHub wurde unter diesem Link keine README oder Datei gefunden. Ist das Repository öffentlich?",
+    );
+  }
+
+  const fetched = await fetchPublicLink(url.toString());
+  if (!fetched) {
+    throw new Error("Unter diesem Link wurde keine Seite gefunden (HTTP 404).");
+  }
+
+  if (!isHtmlContent(fetched)) {
+    if (!isTextContent(fetched)) {
+      throw new Error(
+        "Dieser Link verweist auf keine Webseite oder Textdatei. Lade die Datei bitte herunter und hier direkt hoch.",
+      );
+    }
+    return {
+      title: decodeURIComponent(url.pathname.split("/").pop() ?? "") || null,
+      markdown: fetched.body,
+    };
+  }
+
+  // Bei mdBooks enthält die Druckansicht alle Kapitel statt nur der aktuellen Seite.
+  const printUrl = findMdBookPrintUrl(fetched.body, fetched.url);
+  const printView = printUrl
+    ? await fetchPublicLink(printUrl).catch(() => null)
+    : null;
+  const html =
+    printView && isHtmlContent(printView) ? printView.body : fetched.body;
+
+  return {
+    title: extractHtmlTitle(fetched.body),
+    markdown: htmlToMarkdown(html),
+  };
+};
+
 export const getUploadRegistrationContext = internalQuery({
   args: {
     grantToken: v.string(),
@@ -624,6 +764,38 @@ export const registerUploadedDocument = action({
       );
       throw error;
     }
+  },
+});
+
+/**
+ * Lädt die Inhalte hinter einem Link als Markdown. Der Client lädt das
+ * Ergebnis anschließend wie eine normale .md-Datei hoch.
+ */
+export const fetchLinkContent = action({
+  args: {
+    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    url: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.runQuery(getUploadRegistrationContextRef, {
+      grantToken: args.grantToken,
+      sessionId: args.sessionId,
+    });
+
+    const { title, markdown } = await loadLinkAsMarkdown(args.url);
+    const trimmedMarkdown = markdown.trim();
+    if (!trimmedMarkdown) {
+      throw new Error(
+        "Unter diesem Link wurde kein lesbarer Text gefunden. Seiten, die erst im Browser per JavaScript geladen werden, lassen sich leider nicht importieren.",
+      );
+    }
+
+    const sourceUrl = parseImportUrl(args.url);
+    return {
+      fileName: buildLinkFileName(title, sourceUrl),
+      content: `<!-- Quelle: ${sourceUrl.toString()} -->\n\n${trimmedMarkdown.slice(0, MAX_LINK_CONTENT_CHARS)}`,
+    };
   },
 });
 

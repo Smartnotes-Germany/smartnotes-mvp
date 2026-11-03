@@ -404,6 +404,7 @@ function StudyApp() {
           isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
           isRemovingDocument={uploadFlow.isRemovingDocument}
           onFileInputChange={uploadFlow.onFileInputChange}
+          onImportLink={uploadFlow.importLink}
           onGenerateQuiz={uploadFlow.generateQuizQuestions}
           onRemoveDocument={uploadFlow.removeDocumentById}
         />

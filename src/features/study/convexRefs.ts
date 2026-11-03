@@ -8,6 +8,8 @@ export const generateUploadUrlRef = api.study.generateUploadUrl;
 
 export const registerUploadedDocumentRef = api.study.registerUploadedDocument;
 
+export const fetchLinkContentRef = api.study.fetchLinkContent;
+
 export const removeDocumentRef = api.study.removeDocument;
 
 export const validateGrantRef = api.access.validateGrant;

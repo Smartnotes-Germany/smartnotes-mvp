@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import { useAction, useMutation } from "convex/react";
 import {
   extractDocumentContentRef,
+  fetchLinkContentRef,
   generateFocusedQuizRef,
   generateQuizRef,
   generateUploadUrlRef,
@@ -103,6 +104,7 @@ export function useUploadFlow({
   const generateUploadUrl = useMutation(generateUploadUrlRef);
   const registerUploadedDocument = useAction(registerUploadedDocumentRef);
   const removeDocument = useMutation(removeDocumentRef);
+  const fetchLinkContent = useAction(fetchLinkContentRef);
   const extractDocumentContent = useAction(extractDocumentContentRef);
   const generateQuiz = useAction(generateQuizRef);
   const generateFocusedQuiz = useAction(generateFocusedQuizRef);
@@ -110,7 +112,7 @@ export function useUploadFlow({
   const uploadFiles = useCallback(
     async (files: File[]) => {
       if (!grantToken || !sessionId || files.length === 0) {
-        return;
+        return false;
       }
 
       setIsUploading(true);
@@ -185,6 +187,7 @@ export function useUploadFlow({
       }
 
       setIsUploading(false);
+      return errors.length === 0;
     },
     [
       extractDocumentContent,
@@ -205,6 +208,41 @@ export function useUploadFlow({
       event.target.value = "";
     },
     [uploadFiles],
+  );
+
+  const importLink = useCallback(
+    async (url: string) => {
+      if (!grantToken || !sessionId || !url.trim()) {
+        return false;
+      }
+
+      setIsUploading(true);
+      setUploadError(null);
+
+      let file: File;
+      try {
+        const linkContent = await fetchLinkContent({
+          grantToken,
+          sessionId,
+          url,
+        });
+        file = new File([linkContent.content], linkContent.fileName, {
+          type: "text/markdown",
+        });
+      } catch (error: unknown) {
+        setUploadError(
+          formatError(error, {
+            fallback:
+              "Die Inhalte hinter dem Link konnten nicht geladen werden.",
+          }),
+        );
+        setIsUploading(false);
+        return false;
+      }
+
+      return uploadFiles([file]);
+    },
+    [fetchLinkContent, grantToken, sessionId, uploadFiles],
   );
 
   const generateQuizQuestions = useCallback(async () => {
@@ -402,6 +440,7 @@ export function useUploadFlow({
     isRemovingDocument,
     setUploadError,
     onFileInputChange,
+    importLink,
     generateQuizQuestions,
     generateFocusedQuizQuestions,
     removeDocumentById,

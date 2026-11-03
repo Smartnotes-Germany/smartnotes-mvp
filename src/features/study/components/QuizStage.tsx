@@ -210,7 +210,7 @@ export function QuizStage({
             </div>
 
             {isAnyTopicSelected && (
-              <div className="flex flex-col items-center justify-center gap-4 pt-4">
+              <div className="flex flex-col items-center justify-center gap-5 pt-8 pb-4">
                 <p className="text-ink-muted text-sm md:text-base">
                   {selectedTopics.includes("all")
                     ? "Es werden 10 gemischte Fragen generiert."
@@ -220,12 +220,15 @@ export function QuizStage({
                   type="button"
                   onClick={handleStartBatch}
                   disabled={isPreparing}
-                  className="pill-button w-full max-w-sm justify-between text-base"
+                  className="pill-button relative min-h-14 w-full max-w-sm justify-center px-14 text-base shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_4px_12px_-6px_rgba(46,91,255,0.35)]"
                 >
                   {isPreparing
                     ? "Fragen werden erstellt..."
                     : `${selectedQuestionCount} Fragen starten`}
-                  <span className="pill-button__arrow" aria-hidden="true">
+                  <span
+                    className="pill-button__arrow absolute top-1/2 right-2.5 -translate-y-1/2"
+                    aria-hidden="true"
+                  >
                     {isPreparing ? (
                       <Loader2 className="animate-spin" size={16} />
                     ) : (

@@ -9,6 +9,10 @@ import {
 import { useFeatureFlagVariantKey } from "@posthog/react";
 import type { FeedbackState, QuizQuestion } from "../types";
 import { ANALYTICS_FEATURE_FLAGS } from "../analytics";
+import { QuestionPrompt } from "./QuestionPrompt";
+
+// Bis zu so vielen Fragen bekommt jede Frage ein eigenes Segment im Fortschritt.
+const MAX_PROGRESS_SEGMENTS = 20;
 
 type QuizStageProps = {
   currentQuestion: QuizQuestion | null;
@@ -79,6 +83,14 @@ export function QuizStage({
     100,
     (answeredQuestionsInFocus / minQuestionsRequired) * 100,
   );
+  const isOnQuestion = currentQuestion !== null && !feedback;
+  const isQuizComplete =
+    answeredQuestionsInFocus >= minQuestionsRequired && !isOnQuestion;
+  // Auf der Feedback-Seite zählt die gerade beantwortete Frage noch als aktuelle.
+  const currentQuestionNumber = Math.min(
+    minQuestionsRequired,
+    Math.max(1, answeredQuestionsInFocus + (isOnQuestion ? 1 : 0)),
+  );
 
   const isPreparing =
     topicLoading !== null || isGeneratingQuiz || isStartingBatch;
@@ -122,23 +134,55 @@ export function QuizStage({
   return (
     <section className="flex h-full min-h-full flex-col items-center py-4">
       {focusTopics.length > 0 && activeTopic && (
-        <div className="mb-8 w-full max-w-2xl px-4">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-ink-secondary text-sm font-medium">
-              {activeTopic === "all"
-                ? "Alles gemischt"
-                : `Thema: ${activeTopic}`}
+        <div className="mb-8 w-full max-w-3xl">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <p className="text-ink min-w-0 truncate text-sm font-medium">
+              {activeTopic === "all" ? "Alles gemischt" : activeTopic}
             </p>
-            <p className="text-ink-muted text-sm font-medium tabular-nums">
-              {answeredQuestionsInFocus} / {minQuestionsRequired} Fragen
+            <p className="text-ink-secondary shrink-0 text-sm tabular-nums">
+              {isQuizComplete ? (
+                "Alle Fragen beantwortet"
+              ) : (
+                <>
+                  Frage{" "}
+                  <span className="text-ink font-semibold">
+                    {currentQuestionNumber}
+                  </span>{" "}
+                  von {minQuestionsRequired}
+                </>
+              )}
             </p>
           </div>
-          <div className="bg-cream-dark h-1.5 w-full overflow-hidden rounded-full">
+          {minQuestionsRequired <= MAX_PROGRESS_SEGMENTS ? (
             <div
-              className="progress-fill h-full rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progressPercentage}%` }}
-            />
-          </div>
+              className="flex gap-1.5"
+              role="progressbar"
+              aria-label="Fortschritt"
+              aria-valuemin={0}
+              aria-valuemax={minQuestionsRequired}
+              aria-valuenow={answeredQuestionsInFocus}
+            >
+              {Array.from({ length: minQuestionsRequired }, (_, index) => (
+                <span
+                  key={index}
+                  className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${
+                    index < answeredQuestionsInFocus
+                      ? "progress-fill"
+                      : index === answeredQuestionsInFocus && isOnQuestion
+                        ? "bg-accent/40"
+                        : "bg-ink/15"
+                  }`}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-ink/15 h-1.5 w-full overflow-hidden rounded-full">
+              <div
+                className="progress-fill h-full rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${progressPercentage}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -334,15 +378,28 @@ export function QuizStage({
             </div>
           </div>
         ) : currentQuestion ? (
-          <div className="animate-in fade-in w-full duration-700">
-            <div className="mb-10 md:mb-24">
-              <h2 className="text-ink text-center text-2xl leading-[1.12] font-medium tracking-[-0.04em] break-words whitespace-pre-wrap md:text-left md:text-5xl">
-                {currentQuestion.prompt}
+          <div className="animate-in fade-in w-full space-y-4 text-left duration-700">
+            <div className="sp-card p-6 md:p-10">
+              <p className="text-accent mb-3 text-sm font-semibold md:mb-4">
+                Frage
+              </p>
+              <h2 className="text-ink text-xl leading-snug font-medium tracking-[-0.03em] break-words whitespace-pre-wrap md:text-3xl">
+                <QuestionPrompt
+                  prompt={currentQuestion.prompt}
+                  glossary={currentQuestion.glossary}
+                />
               </h2>
             </div>
 
-            <div className="mx-auto w-full max-w-2xl">
+            <div className="sp-card p-5 md:p-8">
+              <label
+                htmlFor="quiz-answer"
+                className="text-accent mb-3 block text-sm font-semibold md:mb-4"
+              >
+                Deine Antwort
+              </label>
               <textarea
+                id="quiz-answer"
                 value={answerInput}
                 onChange={(event) => {
                   onAnswerInputChange(event.target.value);
@@ -355,31 +412,34 @@ export function QuizStage({
                     void onSubmitAnswer();
                   }
                 }}
-                rows={1}
+                rows={4}
                 disabled={isSubmittingAnswer}
-                placeholder="Deine Antwort hier tippen..."
-                className="border-cream-border focus:border-accent placeholder:text-ink-muted/40 w-full overflow-hidden border-b-2 bg-transparent pb-4 text-center text-xl font-medium transition outline-none disabled:opacity-50 md:text-3xl"
+                placeholder="Schreib deine Antwort in eigenen Worten..."
+                className="border-cream-border bg-cream-light focus:border-accent placeholder:text-ink-muted w-full overflow-hidden rounded-2xl border px-4 py-3 text-base leading-relaxed transition outline-none disabled:opacity-50 md:text-lg"
                 style={{ resize: "none" }}
               />
 
               {quizError && (
-                <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
                   {quizError}
                 </p>
               )}
 
-              <div className="mt-8 flex flex-col items-center gap-3 md:mt-12 md:gap-4">
-                <p className="text-ink-muted text-xs font-medium md:text-sm">
-                  {isSubmittingAnswer
-                    ? "KI bewertet..."
-                    : "Eingabetaste zum Bestätigen"}
-                </p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => void onSubmitAnswer(true)}
+                  disabled={isSubmittingAnswer}
+                  className="pill-button pill-button--quiet justify-center"
+                >
+                  Ich weiß es gerade nicht
+                </button>
 
                 <button
                   type="button"
                   onClick={() => void onSubmitAnswer(false)}
                   disabled={isSubmittingAnswer || !answerInput.trim()}
-                  className="pill-button w-full max-w-xs justify-between"
+                  className="pill-button justify-between shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_4px_12px_-6px_rgba(46,91,255,0.35)]"
                 >
                   Antwort absenden
                   <span className="pill-button__arrow" aria-hidden="true">
@@ -389,15 +449,6 @@ export function QuizStage({
                       <ArrowRight size={16} />
                     )}
                   </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void onSubmitAnswer(true)}
-                  disabled={isSubmittingAnswer}
-                  className="pill-button pill-button--quiet w-full max-w-xs justify-center"
-                >
-                  Ich weiß es gerade nicht
                 </button>
               </div>
             </div>

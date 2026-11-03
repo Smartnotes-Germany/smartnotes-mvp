@@ -56,6 +56,9 @@ const quizQuestionValidator = v.object({
   prompt: v.string(),
   idealAnswer: v.string(),
   explanationHint: v.string(),
+  glossary: v.optional(
+    v.array(v.object({ term: v.string(), explanation: v.string() })),
+  ),
 });
 
 const analysisTopicValidator = v.object({
@@ -238,6 +241,7 @@ const buildSessionSnapshot = (session: {
     prompt: string;
     idealAnswer: string;
     explanationHint: string;
+    glossary?: Array<{ term: string; explanation: string }>;
   }>;
   analysis?: {
     overallReadiness: number;
@@ -260,6 +264,7 @@ const buildSessionSnapshot = (session: {
     id: question.id,
     topic: question.topic,
     prompt: question.prompt,
+    ...(question.glossary?.length ? { glossary: question.glossary } : {}),
   })),
   ...(session.analysis ? { analysis: session.analysis } : {}),
 });

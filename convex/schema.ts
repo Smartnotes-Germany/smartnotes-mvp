@@ -14,6 +14,10 @@ const quizQuestionValidator = v.object({
   prompt: v.string(),
   idealAnswer: v.string(),
   explanationHint: v.string(),
+  // Fachbegriffe im Fragetext mit kurzer Erklärung (Tooltip im Quiz)
+  glossary: v.optional(
+    v.array(v.object({ term: v.string(), explanation: v.string() })),
+  ),
 });
 
 /** Validator für detaillierte Insights zu einem spezifischen Thema. */

@@ -1,4 +1,5 @@
 import type { Id } from "../../../convex/_generated/dataModel";
+import type { GlossaryTerm } from "../../../shared/questionGlossary";
 
 export type ThemePreference = "light" | "dark" | "system";
 export type StudySessionId = Id<"studySessions">;
@@ -25,6 +26,7 @@ export type QuizQuestion = {
   id: string;
   topic: string;
   prompt: string;
+  glossary?: GlossaryTerm[];
 };
 
 export type SessionAnalysisTopic = {

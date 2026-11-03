@@ -40,6 +40,10 @@ import {
 } from "./analyticsPosthog";
 import { readOptionalEnv, readRequiredEnv } from "./env";
 import { buildSessionFallbackDistinctId } from "../shared/identity";
+import {
+  MAX_GLOSSARY_TERMS,
+  sanitizeGlossary,
+} from "../shared/questionGlossary";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -82,6 +86,27 @@ const extensionToMediaType: Record<string, string> = {
   webp: "image/webp",
 };
 
+// Wird nach der Generierung mit sanitizeGlossary bereinigt; ein zu langes
+// Glossar soll nicht die ganze Fragengenerierung scheitern lassen.
+const glossaryOutputSchema = z
+  .array(
+    z.object({
+      term: z
+        .string()
+        .describe(
+          "Fachbegriff genau so geschrieben, wie er in prompt vorkommt, z. B. „RAID 5“.",
+        ),
+      explanation: z
+        .string()
+        .describe(
+          "Erklärung in ein bis zwei kurzen Sätzen auf Deutsch, ohne die Antwort auf die Frage zu verraten.",
+        ),
+    }),
+  )
+  .describe(
+    `Bis zu ${MAX_GLOSSARY_TERMS} Fachbegriffe aus prompt, die Lernende vielleicht nachschlagen wollen. Leeres Array, wenn keine Fachbegriffe vorkommen.`,
+  );
+
 const quizGenerationSchema = z.object({
   sourceSummary: z.string(),
   topics: z.array(z.string()).min(1).max(12),
@@ -91,6 +116,7 @@ const quizGenerationSchema = z.object({
       prompt: z.string(),
       idealAnswer: z.string(),
       explanationHint: z.string(),
+      glossary: glossaryOutputSchema,
     }),
   ),
 });
@@ -158,6 +184,7 @@ const deepDiveSchema = z.object({
       prompt: z.string(),
       idealAnswer: z.string(),
       explanationHint: z.string(),
+      glossary: glossaryOutputSchema,
     }),
   ),
 });
@@ -1992,6 +2019,24 @@ const normalizeQuizGenerationOutput = (
             "hinweis",
           ]) ||
           "Fokussiere dich auf die Kernbegriffe und erkläre sie in eigenen Worten.",
+        glossary: (Array.isArray(questionRecord.glossary)
+          ? questionRecord.glossary
+          : []
+        ).flatMap((entry) => {
+          const entryRecord = toObjectRecord(entry);
+          return entryRecord
+            ? [
+                {
+                  term: pickFirstString(entryRecord, ["term", "begriff"]),
+                  explanation: pickFirstString(entryRecord, [
+                    "explanation",
+                    "erklärung",
+                    "erklaerung",
+                  ]),
+                },
+              ]
+            : [];
+        }),
       };
     })
     .filter(
@@ -2719,7 +2764,7 @@ Anforderungen:
                 },
               ),
               system:
-                'Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {"sourceSummary": string, "topics": string[], "questions": [{"topic": string, "prompt": string, "idealAnswer": string, "explanationHint": string}]}. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder "frage", "korrekte_antwort" und "hilfe_falsche_antwort".',
+                'Du bist ein akademischer Tutor. Erzeuge realistische Prüfungsfragen auf Deutsch und antworte ausschließlich als JSON. Bevorzugtes Format: {"sourceSummary": string, "topics": string[], "questions": [{"topic": string, "prompt": string, "idealAnswer": string, "explanationHint": string, "glossary": [{"term": string, "explanation": string}]}]}. "glossary" enthält bis zu 4 Fachbegriffe aus "prompt" mit kurzer Erklärung, ohne die Antwort zu verraten. Wenn du ein reines Array zurückgibst, verwende pro Eintrag die Felder "frage", "korrekte_antwort" und "hilfe_falsche_antwort".',
               messages: [{ role: "user", content: userContent }],
             });
 
@@ -2791,6 +2836,7 @@ Anforderungen:
           prompt: question.prompt,
           idealAnswer: question.idealAnswer,
           explanationHint: question.explanationHint,
+          glossary: sanitizeGlossary(question.prompt, question.glossary),
         }));
 
       await ctx.runMutation(internal.study.storeGeneratedQuiz, {
@@ -3329,6 +3375,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           prompt: question.prompt,
           idealAnswer: question.idealAnswer,
           explanationHint: question.explanationHint,
+          glossary: sanitizeGlossary(question.prompt, question.glossary),
         }));
       normalizedQuestionsForPostHog = normalizedQuestions;
 
@@ -4644,6 +4691,7 @@ Nutze das bereitgestellte Lernmaterial umfassend. Gehe auf Details, Zusammenhän
           prompt: question.prompt,
           idealAnswer: question.idealAnswer,
           explanationHint: question.explanationHint,
+          glossary: sanitizeGlossary(question.prompt, question.glossary),
         }));
 
       await ctx.runMutation(internal.study.storeGeneratedQuiz, {

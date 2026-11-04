@@ -34,7 +34,6 @@ import {
 } from "../analytics";
 
 type UseUploadFlowArgs = {
-  grantToken: string | null;
   sessionId: StudySessionId | null;
   documents: StudyDocument[];
   documentCount: number;
@@ -89,7 +88,6 @@ export const summarizeTopicSelectionForAnalytics = (focusTopics: string[]) => {
 };
 
 export function useUploadFlow({
-  grantToken,
   sessionId,
   documents,
   documentCount,
@@ -111,7 +109,7 @@ export function useUploadFlow({
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
-      if (!grantToken || !sessionId || files.length === 0) {
+      if (!sessionId || files.length === 0) {
         return false;
       }
 
@@ -134,7 +132,7 @@ export function useUploadFlow({
         }
 
         try {
-          const uploadData = await generateUploadUrl({ grantToken, sessionId });
+          const uploadData = await generateUploadUrl({ sessionId });
           const uploadResult = await uploadFileToManagedStorage(
             uploadData.uploadUrl,
             file,
@@ -144,7 +142,6 @@ export function useUploadFlow({
             },
           );
           const documentId = await registerUploadedDocument({
-            grantToken,
             sessionId,
             uploadToken: uploadData.uploadToken,
             storageId: uploadResult.storageId,
@@ -154,7 +151,6 @@ export function useUploadFlow({
           });
 
           const extractionResult = (await extractDocumentContent({
-            grantToken,
             sessionId,
             documentId,
             clientRequestId,
@@ -192,7 +188,6 @@ export function useUploadFlow({
     [
       extractDocumentContent,
       generateUploadUrl,
-      grantToken,
       registerUploadedDocument,
       sessionId,
     ],
@@ -212,7 +207,7 @@ export function useUploadFlow({
 
   const importLink = useCallback(
     async (url: string) => {
-      if (!grantToken || !sessionId || !url.trim()) {
+      if (!sessionId || !url.trim()) {
         return false;
       }
 
@@ -222,7 +217,6 @@ export function useUploadFlow({
       let file: File;
       try {
         const linkContent = await fetchLinkContent({
-          grantToken,
           sessionId,
           url,
         });
@@ -242,11 +236,11 @@ export function useUploadFlow({
 
       return uploadFiles([file]);
     },
-    [fetchLinkContent, grantToken, sessionId, uploadFiles],
+    [fetchLinkContent, sessionId, uploadFiles],
   );
 
   const generateQuizQuestions = useCallback(async () => {
-    if (!grantToken || !sessionId) {
+    if (!sessionId) {
       return;
     }
 
@@ -281,7 +275,6 @@ export function useUploadFlow({
 
     try {
       await generateQuiz({
-        grantToken,
         sessionId,
         questionCount: 1,
         clientRequestId,
@@ -304,18 +297,11 @@ export function useUploadFlow({
     } finally {
       setIsGeneratingQuiz(false);
     }
-  }, [
-    documents,
-    generateQuiz,
-    grantToken,
-    sessionId,
-    documentCount,
-    readyDocumentCount,
-  ]);
+  }, [documents, generateQuiz, sessionId, documentCount, readyDocumentCount]);
 
   const generateFocusedQuizQuestions = useCallback(
     async (focusTopics: string[]) => {
-      if (!grantToken || !sessionId || focusTopics.length === 0) {
+      if (!sessionId || focusTopics.length === 0) {
         return;
       }
 
@@ -364,7 +350,6 @@ export function useUploadFlow({
 
       try {
         const result = (await generateFocusedQuiz({
-          grantToken,
           sessionId,
           focusTopics: normalizedTopics,
           questionsPerTopic: FOCUSED_QUESTIONS_PER_TOPIC,
@@ -403,7 +388,6 @@ export function useUploadFlow({
       documentCount,
       documents,
       generateFocusedQuiz,
-      grantToken,
       readyDocumentCount,
       sessionId,
     ],
@@ -411,13 +395,13 @@ export function useUploadFlow({
 
   const removeDocumentById = useCallback(
     async (documentId: StudyDocumentId) => {
-      if (!grantToken || !sessionId) {
+      if (!sessionId) {
         return;
       }
 
       setIsRemovingDocument(documentId);
       try {
-        await removeDocument({ grantToken, sessionId, documentId });
+        await removeDocument({ sessionId, documentId });
         trackDocumentRemoved("succeeded");
       } catch (error: unknown) {
         trackDocumentRemoved("failed");
@@ -430,7 +414,7 @@ export function useUploadFlow({
         setIsRemovingDocument(null);
       }
     },
-    [grantToken, removeDocument, sessionId],
+    [removeDocument, sessionId],
   );
 
   return {

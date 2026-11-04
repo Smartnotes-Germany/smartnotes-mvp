@@ -54,6 +54,7 @@ Convex agent skills for common tasks can be installed by running `npx convex ai-
 
 ```bash
 VITE_CONVEX_URL=<your-convex-url>
+VITE_CLERK_PUBLISHABLE_KEY=<your-clerk-publishable-key>
 VITE_POSTHOG_KEY=<your-posthog-project-key>
 VITE_POSTHOG_HOST=/snph
 VITE_POSTHOG_UI_HOST=https://eu.posthog.com
@@ -84,6 +85,7 @@ pnpm exec convex env set GOOGLE_VERTEX_API_KEY <your-api-key>
 pnpm exec convex env set GOOGLE_VERTEX_PROJECT <your-project-id>
 pnpm exec convex env set GOOGLE_VERTEX_LOCATION us-central1
 pnpm exec convex env set ACCESS_CODE_ADMIN_SECRET <admin-secret>
+pnpm exec convex env set CLERK_JWT_ISSUER_DOMAIN <clerk-frontend-api-url>
 
 # Balanced observability mode (Langfuse + retention)
 pnpm exec convex env set LANGFUSE_PUBLIC_KEY <your-langfuse-public-key>

@@ -20,7 +20,7 @@ type UnexpectedRedeemFailure = {
   reason: "unexpected_error";
   normalizedCode: string;
   analyticsDistinctId?: string;
-  analyticsGrantId?: string;
+  analyticsUserId?: string;
   identityLabel?: string;
   identityQuality?: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
@@ -28,10 +28,8 @@ type UnexpectedRedeemFailure = {
 };
 
 type RedeemActionResult = {
-  grantToken: string;
-  expiresAt: number;
   analyticsDistinctId: string;
-  analyticsGrantId: string;
+  analyticsUserId: string;
   identityLabel: string;
   identityQuality: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
@@ -39,14 +37,14 @@ type RedeemActionResult = {
 };
 
 const buildIdentityProperties = (result: {
-  analyticsGrantId?: string;
+  analyticsUserId?: string;
   identityLabel?: string;
   identityQuality?: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
   note?: string;
 }) => ({
-  ...(result.analyticsGrantId
-    ? { analyticsGrantId: result.analyticsGrantId }
+  ...(result.analyticsUserId
+    ? { analyticsUserId: result.analyticsUserId }
     : {}),
   ...(result.identityLabel ? { identityLabel: result.identityLabel } : {}),
   ...(result.identityQuality
@@ -90,7 +88,7 @@ const buildAccessEvent = (
         source,
         attribution: "identified_server",
         identity_quality: result.identityQuality,
-        analyticsGrantId: result.analyticsGrantId,
+        analyticsUserId: result.analyticsUserId,
         normalizedCode: result.normalizedCode,
       },
       personProperties: buildIdentityProperties(result),
@@ -115,8 +113,8 @@ const buildAccessEvent = (
       ...(result.identityQuality
         ? { identity_quality: result.identityQuality }
         : {}),
-      ...(result.analyticsGrantId
-        ? { analyticsGrantId: result.analyticsGrantId }
+      ...(result.analyticsUserId
+        ? { analyticsUserId: result.analyticsUserId }
         : {}),
     },
     personProperties: hasIdentity ? failureIdentity : undefined,
@@ -160,10 +158,8 @@ const performRedeem = async (
     }
 
     return {
-      grantToken: result.grantToken,
-      expiresAt: result.expiresAt,
       analyticsDistinctId: result.analyticsDistinctId,
-      analyticsGrantId: result.analyticsGrantId,
+      analyticsUserId: result.analyticsUserId,
       identityLabel: result.identityLabel,
       identityQuality: result.identityQuality,
       identityEmail: result.identityEmail,
@@ -203,14 +199,5 @@ export const redeemAccessCode = action({
   },
   handler: async (ctx, args): Promise<RedeemActionResult> => {
     return await performRedeem(ctx, args.code, args.source ?? "manual_code");
-  },
-});
-
-export const consumeMagicLink = action({
-  args: {
-    code: v.string(),
-  },
-  handler: async (ctx, args): Promise<RedeemActionResult> => {
-    return await performRedeem(ctx, args.code, "magic_link");
   },
 });

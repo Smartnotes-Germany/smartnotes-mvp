@@ -44,6 +44,54 @@ export type SessionAnalysis = {
   topics: SessionAnalysisTopic[];
 };
 
+export type TopicSummaryFigure = {
+  kind: "upload";
+  documentId: StudyDocumentId;
+  caption: string;
+};
+
+export type TopicSummaryVisual =
+  | { kind: "steps"; title: string; steps: string[] }
+  | {
+      kind: "comparison";
+      title: string;
+      columns: string[];
+      rows: { label: string; values: string[] }[];
+    }
+  | {
+      kind: "parts";
+      title: string;
+      parts: { label: string; detail: string }[];
+    };
+
+export type TopicSummarySection = {
+  topic: string;
+  blocks: { heading: string; text: string }[];
+  visual?: TopicSummaryVisual;
+  figure?: TopicSummaryFigure;
+  example: { title: string; text: string };
+};
+
+export type TopicSummary = {
+  status: "generating" | "ready" | "failed";
+  focusTopics: string[];
+  dismissed: boolean;
+  sections: TopicSummarySection[];
+  error?: string;
+};
+
+/** Eine Prüfung in der Liste auf der Startseite. */
+export type ExamSummary = {
+  _id: StudySessionId;
+  title: string;
+  stage: "upload" | "quiz" | "analysis";
+  examDate?: string; // JJJJ-MM-TT
+  topicCount: number;
+  hasAnalysis: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type StudyDocument = {
   _id: StudyDocumentId;
   fileName: string;
@@ -53,16 +101,14 @@ export type StudyDocument = {
   extractionError?: string;
 };
 
-export type GrantStatus = {
-  valid: boolean;
-  reason?: string;
-  expiresAt?: number;
-  analyticsDistinctId?: string;
-  analyticsGrantId?: string;
-  identityLabel?: string;
-  identityQuality?: "email" | "app_only";
+export type Viewer = {
+  activated: boolean;
+  onboarded: boolean;
+  analyticsDistinctId: string;
+  analyticsUserId: string;
+  identityLabel: string;
+  identityQuality: "email" | "app_only";
   identityEmail?: string;
-  note?: string;
 };
 
 export type FormatErrorOptions = {

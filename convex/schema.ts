@@ -10,6 +10,7 @@ import {
   apprenticeCountValidator,
   professionValidator,
 } from "./leadValidators";
+import { topicSummaryValidator } from "./topicSummaryValidators";
 
 /** Validator für eine einzelne Quizfrage, die von der KI generiert wurde. */
 const quizQuestionValidator = v.object({
@@ -56,7 +57,8 @@ export default defineSchema({
     normalizedCode: v.string(), // Code in Großbuchstaben zur einfachen Suche
     createdAt: v.number(),
     consumedAt: v.optional(v.number()),
-    consumedByGrantId: v.optional(v.id("accessGrants")),
+    consumedByGrantId: v.optional(v.id("accessGrants")), // Legacy: Einlösung vor Clerk.
+    consumedByUserId: v.optional(v.id("users")),
     identityLabel: v.optional(v.string()),
     identityEmail: v.optional(v.string()),
     note: v.optional(v.string()),
@@ -64,7 +66,21 @@ export default defineSchema({
     .index("by_normalizedCode", ["normalizedCode"])
     .index("by_consumedByGrantId", ["consumedByGrantId"]),
 
-  /** Aktive Zugriffsberechtigungen (Tokens), die einem Browser zugeordnet sind */
+  /** Clerk-Konten. Ein Konto wird einmalig mit einem Zugangscode freigeschaltet. */
+  users: defineTable({
+    tokenIdentifier: v.string(), // Stabile Kennung aus ctx.auth.getUserIdentity()
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+    accessCodeId: v.optional(v.id("accessCodes")),
+    activatedAt: v.optional(v.number()),
+    companyName: v.optional(v.string()), // Unternehmen bzw. Ausbildungsbetrieb
+    schoolChallenge: v.optional(v.string()), // Wo es in der Schule hakt, freiwillig
+    onboardingCompletedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_tokenIdentifier", ["tokenIdentifier"]),
+
+  /** Legacy: Browser-Tokens aus der Zeit vor Clerk, nur noch für Admin-Werkzeuge */
   accessGrants: defineTable({
     token: v.string(),
     createdAt: v.number(),
@@ -78,8 +94,10 @@ export default defineSchema({
 
   /** Eine Lern-Sitzung, die mehrere Dokumente und mehrere Quiz-Batches umfasst. */
   studySessions: defineTable({
-    grantId: v.id("accessGrants"),
+    userId: v.optional(v.id("users")),
+    grantId: v.optional(v.id("accessGrants")), // Legacy: Sitzungen vor Clerk.
     title: v.string(),
+    examDate: v.optional(v.string()), // Prüfungstermin als JJJJ-MM-TT, freiwillig
     stage: v.union(
       v.literal("upload"),
       v.literal("quiz"),
@@ -92,9 +110,27 @@ export default defineSchema({
     sourceTopics: v.array(v.string()), // Alle in den Quellen erkannten Themen
     quizQuestions: v.array(quizQuestionValidator),
     analysis: v.optional(analysisValidator), // KI-Analyse des Lernfortschritts
+    topicSummary: v.optional(topicSummaryValidator), // Zusammenfassung vor dem Quiz
+    importedFromShareId: v.optional(v.id("examShares")), // Kopie aus einem geteilten Link
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_grantId", ["grantId"]),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_importedFromShareId", ["userId", "importedFromShareId"])
+    .index("by_grantId", ["grantId"]),
+
+  /**
+   * Link, mit dem eine Prüfung geteilt wird. Wer ihn öffnet, bekommt eine
+   * eigene Kopie mit Unterlagen, Themen und Fragen, aber ohne Fortschritt.
+   */
+  examShares: defineTable({
+    sessionId: v.id("studySessions"),
+    token: v.string(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_sessionId", ["sessionId"]),
 
   /** Dokumente, die einer Sitzung hinzugefügt wurden (PDFs, Texte, etc.) */
   sessionDocuments: defineTable({
@@ -119,6 +155,7 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_createdAt", ["createdAt"])
     .index("by_storageProvider_createdAt", ["storageProvider", "createdAt"])
+    .index("by_storageId", ["storageId"]) // Geteilte Prüfungen nutzen dieselbe Datei
     .index("by_storageState_updatedAt", ["storageState", "updatedAt"]),
 
   /** Antworten des Benutzers auf generierte Quizfragen */

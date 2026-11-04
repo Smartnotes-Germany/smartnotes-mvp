@@ -30,17 +30,19 @@ const insertAccessCode = async (
   });
 };
 
-const redeemCode = async (t: TestHarness, code: string) => {
-  const result = await t.mutation(internal.access.redeemAccessCodeTransaction, {
-    code,
-  });
-
-  if (!result.ok) {
-    throw new Error(`Redeem fehlgeschlagen: ${result.reason}`);
-  }
-
-  return result;
+const signIn = async (
+  t: TestHarness,
+  identity: { subject: string; email?: string; name?: string },
+) => {
+  const asUser = t.withIdentity(identity);
+  await asUser.mutation(api.users.store, {});
+  return asUser;
 };
+
+type SignedInUser = Awaited<ReturnType<typeof signIn>>;
+
+const redeemCode = async (asUser: SignedInUser, code: string) =>
+  asUser.mutation(internal.access.redeemAccessCodeTransaction, { code });
 
 describe("convex/access", () => {
   beforeEach(() => {
@@ -64,125 +66,129 @@ describe("convex/access", () => {
     );
   });
 
-  it("liefert mit E-Mail eine stabile analyticsDistinctId und gibt sie über validateGrant wieder aus", async () => {
+  it("schaltet ein Konto mit einem Code frei und nutzt die E-Mail als analyticsDistinctId", async () => {
     const t = createTestHarness();
-
     await insertAccessCode(t, {
       code: "email-code-1",
       identityLabel: "Max Mustermann",
-      identityEmail: " Max@Schule.DE ",
       note: "LK Biologie",
     });
-
-    const redeemed = await redeemCode(t, "email-code-1");
-    expect(redeemed.identityQuality).toBe("email");
-    expect(redeemed.analyticsDistinctId).toBe(
-      "smartnotes-user:email:max@schule.de",
-    );
-
-    const grantStatus = await t.query(api.access.validateGrant, {
-      grantToken: redeemed.grantToken,
+    const asUser = await signIn(t, {
+      subject: "user_max",
+      email: " Max@Schule.DE ",
+      name: "Max Mustermann",
     });
 
-    expect(grantStatus).toMatchObject({
-      valid: true,
-      identityLabel: "Max Mustermann",
-      identityEmail: "max@schule.de",
+    expect(await asUser.query(api.users.viewer, {})).toMatchObject({
+      activated: false,
+    });
+
+    const redeemed = await redeemCode(asUser, "email-code-1");
+
+    expect(redeemed).toMatchObject({
+      ok: true,
       identityQuality: "email",
-      analyticsGrantId: redeemed.analyticsGrantId,
-      analyticsDistinctId: redeemed.analyticsDistinctId,
+      identityEmail: "max@schule.de",
+      identityLabel: "Max Mustermann",
+      analyticsDistinctId: "smartnotes-user:email:max@schule.de",
       note: "LK Biologie",
     });
+    expect(await asUser.query(api.users.viewer, {})).toMatchObject({
+      activated: true,
+      analyticsDistinctId: "smartnotes-user:email:max@schule.de",
+    });
   });
 
-  it("führt verschiedene Schreibweisen derselben E-Mail auf dieselbe analyticsDistinctId", async () => {
+  it("lässt das Konto bei einem unbekannten Code gesperrt", async () => {
     const t = createTestHarness();
+    await insertAccessCode(t, { code: "echter-code" });
+    const asUser = await signIn(t, { subject: "user_unknown" });
 
-    await insertAccessCode(t, {
-      code: "email-code-2a",
-      identityLabel: "Max Mustermann",
-      identityEmail: "Max@Schule.DE",
+    const redeemed = await redeemCode(asUser, "falscher-code");
+
+    expect(redeemed).toMatchObject({ ok: false, reason: "unknown_code" });
+    expect(await asUser.query(api.users.viewer, {})).toMatchObject({
+      activated: false,
     });
-    await insertAccessCode(t, {
-      code: "email-code-2b",
-      identityLabel: "Max M.",
-      identityEmail: "max@schule.de",
-    });
-
-    const first = await redeemCode(t, "email-code-2a");
-    const second = await redeemCode(t, "email-code-2b");
-
-    expect(first.analyticsDistinctId).toBe(second.analyticsDistinctId);
-    expect(first.analyticsDistinctId).toBe(
-      "smartnotes-user:email:max@schule.de",
-    );
   });
 
-  it("verwendet ohne E-Mail eine grantbasierte analyticsDistinctId", async () => {
+  it("löst jeden Code nur für ein Konto ein", async () => {
     const t = createTestHarness();
+    await insertAccessCode(t, { code: "einmal-code" });
+    const first = await signIn(t, { subject: "user_first" });
+    const second = await signIn(t, { subject: "user_second" });
 
-    await insertAccessCode(t, {
-      code: "grant-code-1",
-      identityLabel: "Max Mustermann",
+    expect(await redeemCode(first, "einmal-code")).toMatchObject({ ok: true });
+    expect(await redeemCode(second, "einmal-code")).toMatchObject({
+      ok: false,
+      reason: "already_used",
     });
+  });
 
-    const redeemed = await redeemCode(t, "grant-code-1");
+  it("verwendet ohne E-Mail eine kontobasierte analyticsDistinctId", async () => {
+    const t = createTestHarness();
+    await insertAccessCode(t, { code: "ohne-email" });
+    const asUser = await signIn(t, { subject: "user_no_email" });
+
+    const redeemed = await redeemCode(asUser, "ohne-email");
 
     expect(redeemed.identityQuality).toBe("app_only");
     expect(redeemed.analyticsDistinctId).toBe(
-      `smartnotes-user:grant:${redeemed.analyticsGrantId}`,
+      `smartnotes-user:user:${redeemed.analyticsUserId}`,
     );
   });
 
-  it("löst alte Zugangscodes ohne Nutzerkennung mit einem Fallback-Label ein", async () => {
+  it("verbraucht keinen weiteren Code, wenn das Konto schon freigeschaltet ist", async () => {
     const t = createTestHarness();
+    await insertAccessCode(t, { code: "erster-code" });
+    await insertAccessCode(t, { code: "zweiter-code" });
+    const asUser = await signIn(t, { subject: "user_twice" });
 
-    await insertAccessCode(t, {
-      code: "legacy-code-1",
-      note: "Altbestand ohne Label",
+    await redeemCode(asUser, "erster-code");
+    expect(await redeemCode(asUser, "zweiter-code")).toMatchObject({
+      ok: true,
     });
 
-    const redeemed = await redeemCode(t, "legacy-code-1");
-
-    expect(redeemed.note).toBe("Altbestand ohne Label");
-    expect(redeemed.identityQuality).toBe("app_only");
-    expect(redeemed.identityLabel).toMatch(/^Unbekannte Nutzerkennung \(.+\)$/);
-    expect(redeemed.identityLabel).not.toBe(redeemed.note);
-
-    const grantStatus = await t.query(api.access.validateGrant, {
-      grantToken: redeemed.grantToken,
-    });
-
-    expect(grantStatus).toMatchObject({
-      valid: true,
-      note: "Altbestand ohne Label",
-      identityQuality: "app_only",
-    });
-    expect(grantStatus.identityLabel).toBe(redeemed.identityLabel);
+    const secondCode = await t.run(async (ctx) =>
+      ctx.db
+        .query("accessCodes")
+        .withIndex("by_normalizedCode", (q) =>
+          q.eq("normalizedCode", normalizeAccessCode("zweiter-code")),
+        )
+        .unique(),
+    );
+    expect(secondCode?.consumedAt).toBeUndefined();
   });
 
-  it("erzeugt ohne E-Mail pro Grant unterschiedliche analyticsDistinctIds, auch bei gleichem oder ähnlichem Label", async () => {
+  it("prüft Codes vor der Registrierung, ohne sie zu verbrauchen", async () => {
     const t = createTestHarness();
+    await insertAccessCode(t, { code: "pruef-code" });
 
-    await insertAccessCode(t, {
-      code: "grant-code-2a",
-      identityLabel: "Max Mustermann",
-    });
-    await insertAccessCode(t, {
-      code: "grant-code-2b",
-      identityLabel: "Max Mustermann",
-    });
-    await insertAccessCode(t, {
-      code: "grant-code-2c",
-      identityLabel: "Max M.",
+    expect(
+      await t.query(api.access.checkAccessCode, { code: " pruef-code " }),
+    ).toEqual({ status: "valid" });
+    expect(
+      await t.query(api.access.checkAccessCode, { code: "falscher-code" }),
+    ).toEqual({ status: "unknown_code" });
+    expect(await t.query(api.access.checkAccessCode, { code: "  " })).toEqual({
+      status: "unknown_code",
     });
 
-    const first = await redeemCode(t, "grant-code-2a");
-    const second = await redeemCode(t, "grant-code-2b");
-    const third = await redeemCode(t, "grant-code-2c");
+    const asUser = await signIn(t, { subject: "user_check" });
+    expect(await redeemCode(asUser, "pruef-code")).toMatchObject({ ok: true });
+    expect(
+      await t.query(api.access.checkAccessCode, { code: "pruef-code" }),
+    ).toEqual({ status: "already_used" });
+  });
 
-    expect(first.analyticsDistinctId).not.toBe(second.analyticsDistinctId);
-    expect(first.analyticsDistinctId).not.toBe(third.analyticsDistinctId);
-    expect(second.analyticsDistinctId).not.toBe(third.analyticsDistinctId);
+  it("löst ohne Anmeldung keinen Code ein", async () => {
+    const t = createTestHarness();
+    await insertAccessCode(t, { code: "anonym-code" });
+
+    await expect(
+      t.mutation(internal.access.redeemAccessCodeTransaction, {
+        code: "anonym-code",
+      }),
+    ).rejects.toThrowError("Bitte melde dich an.");
   });
 });

@@ -11,8 +11,8 @@ import type { FeedbackState, QuizQuestion } from "../types";
 import { ANALYTICS_FEATURE_FLAGS } from "../analytics";
 import { QuestionPrompt } from "./QuestionPrompt";
 
-// Bis zu so vielen Fragen bekommt jede Frage ein eigenes Segment im Fortschritt.
-const MAX_PROGRESS_SEGMENTS = 20;
+// Ab so vielen Fragen rücken die Segmente enger zusammen, damit sie breit genug bleiben.
+const DENSE_PROGRESS_SEGMENTS = 20;
 
 type QuizStageProps = {
   currentQuestion: QuizQuestion | null;
@@ -79,10 +79,6 @@ export function QuizStage({
   );
   const useCompactAnalysisCopy = analysisCtaVariant === "kompakt";
 
-  const progressPercentage = Math.min(
-    100,
-    (answeredQuestionsInFocus / minQuestionsRequired) * 100,
-  );
   const isOnQuestion = currentQuestion !== null && !feedback;
   const isQuizComplete =
     answeredQuestionsInFocus >= minQuestionsRequired && !isOnQuestion;
@@ -98,8 +94,11 @@ export function QuizStage({
     ? 10
     : selectedTopics.length * 5;
 
+  // Während die Fragen entstehen, wird gewartet statt zur Themenauswahl
+  // zurückzuspringen, etwa nach dem Überspringen der Zusammenfassung.
   const showSelection =
-    focusTopics.length === 0 || (!currentQuestion && !feedback && !isPreparing);
+    !isPreparing &&
+    (focusTopics.length === 0 || (!currentQuestion && !feedback));
 
   const toggleTopic = (topic: string) => {
     if (isPreparing) {
@@ -153,36 +152,31 @@ export function QuizStage({
               )}
             </p>
           </div>
-          {minQuestionsRequired <= MAX_PROGRESS_SEGMENTS ? (
-            <div
-              className="flex gap-1.5"
-              role="progressbar"
-              aria-label="Fortschritt"
-              aria-valuemin={0}
-              aria-valuemax={minQuestionsRequired}
-              aria-valuenow={answeredQuestionsInFocus}
-            >
-              {Array.from({ length: minQuestionsRequired }, (_, index) => (
-                <span
-                  key={index}
-                  className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${
-                    index < answeredQuestionsInFocus
-                      ? "progress-fill"
-                      : index === answeredQuestionsInFocus && isOnQuestion
-                        ? "bg-accent/40"
-                        : "bg-ink/15"
-                  }`}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-ink/15 h-1.5 w-full overflow-hidden rounded-full">
-              <div
-                className="progress-fill h-full rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${progressPercentage}%` }}
+          <div
+            className={`flex ${
+              minQuestionsRequired > DENSE_PROGRESS_SEGMENTS
+                ? "gap-1"
+                : "gap-1.5"
+            }`}
+            role="progressbar"
+            aria-label="Fortschritt"
+            aria-valuemin={0}
+            aria-valuemax={minQuestionsRequired}
+            aria-valuenow={answeredQuestionsInFocus}
+          >
+            {Array.from({ length: minQuestionsRequired }, (_, index) => (
+              <span
+                key={index}
+                className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${
+                  index < answeredQuestionsInFocus
+                    ? "progress-fill"
+                    : index === answeredQuestionsInFocus && isOnQuestion
+                      ? "bg-accent/40"
+                      : "bg-ink/15"
+                }`}
               />
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
 
@@ -456,9 +450,16 @@ export function QuizStage({
         ) : !showSelection && !feedback ? (
           <div className="flex flex-col items-center gap-4">
             <Loader2 size={48} className="text-accent animate-spin" />
-            <p className="text-ink-secondary text-sm font-medium">
-              Vorbereitung...
+            <p className="text-ink text-lg font-medium">
+              {isPreparing
+                ? "Deine Fragen werden erstellt …"
+                : "Vorbereitung …"}
             </p>
+            {isPreparing && (
+              <p className="text-ink-secondary max-w-sm text-sm">
+                Das dauert meist unter einer Minute. Danach geht es direkt los.
+              </p>
+            )}
           </div>
         ) : null}
       </div>

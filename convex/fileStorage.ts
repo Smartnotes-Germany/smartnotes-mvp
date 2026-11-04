@@ -1,4 +1,5 @@
 import { components } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./errorTracking";
 import { readOptionalEnv } from "./env";
 
@@ -173,4 +174,40 @@ export const deleteManagedFile = async (
   );
 
   return { deleted: deleted.deleted };
+};
+
+/**
+ * Gibt die Datei eines Dokuments frei, bevor das Dokument gelöscht wird.
+ * Geteilte Prüfungen zeigen auf dieselbe Datei, deshalb wird sie erst
+ * gelöscht, wenn kein anderes Dokument sie mehr nutzt.
+ */
+export const releaseDocumentFile = async (
+  ctx: MutationCtx,
+  document: ManagedStorageReference & { _id: Id<"sessionDocuments"> },
+) => {
+  const references = await ctx.db
+    .query("sessionDocuments")
+    .withIndex("by_storageId", (q) => q.eq("storageId", document.storageId))
+    .take(2);
+  if (references.some((reference) => reference._id !== document._id)) {
+    return { deleted: true };
+  }
+
+  return deleteManagedFile(ctx, document);
+};
+
+/** Gibt einem weiteren Konto Zugriff auf eine Datei, etwa beim Teilen. */
+export const grantFileAccess = async (
+  ctx: MutationCtx,
+  storageId: string,
+  accessKey: string,
+) => {
+  try {
+    await ctx.runMutation(
+      components.convexFilesControl.accessControl.addAccessKey,
+      { storageId, accessKey },
+    );
+  } catch {
+    // Der Schlüssel ist schon eingetragen, etwa bei einer zweiten Kopie.
+  }
 };

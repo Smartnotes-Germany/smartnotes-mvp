@@ -6,8 +6,8 @@ import {
 } from "../../../shared/uploadPolicy";
 
 export const STORAGE_KEYS = {
-  grantToken: "smartnotes.grant-token",
-  sessionId: "smartnotes.session-id",
+  pendingAccessCode: "smartnotes.pending-access-code",
+  pendingShareToken: "smartnotes.pending-share-token",
   theme: "smartnotes.theme",
 } as const;
 

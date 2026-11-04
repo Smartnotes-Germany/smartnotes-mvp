@@ -27,6 +27,8 @@ import type * as observability from "../observability.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as retention from "../retention.js";
 import type * as study from "../study.js";
+import type * as topicSummaryValidators from "../topicSummaryValidators.js";
+import type * as users from "../users.js";
 import type * as waitlist from "../waitlist.js";
 
 import type {
@@ -55,6 +57,8 @@ declare const fullApi: ApiFromModules<{
   rateLimit: typeof rateLimit;
   retention: typeof retention;
   study: typeof study;
+  topicSummaryValidators: typeof topicSummaryValidators;
+  users: typeof users;
   waitlist: typeof waitlist;
 }>;
 

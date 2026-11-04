@@ -16,7 +16,7 @@ describe("convex/admin", () => {
     delete process.env.ACCESS_CODE_ADMIN_SECRET;
   });
 
-  it("löscht per sessionId nur die angegebene Sitzung und widerruft den Grant nicht", async () => {
+  it("löscht per sessionId nur die angegebene Sitzung und sperrt das Konto nicht", async () => {
     const t = createTestHarness();
     const code = "admin-delete-session";
 
@@ -29,7 +29,9 @@ describe("convex/admin", () => {
       });
     });
 
-    const redeemed = await t.mutation(
+    const asUser = t.withIdentity({ subject: code });
+    await asUser.mutation(api.users.store, {});
+    const redeemed = await asUser.mutation(
       internal.access.redeemAccessCodeTransaction,
       {
         code,
@@ -40,12 +42,10 @@ describe("convex/admin", () => {
       throw new Error(`Redeem fehlgeschlagen: ${redeemed.reason}`);
     }
 
-    const firstSessionId = await t.mutation(api.study.startSession, {
-      grantToken: redeemed.grantToken,
+    const firstSessionId = await asUser.mutation(api.study.startSession, {
       title: "Sitzung 1",
     });
-    const secondSessionId = await t.mutation(api.study.startSession, {
-      grantToken: redeemed.grantToken,
+    const secondSessionId = await asUser.mutation(api.study.startSession, {
       title: "Sitzung 2",
     });
 
@@ -59,16 +59,14 @@ describe("convex/admin", () => {
       revokedGrant: false,
     });
 
-    const grantStatus = await t.query(api.access.validateGrant, {
-      grantToken: redeemed.grantToken,
-    });
-    expect(grantStatus).toMatchObject({
-      valid: true,
+    expect(await asUser.query(api.users.viewer, {})).toMatchObject({
+      activated: true,
     });
 
-    const latestSessionId = await t.query(api.study.getLatestSessionId, {
-      grantToken: redeemed.grantToken,
-    });
+    const latestSessionId = await asUser.query(
+      api.study.getLatestSessionId,
+      {},
+    );
     expect(latestSessionId).toBe(secondSessionId);
 
     const deletedSession = await t.run(async (ctx) =>
@@ -95,7 +93,9 @@ describe("convex/admin", () => {
       });
     });
 
-    const redeemed = await t.mutation(
+    const asUser = t.withIdentity({ subject: code });
+    await asUser.mutation(api.users.store, {});
+    const redeemed = await asUser.mutation(
       internal.access.redeemAccessCodeTransaction,
       {
         code,
@@ -106,8 +106,7 @@ describe("convex/admin", () => {
       throw new Error(`Redeem fehlgeschlagen: ${redeemed.reason}`);
     }
 
-    const sessionId = await t.mutation(api.study.startSession, {
-      grantToken: redeemed.grantToken,
+    const sessionId = await asUser.mutation(api.study.startSession, {
       title: "Sitzung mit verwaister Datei",
     });
 

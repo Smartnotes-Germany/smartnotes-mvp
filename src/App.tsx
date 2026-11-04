@@ -1,34 +1,59 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useAuth } from "@clerk/react";
 import { useQuery } from "convex/react";
-import { Routes, Route, useLocation } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  Routes,
+  Route,
+  useLocation,
+  useMatch,
+  useParams,
+} from "react-router-dom";
 import logoImage from "./assets/images/stackprep-mark.svg";
 import {
+  AccountLockedScreen,
   AnalysisStage,
   AuthScreen,
+  ExamsPage,
   LoadingScreen,
   NavigationShell,
+  OnboardingScreen,
   PrivacyScreen,
   QuizStage,
+  SharedExamPage,
+  TopicSummaryStage,
   UploadStage,
 } from "./features/study/components";
 import { sessionSnapshotRef } from "./features/study/convexRefs";
 import { useTheme } from "./features/study/useTheme";
 import {
+  readPendingShareToken,
+  storePendingShareToken,
+} from "./features/study/pendingShareLink";
+import {
   useAnalysisFlow,
   useAuthSession,
   useQuizFlow,
+  useTopicSummaryFlow,
   useUploadFlow,
 } from "./features/study/hooks";
 import Page from "./admin/page.tsx";
 import { topicsMatchForFocusMode } from "../shared/topicMatching";
 import {
   registerBaseContext,
+  registerPostHogContext,
   trackConsentUpdated,
   trackStudyStageViewed,
   trackThemeChanged,
   type AnalyticsStage,
 } from "./features/study/analytics";
-import type { StudyStage, ThemePreference } from "./features/study/types";
+import type {
+  StudySessionId,
+  StudyStage,
+  ThemePreference,
+  Viewer,
+} from "./features/study/types";
 
 const analyticsStageByStudyStage: Record<StudyStage, AnalyticsStage> = {
   upload: "upload",
@@ -38,38 +63,29 @@ const analyticsStageByStudyStage: Record<StudyStage, AnalyticsStage> = {
   summary: "analysis",
 };
 
-function StudyApp() {
-  const { preference: themePreference, setPreference: setThemePreference } =
-    useTheme();
-  const {
-    grantToken,
-    sessionId,
-    grantStatus,
-    latestSessionId,
-    accessCodeInput,
-    authError,
-    isRedeemingCode,
-    isCreatingSession,
-    isSigningOut,
-    isConsumingMagicLink,
-    hasAcceptedPrivacy,
-    isAcceptingPrivacy,
-    setAccessCodeInput,
-    redeemCode,
-    startFreshSession,
-    acceptPrivacy,
-    signOut,
-  } = useAuthSession();
+type ExamFlowProps = {
+  viewer: Viewer;
+  themePreference: ThemePreference;
+  onThemePreferenceChange: (preference: ThemePreference) => void;
+  onSignOut: () => Promise<void>;
+  isSigningOut: boolean;
+};
+
+/** Eine Prüfung im Ablauf Hochladen → Quiz → Analyse, geöffnet über ihre Adresse. */
+function ExamFlow({
+  viewer,
+  themePreference,
+  onThemePreferenceChange,
+  onSignOut,
+  isSigningOut,
+}: ExamFlowProps) {
+  // Die ID kommt aus der Adresse. Convex prüft sie und liefert für fremde
+  // oder unbekannte Prüfungen null.
+  const sessionId = (useParams().sessionId ?? null) as StudySessionId | null;
 
   const snapshot = useQuery(
     sessionSnapshotRef,
-    grantToken &&
-      grantStatus?.valid &&
-      sessionId &&
-      latestSessionId !== undefined &&
-      latestSessionId === sessionId
-      ? { grantToken, sessionId }
-      : "skip",
+    sessionId ? { sessionId } : "skip",
   );
 
   const session = snapshot?.session ?? null;
@@ -85,13 +101,6 @@ function StudyApp() {
         .length,
     [documents],
   );
-
-  useEffect(() => {
-    if (snapshot === null && sessionId) {
-      localStorage.removeItem("smartnotes.sessionId");
-      window.location.reload();
-    }
-  }, [snapshot, sessionId]);
 
   const answeredQuestionIdSet = useMemo(
     () => new Set(answeredQuestionIds ?? []),
@@ -202,14 +211,12 @@ function StudyApp() {
   ]);
 
   const uploadFlow = useUploadFlow({
-    grantToken,
     sessionId,
     documents,
     documentCount: documents.length,
     readyDocumentCount,
   });
   const analysisFlow = useAnalysisFlow({
-    grantToken,
     sessionId,
     documents,
     answeredQuestions: stats?.answeredQuestions,
@@ -218,9 +225,6 @@ function StudyApp() {
     currentFocusTopic: activeTopic,
     hasExistingAnalysis: Boolean(session?.analysis),
   });
-  const [sessionActionError, setSessionActionError] = useState<string | null>(
-    null,
-  );
   const shouldContinueToAnalysis =
     session?.stage === "quiz" &&
     answeredQuestionsInFocus >= minQuestionsRequired &&
@@ -232,45 +236,33 @@ function StudyApp() {
   const displayStage: StudyStage = shouldReturnToExistingAnalysis
     ? "analysis"
     : (session?.stage ?? "upload");
+  const topicSummaryFlow = useTopicSummaryFlow({ sessionId });
+  const topicSummary = session?.topicSummary;
+  const showTopicSummary =
+    displayStage === "quiz" && Boolean(topicSummary && !topicSummary.dismissed);
   const quizFlow = useQuizFlow({
-    grantToken,
     sessionId,
     currentQuestion,
-    isQuizActive: displayStage === "quiz",
+    isQuizActive: displayStage === "quiz" && !showTopicSummary,
     answeredQuestions: stats?.answeredQuestions,
     totalQuestions: stats?.totalQuestions,
   });
   const lastTrackedStageRef = useRef<AnalyticsStage | null>(null);
 
   const currentStage = useMemo<AnalyticsStage>(() => {
-    if (!grantToken) {
-      return "auth";
-    }
-
-    if (
-      !grantStatus ||
-      !grantStatus.valid ||
-      !sessionId ||
-      !session ||
-      !stats
-    ) {
+    if (!sessionId || !session || !stats) {
       return "loading";
     }
 
     return analyticsStageByStudyStage[displayStage];
-  }, [displayStage, grantStatus, grantToken, session, sessionId, stats]);
+  }, [displayStage, session, sessionId, stats]);
 
-  const handleThemePreferenceChange = useCallback(
-    (nextPreference: ThemePreference) => {
-      if (nextPreference === themePreference) {
-        return;
-      }
-
-      trackThemeChanged(themePreference, nextPreference);
-      setThemePreference(nextPreference);
-    },
-    [setThemePreference, themePreference],
-  );
+  useEffect(() => {
+    registerPostHogContext({
+      analyticsUserId: viewer.analyticsUserId,
+      sessionId,
+    });
+  }, [sessionId, viewer.analyticsUserId]);
 
   useEffect(() => {
     if (lastTrackedStageRef.current === currentStage) {
@@ -285,6 +277,175 @@ function StudyApp() {
       totalQuestions: stats?.totalQuestions,
     });
   }, [currentStage, documents.length, readyDocumentCount, stats]);
+
+  const handleSetFocusTopics = async (topics: string[]) => {
+    // Läuft parallel zu den Fragen und wird vor dem Quiz angezeigt.
+    void topicSummaryFlow.startTopicSummary(topics);
+    try {
+      await uploadFlow.generateFocusedQuizQuestions(topics);
+    } catch (error) {
+      console.error("Themenwahl fehlgeschlagen:", error);
+    }
+  };
+
+  const handleContinueAfterFeedback = async () => {
+    if (shouldContinueToAnalysis) {
+      await analysisFlow.analyzeSession();
+      return;
+    }
+
+    quizFlow.continueAfterFeedback();
+  };
+
+  if (snapshot === null) {
+    return (
+      <div className="app-glow text-ink flex min-h-dvh flex-col items-center justify-center px-6 text-center">
+        <h1 className="mb-3 text-2xl font-medium tracking-[-0.04em] md:text-4xl">
+          Prüfung nicht gefunden
+        </h1>
+        <p className="text-ink-secondary mb-8 max-w-md">
+          Diese Prüfung gibt es nicht oder sie gehört zu einem anderen Konto.
+        </p>
+        <Link to="/" className="pill-button">
+          Zu deinen Prüfungen
+        </Link>
+      </div>
+    );
+  }
+
+  if (!sessionId || !session || !stats) {
+    return <LoadingScreen onSignOut={onSignOut} />;
+  }
+
+  return (
+    <NavigationShell
+      logoImage={logoImage}
+      stage={displayStage}
+      examTitle={session.title}
+      preference={themePreference}
+      setPreference={onThemePreferenceChange}
+      onSignOut={onSignOut}
+      isSigningOut={isSigningOut}
+    >
+      {displayStage === "upload" && (
+        <UploadStage
+          documents={documents}
+          isUploading={uploadFlow.isUploading}
+          uploadError={uploadFlow.uploadError}
+          isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
+          isRemovingDocument={uploadFlow.isRemovingDocument}
+          onFileInputChange={uploadFlow.onFileInputChange}
+          onImportLink={uploadFlow.importLink}
+          onGenerateQuiz={uploadFlow.generateQuizQuestions}
+          onRemoveDocument={uploadFlow.removeDocumentById}
+        />
+      )}
+
+      {showTopicSummary && topicSummary && (
+        <TopicSummaryStage
+          sessionId={session._id}
+          summary={topicSummary}
+          isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
+          isDismissing={topicSummaryFlow.isDismissing}
+          onStartQuiz={topicSummaryFlow.dismissTopicSummary}
+        />
+      )}
+
+      {(analyticsStageByStudyStage[session.stage] === "mode_selection" ||
+        displayStage === "quiz") && (
+        // Bleibt während der Zusammenfassung montiert, damit die Themenauswahl erhalten bleibt.
+        <div className={showTopicSummary ? "hidden" : "contents"}>
+          <QuizStage
+            currentQuestion={quizFlow.displayQuestion}
+            feedback={quizFlow.feedback}
+            answerInput={quizFlow.answerInput}
+            onAnswerInputChange={quizFlow.setAnswerInput}
+            onSubmitAnswer={quizFlow.submitAnswer}
+            isSubmittingAnswer={quizFlow.isSubmittingAnswer}
+            // Scheitert die Fragengenerierung nach der Themenwahl, landet der
+            // Fehler im Upload-Flow und muss hier bei der Themenauswahl stehen.
+            quizError={
+              quizFlow.quizError ||
+              analysisFlow.analysisError ||
+              uploadFlow.uploadError
+            }
+            isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
+            onContinueAfterFeedback={handleContinueAfterFeedback}
+            sourceTopics={session.sourceTopics}
+            focusTopics={session.focusTopics ?? []}
+            activeTopic={activeTopic}
+            onSetFocusTopics={handleSetFocusTopics}
+            answeredQuestionsInFocus={answeredQuestionsInFocus}
+            minQuestionsRequired={minQuestionsRequired}
+            topicLoading={analysisFlow.topicLoading}
+            isAnalyzing={analysisFlow.isAnalyzing}
+            shouldContinueToAnalysis={
+              shouldContinueToAnalysis || shouldReturnToExistingAnalysis
+            }
+          />
+        </div>
+      )}
+
+      {displayStage === "analysis" && (
+        <AnalysisStage
+          analysis={session.analysis}
+          isAnalyzing={analysisFlow.isAnalyzing}
+          analysisError={analysisFlow.analysisError}
+          topicLoading={analysisFlow.topicLoading}
+          onAnalyzeSession={analysisFlow.analyzeSession}
+          onDeepDive={analysisFlow.deepDiveTopic}
+        />
+      )}
+    </NavigationShell>
+  );
+}
+
+/**
+ * Prüft Anmeldung, Freischaltung, Onboarding und Datenschutz und zeigt dann
+ * die Startseite mit allen Prüfungen oder eine einzelne Prüfung.
+ */
+function StudyApp() {
+  const { preference: themePreference, setPreference: setThemePreference } =
+    useTheme();
+  const { isSignedIn: isClerkSignedIn } = useAuth();
+  const {
+    isAuthLoading,
+    isAuthenticated,
+    viewer,
+    authError,
+    isActivating,
+    isSigningOut,
+    hasAcceptedPrivacy,
+    isAcceptingPrivacy,
+    acceptPrivacy,
+    signOut,
+  } = useAuthSession();
+  const shareToken = useMatch("/teilen/:token")?.params.token;
+
+  // Ein geteilter Link überlebt so die Anmeldung bei Clerk.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated && shareToken) {
+      storePendingShareToken(shareToken);
+    }
+  }, [isAuthLoading, isAuthenticated, shareToken]);
+
+  const handleThemePreferenceChange = useCallback(
+    (nextPreference: ThemePreference) => {
+      if (nextPreference === themePreference) {
+        return;
+      }
+
+      trackThemeChanged(themePreference, nextPreference);
+      setThemePreference(nextPreference);
+    },
+    [setThemePreference, themePreference],
+  );
+
+  useEffect(() => {
+    if (!isAuthenticated || viewer?.activated === false) {
+      trackStudyStageViewed("auth", {});
+    }
+  }, [isAuthenticated, viewer?.activated]);
 
   useEffect(() => {
     const handleConsentUpdated = (event: Event) => {
@@ -316,49 +477,52 @@ function StudyApp() {
     };
   }, []);
 
-  const handleStartFreshSession = async () => {
-    setSessionActionError(null);
-    analysisFlow.setAnalysisError(null);
-    uploadFlow.setUploadError(null);
-    const startError = await startFreshSession();
-    if (startError) {
-      setSessionActionError(startError);
-    }
-  };
-
-  const handleSetFocusTopics = async (topics: string[]) => {
-    try {
-      await uploadFlow.generateFocusedQuizQuestions(topics);
-    } catch (error) {
-      console.error("Themenwahl fehlgeschlagen:", error);
-    }
-  };
-
-  const handleContinueAfterFeedback = async () => {
-    if (shouldContinueToAnalysis) {
-      await analysisFlow.analyzeSession();
-      return;
-    }
-
-    quizFlow.continueAfterFeedback();
-  };
-
-  if (snapshot === null && sessionId) {
+  if (isAuthLoading) {
     return <LoadingScreen />;
   }
 
-  if (!grantToken) {
+  if (!isAuthenticated) {
+    if (isClerkSignedIn) {
+      // Clerk ist angemeldet, aber Convex akzeptiert das Token nicht.
+      return (
+        <LoadingScreen
+          error="Deine Anmeldung konnte nicht bestätigt werden. Bitte melde dich erneut an."
+          onSignOut={signOut}
+        />
+      );
+    }
+
+    return <Navigate to="/anmelden" replace />;
+  }
+
+  if (!viewer) {
+    return <LoadingScreen error={authError} onSignOut={signOut} />;
+  }
+
+  if (!viewer.activated) {
+    if (isActivating) {
+      return <LoadingScreen />;
+    }
+
     return (
-      <AuthScreen
+      <AccountLockedScreen
         logoImage={logoImage}
         preference={themePreference}
         setPreference={handleThemePreferenceChange}
-        isConsumingMagicLink={isConsumingMagicLink}
-        accessCodeInput={accessCodeInput}
-        onAccessCodeChange={setAccessCodeInput}
-        onRedeemCode={redeemCode}
-        isRedeemingCode={isRedeemingCode}
+        accountEmail={viewer.identityEmail}
         authError={authError}
+        onSignOut={signOut}
+        isSigningOut={isSigningOut}
+      />
+    );
+  }
+
+  if (!viewer.onboarded) {
+    return (
+      <OnboardingScreen
+        logoImage={logoImage}
+        preference={themePreference}
+        setPreference={handleThemePreferenceChange}
       />
     );
   }
@@ -375,78 +539,49 @@ function StudyApp() {
     );
   }
 
-  if (!grantStatus || !grantStatus.valid || !sessionId || !session || !stats) {
-    return <LoadingScreen />;
+  const pendingShareToken = readPendingShareToken();
+  if (pendingShareToken && !shareToken) {
+    return <Navigate to={`/teilen/${pendingShareToken}`} replace />;
   }
 
   return (
-    <NavigationShell
-      logoImage={logoImage}
-      stage={displayStage}
-      preference={themePreference}
-      setPreference={handleThemePreferenceChange}
-      onStartFreshSession={handleStartFreshSession}
-      isCreatingSession={isCreatingSession}
-      onSignOut={signOut}
-      isSigningOut={isSigningOut}
-    >
-      {sessionActionError && (
-        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-          {sessionActionError}
-        </p>
-      )}
-
-      {displayStage === "upload" && (
-        <UploadStage
-          documents={documents}
-          isUploading={uploadFlow.isUploading}
-          uploadError={uploadFlow.uploadError}
-          isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
-          isRemovingDocument={uploadFlow.isRemovingDocument}
-          onFileInputChange={uploadFlow.onFileInputChange}
-          onImportLink={uploadFlow.importLink}
-          onGenerateQuiz={uploadFlow.generateQuizQuestions}
-          onRemoveDocument={uploadFlow.removeDocumentById}
-        />
-      )}
-
-      {(analyticsStageByStudyStage[session.stage] === "mode_selection" ||
-        displayStage === "quiz") && (
-        <QuizStage
-          currentQuestion={quizFlow.displayQuestion}
-          feedback={quizFlow.feedback}
-          answerInput={quizFlow.answerInput}
-          onAnswerInputChange={quizFlow.setAnswerInput}
-          onSubmitAnswer={quizFlow.submitAnswer}
-          isSubmittingAnswer={quizFlow.isSubmittingAnswer}
-          quizError={quizFlow.quizError || analysisFlow.analysisError}
-          isGeneratingQuiz={uploadFlow.isGeneratingQuiz}
-          onContinueAfterFeedback={handleContinueAfterFeedback}
-          sourceTopics={session.sourceTopics}
-          focusTopics={session.focusTopics ?? []}
-          activeTopic={activeTopic}
-          onSetFocusTopics={handleSetFocusTopics}
-          answeredQuestionsInFocus={answeredQuestionsInFocus}
-          minQuestionsRequired={minQuestionsRequired}
-          topicLoading={analysisFlow.topicLoading}
-          isAnalyzing={analysisFlow.isAnalyzing}
-          shouldContinueToAnalysis={
-            shouldContinueToAnalysis || shouldReturnToExistingAnalysis
-          }
-        />
-      )}
-
-      {displayStage === "analysis" && (
-        <AnalysisStage
-          analysis={session.analysis}
-          isAnalyzing={analysisFlow.isAnalyzing}
-          analysisError={analysisFlow.analysisError}
-          topicLoading={analysisFlow.topicLoading}
-          onAnalyzeSession={analysisFlow.analyzeSession}
-          onDeepDive={analysisFlow.deepDiveTopic}
-        />
-      )}
-    </NavigationShell>
+    <Routes>
+      <Route
+        path="teilen/:token"
+        element={
+          <SharedExamPage
+            logoImage={logoImage}
+            preference={themePreference}
+            setPreference={handleThemePreferenceChange}
+          />
+        }
+      />
+      <Route
+        index
+        element={
+          <ExamsPage
+            logoImage={logoImage}
+            preference={themePreference}
+            setPreference={handleThemePreferenceChange}
+            onSignOut={signOut}
+            isSigningOut={isSigningOut}
+          />
+        }
+      />
+      <Route
+        path="pruefung/:sessionId"
+        element={
+          <ExamFlow
+            viewer={viewer}
+            themePreference={themePreference}
+            onThemePreferenceChange={handleThemePreferenceChange}
+            onSignOut={signOut}
+            isSigningOut={isSigningOut}
+          />
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
@@ -460,12 +595,32 @@ function AnalyticsContextSync() {
   return null;
 }
 
+function AuthRoute({ mode }: { mode: "sign-in" | "sign-up" }) {
+  const { isSignedIn } = useAuth();
+  const { preference, setPreference } = useTheme();
+
+  if (isSignedIn) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <AuthScreen
+      mode={mode}
+      logoImage={logoImage}
+      preference={preference}
+      setPreference={setPreference}
+    />
+  );
+}
+
 function App() {
   return (
     <>
       <AnalyticsContextSync />
       <Routes>
         <Route path="/admin" element={<Page />} />
+        <Route path="/anmelden/*" element={<AuthRoute mode="sign-in" />} />
+        <Route path="/registrieren/*" element={<AuthRoute mode="sign-up" />} />
         <Route path="*" element={<StudyApp />} />
       </Routes>
     </>

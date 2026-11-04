@@ -1,6 +1,6 @@
 "use node";
 
-import { generateText, NoOutputGeneratedError, Output } from "ai";
+import { generateText, NoOutputGeneratedError, Output, streamText } from "ai";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { parseOffice } from "officeparser";
 import { z } from "zod";
@@ -44,6 +44,7 @@ import {
   MAX_GLOSSARY_TERMS,
   sanitizeGlossary,
 } from "../shared/questionGlossary";
+import type { TopicSummaryContent } from "./topicSummaryValidators";
 
 const MAX_EXTRACTED_TEXT_CHARS = 120_000;
 const MAX_PROMPT_CONTEXT_CHARS = 90_000;
@@ -1177,14 +1178,14 @@ export const serializeAnalyticsMetadata = (
 };
 
 export const resolvePostHogPersonProperties = (identity: {
-  analyticsGrantId?: string;
+  analyticsUserId?: string;
   identityLabel?: string;
   identityEmail?: string;
   note?: string;
   identityQuality?: string;
 }) => ({
-  ...(identity.analyticsGrantId
-    ? { analyticsGrantId: identity.analyticsGrantId }
+  ...(identity.analyticsUserId
+    ? { analyticsUserId: identity.analyticsUserId }
     : {}),
   ...(identity.identityLabel
     ? {
@@ -1847,15 +1848,10 @@ const persistAiAnalyticsEvent = async (
   }
 };
 
-const getGrantPostHogIdentity = async (
-  ctx: Pick<ActionCtx, "runQuery">,
-  grantToken: string,
-) => {
+const getViewerPostHogIdentity = async (ctx: Pick<ActionCtx, "runQuery">) => {
   const identity = await ctx.runQuery(
-    internal.study.getGrantAnalyticsIdentity,
-    {
-      grantToken,
-    },
+    internal.study.getViewerAnalyticsIdentity,
+    {},
   );
 
   if (!identity.analyticsDistinctId) {
@@ -1863,10 +1859,9 @@ const getGrantPostHogIdentity = async (
   }
 
   const personProperties = resolvePostHogPersonProperties({
-    analyticsGrantId: identity.analyticsGrantId,
+    analyticsUserId: identity.analyticsUserId,
     identityLabel: identity.identityLabel,
     identityEmail: identity.identityEmail,
-    note: identity.note,
     identityQuality: identity.identityQuality,
   });
 
@@ -2252,7 +2247,6 @@ const isNoOutputGeneratedError = (error: unknown) => {
 
 export const extractDocumentContent = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     documentId: v.id("sessionDocuments"),
     clientRequestId: v.optional(v.string()),
@@ -2277,7 +2271,6 @@ export const extractDocumentContent = action({
       document: SessionDocumentInput;
       accessKey?: string;
     } = await ctx.runQuery(internal.study.getDocumentExtractionContext, {
-      grantToken: args.grantToken,
       sessionId: args.sessionId,
       documentId: args.documentId,
     });
@@ -2394,9 +2387,15 @@ export const extractDocumentContent = action({
   },
 });
 
+/**
+ * Platz für die Antwort einer Quizgenerierung. Ein festes Limit schnitt bei
+ * vielen Fragen das JSON ab, dann kam gar nichts an.
+ */
+const getQuizOutputTokens = (questionCount: number) =>
+  Math.min(16_000, 1_500 + questionCount * 350);
+
 export const generateQuiz = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     questionCount: v.optional(v.number()),
     clientRequestId: v.optional(v.string()),
@@ -2407,7 +2406,7 @@ export const generateQuiz = action({
       args.sessionId,
       args.clientRequestId,
     );
-    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
+    const posthogIdentity = await getViewerPostHogIdentity(ctx);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -2425,6 +2424,7 @@ export const generateQuiz = action({
       1,
       Math.min(30, Math.floor(args.questionCount ?? 15)),
     );
+    const quizOutputTokens = getQuizOutputTokens(desiredCount);
     let sourceContext = "";
     let generatedQuiz: QuizGenerationResult | null = null;
     let normalizedQuestions: QuestionForEvaluation[] = [];
@@ -2454,7 +2454,6 @@ Anforderungen:
         }>;
         accessKey?: string;
       } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
-        grantToken: args.grantToken,
         sessionId: args.sessionId,
       });
 
@@ -2600,7 +2599,7 @@ Anforderungen:
         trace.log("info", "llm_primary_request", {
           strategy: "structured_messages",
           temperature: 0.1,
-          maxOutputTokens: 3_000,
+          maxOutputTokens: quizOutputTokens,
           thinkingBudget: 0,
           sourceContextLength: sourceContext.length,
           filePartCount: fileParts.length,
@@ -2611,7 +2610,7 @@ Anforderungen:
         const result = await generateText({
           model: model("gemini-3-flash-preview"),
           temperature: 0.1,
-          maxOutputTokens: 3_000,
+          maxOutputTokens: quizOutputTokens,
           providerOptions: vertexProviderOptions,
           output: Output.object({
             schema: quizGenerationSchema,
@@ -2676,7 +2675,7 @@ Anforderungen:
             trace.log("info", "llm_fallback_request", {
               strategy: "structured_prompt",
               temperature: 0.2,
-              maxOutputTokens: 2_000,
+              maxOutputTokens: quizOutputTokens,
               thinkingBudget: 0,
               sourceContextLength: sourceContext.length,
             });
@@ -2686,7 +2685,7 @@ Anforderungen:
             const fallbackResult = await generateText({
               model: model("gemini-3-flash-preview"),
               temperature: 0.1,
-              maxOutputTokens: 3_000,
+              maxOutputTokens: quizOutputTokens,
               providerOptions: vertexProviderOptions,
               output: Output.object({
                 schema: quizGenerationSchema,
@@ -2737,7 +2736,7 @@ Anforderungen:
             trace.log("info", "llm_fallback_request", {
               strategy: "json_messages",
               temperature: 0.1,
-              maxOutputTokens: 3_000,
+              maxOutputTokens: quizOutputTokens,
               thinkingBudget: 0,
               sourceContextLength: 0,
             });
@@ -2747,7 +2746,7 @@ Anforderungen:
             const fallbackResult = await generateText({
               model: model("gemini-3-flash-preview"),
               temperature: 0.1,
-              maxOutputTokens: 3_000,
+              maxOutputTokens: quizOutputTokens,
               providerOptions: vertexProviderOptions,
               output: Output.json(),
               experimental_telemetry: buildAiSdkTelemetry(
@@ -2916,7 +2915,6 @@ Anforderungen:
 
 export const generateFocusedQuiz = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     focusTopics: v.array(v.string()),
     questionsPerTopic: v.optional(v.number()),
@@ -2928,7 +2926,7 @@ export const generateFocusedQuiz = action({
       args.sessionId,
       args.clientRequestId,
     );
-    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
+    const posthogIdentity = await getViewerPostHogIdentity(ctx);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let fallbackUsed = false;
@@ -2975,6 +2973,7 @@ export const generateFocusedQuiz = action({
         ? 10
         : normalizedFocusTopics.length * questionsPerTopic;
       desiredQuestionCount = desiredCount;
+      const quizOutputTokens = getQuizOutputTokens(desiredCount);
 
       if (!includesAll && desiredCount > 30) {
         throw new Error("Bitte wähle maximal 6 Themen gleichzeitig aus.");
@@ -3016,7 +3015,6 @@ Anforderungen:
         }>;
         accessKey?: string;
       } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
-        grantToken: args.grantToken,
         sessionId: args.sessionId,
       });
 
@@ -3216,7 +3214,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
             questionsPerTopic: includesAll ? undefined : questionsPerTopic,
             focusTopics: normalizedFocusTopics,
             temperature: 0.1,
-            maxOutputTokens: 3_000,
+            maxOutputTokens: quizOutputTokens,
             thinkingBudget: 0,
             sourceContextLength: sourceContext.length,
             filePartCount: fileParts.length,
@@ -3227,7 +3225,7 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
           const result = await generateText({
             model: model("gemini-3-flash-preview"),
             temperature: 0.1,
-            maxOutputTokens: 3_000,
+            maxOutputTokens: quizOutputTokens,
             providerOptions: vertexProviderOptions,
             output: Output.object({
               schema: quizGenerationSchema,
@@ -3468,9 +3466,503 @@ Liefere jetzt ausschließlich eine Antwort, die alle Mengenregeln exakt erfüllt
   },
 });
 
+const MAX_TOPIC_SUMMARY_TOPICS = 6;
+const MAX_TOPIC_SUMMARY_BLOCKS = 3;
+/** So oft landet der bisher geschriebene Text in der Sitzung. */
+const TOPIC_SUMMARY_PROGRESS_INTERVAL_MS = 400;
+
+const topicSummaryOutputSchema = z.object({
+  sections: z.array(
+    z.object({
+      topic: z.string(),
+      blocks: z.array(z.object({ heading: z.string(), text: z.string() })),
+      visualType: z.enum([
+        "steps",
+        "comparison",
+        "parts",
+        "upload_image",
+        "none",
+      ]),
+      visualTitle: z.string().nullable(),
+      steps: z.array(z.string()).nullable(),
+      comparisonColumns: z.array(z.string()).nullable(),
+      comparisonRows: z
+        .array(z.object({ label: z.string(), values: z.array(z.string()) }))
+        .nullable(),
+      parts: z
+        .array(z.object({ label: z.string(), detail: z.string() }))
+        .nullable(),
+      uploadImageNumber: z.number().int().nullable(),
+      exampleTitle: z.string(),
+      exampleText: z.string(),
+    }),
+  ),
+});
+
+/**
+ * Abschnitt, wie er beim Streamen ankommt: jedes Feld kann noch fehlen oder
+ * halb sein. Das fertige Ergebnis passt ebenfalls in diese Form.
+ */
+type LooseTopicSummarySection = {
+  topic?: string;
+  blocks?: ReadonlyArray<{ heading?: string; text?: string } | undefined>;
+  visualType?: "steps" | "comparison" | "parts" | "upload_image" | "none";
+  visualTitle?: string | null;
+  steps?: ReadonlyArray<string | undefined> | null;
+  comparisonColumns?: ReadonlyArray<string | undefined> | null;
+  comparisonRows?: ReadonlyArray<
+    { label?: string; values?: ReadonlyArray<string | undefined> } | undefined
+  > | null;
+  parts?: ReadonlyArray<{ label?: string; detail?: string } | undefined> | null;
+  uploadImageNumber?: number | null;
+  exampleTitle?: string;
+  exampleText?: string;
+};
+
+type TopicSummarySectionContent = TopicSummaryContent["sections"][number];
+
+const isImageDocument = (document: SessionDocumentInput) =>
+  document.fileType.startsWith("image/");
+
+const buildTopicSummaryInstruction = (
+  topics: string[],
+  imageDocuments: SessionDocumentInput[],
+) => {
+  const imageInstruction =
+    imageDocuments.length > 0
+      ? `Hochgeladene Bilder (Nummer: Dateiname):
+${imageDocuments.map((document, index) => `${index + 1}: ${document.fileName}`).join("\n")}
+
+Wenn eines dieser Bilder das Thema besser zeigt als eine Grafik, setze "visualType" auf "upload_image" und "uploadImageNumber" auf seine Nummer. Verwende jedes Bild höchstens einmal.`
+      : 'Es wurden keine Bilddateien hochgeladen, verwende daher kein "upload_image".';
+
+  return `Schreibe eine kurze Zusammenfassung der folgenden Themen auf Basis des bereitgestellten Lernmaterials. Sie wird direkt vor einem Quiz auf dem Handy gelesen, wie Lernkarten: pro Thema eine Seite Erklärung, falls sinnvoll eine Seite mit Grafik und eine Seite mit Beispiel.
+
+Themen:
+${topics.map((topic) => `- ${topic}`).join("\n")}
+
+Liefere für jedes Thema genau einen Abschnitt in dieser Reihenfolge:
+- "topic": exakt der Themenname aus der Liste.
+- "blocks": 2 bis 3 kurze Erklärblöcke. "heading" ist eine Mini-Überschrift mit 1 bis 3 Wörtern, z. B. "Was ist das?", "Wie geht's?" oder "Wichtig". "text" ist ein Satz mit höchstens 12 Wörtern. Nur, was im Material steht. Kein Markdown.
+- Grafik über "visualType" und die passenden Felder, aber nur, wenn das Thema eine sichtbare Struktur hat. Sonst "none", erzwinge keine Grafik.
+  - "steps": ein Ablauf, z. B. DHCP oder TCP-Handshake. "steps" sind 3 bis 5 Schritte mit je höchstens 8 Wörtern.
+  - "comparison": ein Vergleich, z. B. RAID-Level. "comparisonColumns" sind 1 bis 3 Merkmale als Spaltenköpfe. "comparisonRows" sind 2 bis 4 Zeilen mit "label" und in "values" je einem Wert pro Merkmal mit höchstens 4 Wörtern.
+  - "parts": ein Aufbau oder Schichten, z. B. OSI-Modell oder Netz- und Hostanteil. 2 bis 6 Teile von oben nach unten, "label" mit höchstens 3 Wörtern, "detail" mit höchstens 8 Wörtern.
+  - "upload_image": ein hochgeladenes Bild, siehe unten.
+  "visualTitle" ist ein kurzer Titel der Grafik. Nicht genutzte Grafikfelder sind null.
+- "exampleTitle": höchstens 3 Wörter.
+- "exampleText": ein Beispiel in einem Satz mit höchstens 20 Wörtern, am besten eine kurze Prüfungsaufgabe mit Lösung.
+
+${imageInstruction}`;
+};
+
+const cleanTextList = (items?: ReadonlyArray<string | undefined> | null) =>
+  (items ?? []).map((item) => item?.trim() ?? "").filter(Boolean);
+
+/** Grafik oder hochgeladenes Bild, sofern die Daten dafür reichen. */
+const buildTopicSummaryVisual = (
+  section: LooseTopicSummarySection,
+  topic: string,
+  imageDocuments: SessionDocumentInput[],
+  usedImageNumbers: Set<number>,
+): Pick<TopicSummarySectionContent, "visual" | "figure"> => {
+  const title = section.visualTitle?.trim() || topic;
+
+  switch (section.visualType) {
+    case "upload_image": {
+      const imageNumber = section.uploadImageNumber ?? 0;
+      const imageDocument = imageDocuments[imageNumber - 1];
+      if (!imageDocument || usedImageNumbers.has(imageNumber)) {
+        return {};
+      }
+      usedImageNumbers.add(imageNumber);
+      return {
+        figure: {
+          kind: "upload",
+          documentId: imageDocument._id,
+          caption: title,
+        },
+      };
+    }
+    case "steps": {
+      const steps = cleanTextList(section.steps).slice(0, 5);
+      return steps.length >= 2
+        ? { visual: { kind: "steps", title, steps } }
+        : {};
+    }
+    case "comparison": {
+      const columns = cleanTextList(section.comparisonColumns).slice(0, 3);
+      const rows = (section.comparisonRows ?? [])
+        .flatMap((row) => {
+          const label = row?.label?.trim();
+          if (!label) {
+            return [];
+          }
+          return [
+            {
+              label,
+              values: columns.map(
+                (_, index) => row?.values?.[index]?.trim() ?? "",
+              ),
+            },
+          ];
+        })
+        .slice(0, 4);
+      return columns.length > 0 && rows.length >= 2
+        ? { visual: { kind: "comparison", title, columns, rows } }
+        : {};
+    }
+    case "parts": {
+      const parts = (section.parts ?? [])
+        .flatMap((part) => {
+          const label = part?.label?.trim();
+          return label ? [{ label, detail: part?.detail?.trim() ?? "" }] : [];
+        })
+        .slice(0, 6);
+      return parts.length >= 2
+        ? { visual: { kind: "parts", title, parts } }
+        : {};
+    }
+    default:
+      return {};
+  }
+};
+
+/**
+ * Macht aus der Antwort gültige Abschnitte, auch aus einem halben
+ * Zwischenstand, damit die Seite den Text schon beim Schreiben zeigt.
+ */
+const normalizeTopicSummarySections = (
+  sections: ReadonlyArray<LooseTopicSummarySection | undefined> | undefined,
+  topics: string[],
+  imageDocuments: SessionDocumentInput[],
+  { isFinal }: { isFinal: boolean },
+): TopicSummaryContent["sections"] => {
+  const usedImageNumbers = new Set<number>();
+
+  return (sections ?? [])
+    .flatMap((section) => {
+      const topicName = section?.topic?.trim();
+      if (!section || !topicName) {
+        return [];
+      }
+
+      const topic =
+        topics.find((candidate) =>
+          topicsMatchForFocusMode(topicName, candidate),
+        ) ?? topicName;
+      const blocks = (section.blocks ?? [])
+        .flatMap((block) => {
+          const heading = block?.heading?.trim() ?? "";
+          const text = block?.text?.trim() ?? "";
+          return heading || text ? [{ heading, text }] : [];
+        })
+        .slice(0, MAX_TOPIC_SUMMARY_BLOCKS);
+      if (isFinal && !blocks.some((block) => block.text)) {
+        return [];
+      }
+
+      // Die Grafikfelder stehen vor dem Beispiel. Sobald das Beispiel beginnt,
+      // sind sie vollständig und können schon angezeigt werden.
+      const isVisualComplete = isFinal || section.exampleTitle !== undefined;
+
+      return [
+        {
+          topic,
+          blocks,
+          ...(isVisualComplete
+            ? buildTopicSummaryVisual(
+                section,
+                topic,
+                imageDocuments,
+                usedImageNumbers,
+              )
+            : {}),
+          example: {
+            title: section.exampleTitle?.trim() || (isFinal ? "Beispiel" : ""),
+            text: section.exampleText?.trim() ?? "",
+          },
+        },
+      ];
+    })
+    .slice(0, topics.length);
+};
+
+/**
+ * Fasst die ausgewählten Themen vor dem Quiz zusammen, mit Beispielen und
+ * Bildern. Läuft parallel zur Fragengenerierung und speichert das Ergebnis in
+ * der Sitzung, damit es auch nach einem Neuladen da ist.
+ */
+export const generateTopicSummary = action({
+  args: {
+    sessionId: v.id("studySessions"),
+    focusTopics: v.array(v.string()),
+    clientRequestId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const trace = createAiTraceLogger(
+      "generateTopicSummary",
+      args.sessionId,
+      args.clientRequestId,
+    );
+    const posthogIdentity = await getViewerPostHogIdentity(ctx);
+    const analyticsModelId = "gemini-3-flash-preview";
+    const vertexUsageTotals: VertexUsageSnapshot = {};
+    let llmAttempts = 0;
+    let finishReason: string | undefined;
+    let totalDocuments = 0;
+    let readyDocumentsCount = 0;
+    let filePartCount = 0;
+    let sourceContextLength = 0;
+    let analyticsError: unknown;
+    let summaryTopics: string[] = [];
+    let isStarted = false;
+
+    try {
+      const quizContext: {
+        session: { sourceTopics: string[] };
+        documents: SessionDocumentInput[];
+        accessKey?: string;
+      } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
+        sessionId: args.sessionId,
+      });
+
+      const requestedTopics = [
+        ...new Set(
+          args.focusTopics
+            .map((topic) => topic.trim())
+            .filter((topic) => topic.length > 0),
+        ),
+      ];
+      summaryTopics = (
+        requestedTopics.includes("all")
+          ? quizContext.session.sourceTopics
+          : requestedTopics
+      ).slice(0, MAX_TOPIC_SUMMARY_TOPICS);
+
+      if (summaryTopics.length === 0) {
+        throw new Error("Wähle mindestens ein Thema aus.");
+      }
+
+      await ctx.runMutation(internal.study.startTopicSummary, {
+        sessionId: args.sessionId,
+        requestId: trace.traceId,
+        focusTopics: summaryTopics,
+      });
+      isStarted = true;
+
+      const readyDocuments = quizContext.documents.filter(
+        (document) => document.extractionStatus === "ready",
+      );
+      totalDocuments = quizContext.documents.length;
+      readyDocumentsCount = readyDocuments.length;
+      if (readyDocuments.length === 0) {
+        throw new Error(
+          "Lade mindestens ein Dokument hoch, bevor du eine Zusammenfassung erstellst.",
+        );
+      }
+      if (getOversizedInlineDocuments(readyDocuments).length > 0) {
+        throw new Error(
+          `Mindestens eine Datei ist für die aktuelle KI-Verarbeitung zu groß (maximal ${MAX_VERTEX_INLINE_FILE_LABEL}).`,
+        );
+      }
+
+      const imageDocuments = readyDocuments.filter(isImageDocument);
+      const modelInput = await buildModelInputFromDocuments(
+        ctx,
+        readyDocuments,
+        quizContext.accessKey,
+        trace,
+      );
+      filePartCount = modelInput.fileParts.length;
+      sourceContextLength = modelInput.sourceContext.length;
+
+      if (modelInput.fileParts.length === 0 && !modelInput.sourceContext) {
+        throw new Error(
+          "Es konnten keine nutzbaren Inhalte aus den hochgeladenen Dateien gelesen werden.",
+        );
+      }
+
+      const userContent: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; data: Buffer; mediaType: string; filename: string }
+      > = [
+        {
+          type: "text",
+          text: buildTopicSummaryInstruction(summaryTopics, imageDocuments),
+        },
+      ];
+      if (modelInput.sourceContext) {
+        userContent.push({
+          type: "text",
+          text: `Zusätzliche Textauszüge aus den Dateien:\n${modelInput.sourceContext}`,
+        });
+      }
+      userContent.push(...modelInput.fileParts);
+
+      trace.log("info", "llm_request", {
+        topics: summaryTopics,
+        imageDocuments: imageDocuments.length,
+        filePartCount,
+        sourceContextLength,
+      });
+      llmAttempts += 1;
+
+      const model = createVertexModel();
+      // Gestreamt, damit der Text schon beim Schreiben zu sehen ist.
+      const result = streamText({
+        model: model("gemini-3-flash-preview"),
+        temperature: 0.3,
+        maxOutputTokens: 12_000,
+        providerOptions: vertexProviderOptions,
+        output: Output.object({ schema: topicSummaryOutputSchema }),
+        experimental_telemetry: buildAiSdkTelemetry(
+          "generateTopicSummary",
+          args.sessionId,
+          trace.traceId,
+          {
+            appScope: "generateTopicSummary",
+            readyDocuments: readyDocuments.length,
+            filePartCount,
+            sourceContextLength,
+            focusTopics: summaryTopics.join(", "),
+          },
+        ),
+        system:
+          "Du bist ein Tutor für IT-Auszubildende und Studierende. Du schreibst verständliche, fachlich korrekte Zusammenfassungen auf Deutsch.",
+        messages: [{ role: "user", content: userContent }],
+        onError: ({ error }) => {
+          trace.log("error", "stream_failed", {
+            error: extractErrorForLog(error),
+          });
+        },
+      });
+
+      let lastProgressAt = 0;
+      let lastProgress = "";
+      for await (const partial of result.partialOutputStream) {
+        const now = Date.now();
+        if (now - lastProgressAt < TOPIC_SUMMARY_PROGRESS_INTERVAL_MS) {
+          continue;
+        }
+
+        const progress = {
+          sections: normalizeTopicSummarySections(
+            partial.sections,
+            summaryTopics,
+            imageDocuments,
+            { isFinal: false },
+          ),
+        };
+        const serializedProgress = JSON.stringify(progress);
+        if (serializedProgress === lastProgress) {
+          continue;
+        }
+
+        lastProgressAt = now;
+        lastProgress = serializedProgress;
+        await ctx.runMutation(internal.study.updateTopicSummaryProgress, {
+          sessionId: args.sessionId,
+          requestId: trace.traceId,
+          content: progress,
+        });
+      }
+
+      const output = await result.output;
+      const resultLog = extractGenerationResultForLog({
+        totalUsage: await result.totalUsage,
+        finishReason: await result.finishReason,
+        providerMetadata: await result.providerMetadata,
+        warnings: await result.warnings,
+        response: await result.response,
+        steps: await result.steps,
+      });
+      trace.addUsage(resultLog.usage);
+      finishReason = resultLog.details.finishReason;
+      mergeVertexUsage(vertexUsageTotals, resultLog.details.vertexUsage);
+
+      const content = {
+        sections: normalizeTopicSummarySections(
+          output.sections,
+          summaryTopics,
+          imageDocuments,
+          { isFinal: true },
+        ),
+      };
+      if (content.sections.length === 0) {
+        throw new Error("Die KI hat keine Zusammenfassung geliefert.");
+      }
+
+      trace.log("info", "completed", {
+        sectionCount: content.sections.length,
+        uploadFigures: content.sections.filter((section) => section.figure)
+          .length,
+        visuals: content.sections
+          .map((section) => section.visual?.kind)
+          .filter(Boolean)
+          .join(", "),
+        usageTotals: trace.getUsageTotals(),
+      });
+
+      await ctx.runMutation(internal.study.storeTopicSummary, {
+        sessionId: args.sessionId,
+        requestId: trace.traceId,
+        content,
+      });
+
+      return { sectionCount: content.sections.length };
+    } catch (error) {
+      analyticsError = error;
+      trace.addUsage(extractUsageFromError(error));
+      trace.log("error", "failed", { error: extractErrorForLog(error) });
+      if (isStarted) {
+        await ctx.runMutation(internal.study.storeTopicSummary, {
+          sessionId: args.sessionId,
+          requestId: trace.traceId,
+          error: "Die Zusammenfassung konnte nicht erstellt werden.",
+        });
+      }
+      throw error;
+    } finally {
+      await persistAiAnalyticsEvent(ctx, {
+        traceId: trace.traceId,
+        sessionId: args.sessionId,
+        posthogDistinctId: posthogIdentity?.distinctId,
+        posthogPersonProperties: posthogIdentity?.personProperties,
+        scope: "generateTopicSummary",
+        status: analyticsError ? "error" : "success",
+        modelId: analyticsModelId,
+        llmAttempts,
+        latencyMs: Date.now() - trace.startedAt,
+        usage: trace.getUsageTotals(),
+        vertexUsage: vertexUsageTotals,
+        finishReason,
+        totalDocuments,
+        readyDocuments: readyDocumentsCount,
+        filePartCount,
+        sourceContextLength,
+        errorCategory: analyticsError
+          ? classifyAiErrorCategory(analyticsError)
+          : undefined,
+        error: analyticsError ? extractErrorForLog(analyticsError) : undefined,
+        metadata: {
+          clientRequestId: args.clientRequestId,
+          focusTopics: summaryTopics.join(", "),
+        },
+        posthogProperties: {
+          focusTopics: summaryTopics.join(", "),
+        },
+      });
+      await flushTelemetry({
+        traceId: trace.traceId,
+        appScope: "generateTopicSummary",
+      });
+    }
+  },
+});
+
 export const evaluateAnswer = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     questionId: v.string(),
     userAnswer: v.string(),
@@ -3485,7 +3977,7 @@ export const evaluateAnswer = action({
       args.sessionId,
       args.clientRequestId,
     );
-    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
+    const posthogIdentity = await getViewerPostHogIdentity(ctx);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -3508,7 +4000,6 @@ export const evaluateAnswer = action({
         round: number;
         question: QuestionForEvaluation;
       } = await ctx.runQuery(internal.study.getQuestionForEvaluation, {
-        grantToken: args.grantToken,
         sessionId: args.sessionId,
         questionId: args.questionId,
       });
@@ -3811,7 +4302,6 @@ Pflichtregeln:
 
 export const analyzePerformance = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     mode: v.optional(v.union(v.literal("full"), v.literal("focus"))),
     focusTopic: v.optional(v.string()),
@@ -3823,7 +4313,7 @@ export const analyzePerformance = action({
       args.sessionId,
       args.clientRequestId,
     );
-    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
+    const posthogIdentity = await getViewerPostHogIdentity(ctx);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -3848,7 +4338,6 @@ export const analyzePerformance = action({
       });
 
       const result = await ctx.runQuery(internal.study.getAnalysisContext, {
-        grantToken: args.grantToken,
         sessionId: args.sessionId,
         mode: analysisMode,
         focusTopic: resolvedFocusTopic || undefined,
@@ -3898,7 +4387,6 @@ export const analyzePerformance = action({
         const fullContext = await ctx.runQuery(
           internal.study.getAnalysisContext,
           {
-            grantToken: args.grantToken,
             sessionId: args.sessionId,
             mode: "full",
           },
@@ -4361,7 +4849,6 @@ Pflichtregeln:
 
 export const generateTopicDeepDive = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     topic: v.string(),
     clientRequestId: v.optional(v.string()),
@@ -4372,7 +4859,7 @@ export const generateTopicDeepDive = action({
       args.sessionId,
       args.clientRequestId,
     );
-    const posthogIdentity = await getGrantPostHogIdentity(ctx, args.grantToken);
+    const posthogIdentity = await getViewerPostHogIdentity(ctx);
     const analyticsModelId = "gemini-3-flash-preview";
     const vertexUsageTotals: VertexUsageSnapshot = {};
     let llmAttempts = 0;
@@ -4404,7 +4891,6 @@ export const generateTopicDeepDive = action({
         responses: Array<{ topic: string; score: number; prompt: string }>;
         accessKey?: string;
       } = await ctx.runQuery(internal.study.getQuizGenerationContext, {
-        grantToken: args.grantToken,
         sessionId: args.sessionId,
       });
 

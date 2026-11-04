@@ -25,16 +25,21 @@ export const assertMeaningfulIdentityLabel = (value: string) => {
   return identityLabel;
 };
 
-export const buildAnalyticsDistinctId = (args: {
-  grantId: string;
-  identityEmail?: string;
-}) => {
+export const buildAnalyticsDistinctId = (
+  args: ({ userId: string } | { grantId: string }) & {
+    identityEmail?: string;
+  },
+) => {
   const identityEmail = args.identityEmail
     ? normalizeIdentityEmail(args.identityEmail)
     : "";
 
   if (identityEmail) {
     return `${POSTHOG_DISTINCT_ID_PREFIX}email:${identityEmail}`;
+  }
+
+  if ("userId" in args) {
+    return `${POSTHOG_DISTINCT_ID_PREFIX}user:${args.userId}`;
   }
 
   return `${POSTHOG_DISTINCT_ID_PREFIX}grant:${args.grantId}`;

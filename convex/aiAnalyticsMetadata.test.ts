@@ -26,19 +26,21 @@ const buildRawMetadata = () => ({
 
 const createOwnedSession = async (
   t: ReturnType<typeof createTestHarness>,
-  grantToken: string,
+  subject: string,
 ) => {
-  return await t.run(async (ctx) => {
+  const ids = await t.run(async (ctx) => {
     const now = Date.now();
-    const grantId = await ctx.db.insert("accessGrants", {
-      token: grantToken,
+    const userId = await ctx.db.insert("users", {
+      tokenIdentifier: `https://convex.test|${subject}`,
+      email: "max@schule.de",
+      name: "Max Mustermann",
+      activatedAt: now,
       createdAt: now,
-      identityLabel: "Max Mustermann",
-      identityEmail: "max@schule.de",
+      updatedAt: now,
     });
 
     const sessionId = await ctx.db.insert("studySessions", {
-      grantId,
+      userId,
       title: "Analytics-Test",
       stage: "analysis",
       round: 1,
@@ -48,8 +50,10 @@ const createOwnedSession = async (
       updatedAt: now,
     });
 
-    return { grantId, sessionId };
+    return { userId, sessionId };
   });
+
+  return { ...ids, asUser: t.withIdentity({ subject }) };
 };
 
 describe("convex/ai analytics metadata contract", () => {
@@ -66,11 +70,11 @@ describe("convex/ai analytics metadata contract", () => {
   it("erstellt PostHog-Person-Properties auch ohne identityLabel nur aus vorhandenen Feldern", () => {
     expect(
       resolvePostHogPersonProperties({
-        analyticsGrantId: "grant-123",
+        analyticsUserId: "user-123",
         identityQuality: "app_only",
       }),
     ).toEqual({
-      analyticsGrantId: "grant-123",
+      analyticsUserId: "user-123",
       identity_quality: "app_only",
     });
   });
@@ -78,14 +82,14 @@ describe("convex/ai analytics metadata contract", () => {
   it("erstellt vollständige PostHog-Person-Properties wenn Label und E-Mail vorhanden sind", () => {
     expect(
       resolvePostHogPersonProperties({
-        analyticsGrantId: "grant-123",
+        analyticsUserId: "user-123",
         identityLabel: "Jakob Rössner",
         identityEmail: "jakob.roessner@outlook.de",
         note: "Der Beste",
         identityQuality: "email",
       }),
     ).toEqual({
-      analyticsGrantId: "grant-123",
+      analyticsUserId: "user-123",
       identityLabel: "Jakob Rössner",
       identityEmail: "jakob.roessner@outlook.de",
       note: "Der Beste",
@@ -97,8 +101,10 @@ describe("convex/ai analytics metadata contract", () => {
 
   it("liefert rohe metadataJson-Werte über die Session-Analytics-Abfrage zurück", async () => {
     const t = createTestHarness();
-    const grantToken = "grant-token-analytics-1";
-    const { sessionId } = await createOwnedSession(t, grantToken);
+    const { asUser, sessionId } = await createOwnedSession(
+      t,
+      "user_analytics_1",
+    );
     const metadata = buildRawMetadata();
 
     await t.mutation(internal.study.storeAiAnalyticsEvent, {
@@ -113,8 +119,7 @@ describe("convex/ai analytics metadata contract", () => {
       metadataJson: serializeAnalyticsMetadata(metadata),
     });
 
-    const events = await t.query(api.study.getAiAnalyticsForSession, {
-      grantToken,
+    const events = await asUser.query(api.study.getAiAnalyticsForSession, {
       sessionId,
       limit: 10,
     });
@@ -125,8 +130,10 @@ describe("convex/ai analytics metadata contract", () => {
 
   it("findet den letzten Fehler weiter über clientRequestId in vollständigen Metadaten", async () => {
     const t = createTestHarness();
-    const grantToken = "grant-token-analytics-2";
-    const { sessionId } = await createOwnedSession(t, grantToken);
+    const { asUser, sessionId } = await createOwnedSession(
+      t,
+      "user_analytics_2",
+    );
 
     await t.mutation(internal.study.storeAiAnalyticsEvent, {
       traceId: "trace-other",
@@ -164,10 +171,9 @@ describe("convex/ai analytics metadata contract", () => {
       }),
     });
 
-    const latestFailure = await t.query(
+    const latestFailure = await asUser.query(
       api.study.getLatestAiFailureByClientRequestId,
       {
-        grantToken,
         sessionId,
         clientRequestId: "target-request",
       },

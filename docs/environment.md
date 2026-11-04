@@ -32,12 +32,13 @@ localhost dev, Vercel preview, Convex, and source-map upload, see
 
 Used in browser code (`src/env.ts`).
 
-| Variable               | Required | Default                  | Notes                                         |
-| ---------------------- | -------- | ------------------------ | --------------------------------------------- |
-| `VITE_CONVEX_URL`      | yes      | -                        | Convex HTTP URL for `ConvexReactClient`       |
-| `VITE_POSTHOG_KEY`     | no       | -                        | Enables frontend PostHog when set             |
-| `VITE_POSTHOG_HOST`    | no       | `/snph`                  | Recommended proxy path or absolute ingest URL |
-| `VITE_POSTHOG_UI_HOST` | no       | `https://eu.posthog.com` | PostHog app host for links and toolbar        |
+| Variable                     | Required | Default                  | Notes                                                     |
+| ---------------------------- | -------- | ------------------------ | --------------------------------------------------------- |
+| `VITE_CONVEX_URL`            | yes      | -                        | Convex HTTP URL for `ConvexReactClient`                   |
+| `VITE_CLERK_PUBLISHABLE_KEY` | yes      | -                        | Clerk publishable key (`pk_test_…` dev, `pk_live_…` prod) |
+| `VITE_POSTHOG_KEY`           | no       | -                        | Enables frontend PostHog when set                         |
+| `VITE_POSTHOG_HOST`          | no       | `/snph`                  | Recommended proxy path or absolute ingest URL             |
+| `VITE_POSTHOG_UI_HOST`       | no       | `https://eu.posthog.com` | PostHog app host for links and toolbar                    |
 
 Frontend proxy behavior:
 
@@ -110,9 +111,14 @@ At least one auth path must exist:
 
 ### Access/admin
 
-| Variable                   | Required | Default | Notes                     |
-| -------------------------- | -------- | ------- | ------------------------- |
-| `ACCESS_CODE_ADMIN_SECRET` | yes      | -       | Protects admin operations |
+| Variable                   | Required | Default | Notes                                                   |
+| -------------------------- | -------- | ------- | ------------------------------------------------------- |
+| `ACCESS_CODE_ADMIN_SECRET` | yes      | -       | Protects admin operations                               |
+| `CLERK_JWT_ISSUER_DOMAIN`  | yes      | -       | Clerk Frontend API URL, read by `convex/auth.config.ts` |
+
+Accounts come from Clerk. The Clerk instance needs the Convex integration
+activated, so session tokens carry `aud: "convex"`. A new account unlocks
+itself once with an access code; after that only the Clerk login is needed.
 
 ### Storage / Cloudflare R2
 

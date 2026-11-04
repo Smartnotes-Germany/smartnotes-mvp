@@ -1,0 +1,2 @@
+export const MAX_COMPANY_NAME_LENGTH = 120;
+export const MAX_SCHOOL_CHALLENGE_LENGTH = 300;

@@ -12,6 +12,9 @@ const frontendEnv = createEnv({
   clientPrefix: "VITE_",
   client: {
     VITE_CONVEX_URL: z.url("VITE_CONVEX_URL muss eine gültige URL sein."),
+    VITE_CLERK_PUBLISHABLE_KEY: z
+      .string()
+      .startsWith("pk_", "VITE_CLERK_PUBLISHABLE_KEY muss mit pk_ beginnen."),
     VITE_POSTHOG_KEY: z.string().min(1).optional(),
     VITE_POSTHOG_HOST: z
       .string()
@@ -31,6 +34,7 @@ const frontendEnv = createEnv({
 
 export const resolvedFrontendEnv = {
   convexUrl: frontendEnv.VITE_CONVEX_URL,
+  clerkPublishableKey: frontendEnv.VITE_CLERK_PUBLISHABLE_KEY,
   appArea: "app" as PostHogAppArea,
   posthog: {
     key: frontendEnv.VITE_POSTHOG_KEY,

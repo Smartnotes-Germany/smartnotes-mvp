@@ -11,7 +11,6 @@ import {
 } from "../analytics";
 
 type UseQuizFlowArgs = {
-  grantToken: string | null;
   sessionId: StudySessionId | null;
   currentQuestion: QuizQuestion | null;
   isQuizActive: boolean;
@@ -20,7 +19,6 @@ type UseQuizFlowArgs = {
 };
 
 export function useQuizFlow({
-  grantToken,
   sessionId,
   currentQuestion,
   isQuizActive,
@@ -36,7 +34,6 @@ export function useQuizFlow({
   const [quizError, setQuizError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const latestSessionContextRef = useRef({
-    grantToken,
     sessionId,
   });
   const latestQuestionRef = useRef(currentQuestion);
@@ -48,10 +45,9 @@ export function useQuizFlow({
 
   useEffect(() => {
     latestSessionContextRef.current = {
-      grantToken,
       sessionId,
     };
-  }, [grantToken, sessionId]);
+  }, [sessionId]);
 
   useEffect(() => {
     latestQuestionRef.current = currentQuestion;
@@ -70,7 +66,7 @@ export function useQuizFlow({
     setQuizError(null);
     setIsSubmittingAnswer(false);
     setQuestionStartedAt(Date.now());
-  }, [grantToken, sessionId]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (isQuizActive) {
@@ -135,7 +131,7 @@ export function useQuizFlow({
 
   const submitAnswer = useCallback(
     async (dontKnowSubmission: boolean = false) => {
-      if (!grantToken || !sessionId || !currentQuestion) {
+      if (!sessionId || !currentQuestion) {
         return;
       }
       if (!answerInput.trim() && !dontKnowSubmission) {
@@ -144,7 +140,6 @@ export function useQuizFlow({
 
       const clientRequestId = createClientRequestId("evaluateAnswer");
       const submissionContext = {
-        grantToken,
         sessionId,
       };
       const submittedQuestion = currentQuestion;
@@ -167,7 +162,6 @@ export function useQuizFlow({
         });
 
         const result = await evaluateAnswer({
-          grantToken,
           sessionId,
           questionId: submittedQuestion.id,
           userAnswer: submittedAnswer,
@@ -177,10 +171,7 @@ export function useQuizFlow({
         });
 
         const latestContext = latestSessionContextRef.current;
-        if (
-          latestContext.grantToken !== submissionContext.grantToken ||
-          latestContext.sessionId !== submissionContext.sessionId
-        ) {
+        if (latestContext.sessionId !== submissionContext.sessionId) {
           return;
         }
 
@@ -200,10 +191,7 @@ export function useQuizFlow({
         );
       } catch (error: unknown) {
         const latestContext = latestSessionContextRef.current;
-        if (
-          latestContext.grantToken !== submissionContext.grantToken ||
-          latestContext.sessionId !== submissionContext.sessionId
-        ) {
+        if (latestContext.sessionId !== submissionContext.sessionId) {
           return;
         }
 
@@ -226,7 +214,6 @@ export function useQuizFlow({
       } finally {
         const latestContext = latestSessionContextRef.current;
         const isStaleSubmission =
-          latestContext.grantToken !== submissionContext.grantToken ||
           latestContext.sessionId !== submissionContext.sessionId;
         if (!isStaleSubmission) {
           setIsSubmittingAnswer(false);
@@ -237,7 +224,6 @@ export function useQuizFlow({
       answerInput,
       currentQuestion,
       evaluateAnswer,
-      grantToken,
       answeredQuestions,
       questionStartedAt,
       sessionId,

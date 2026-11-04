@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Loader2, LogOut, Menu, RefreshCcw, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { LayoutGrid, Loader2, LogOut, Menu, X } from "lucide-react";
+import { AccountSummary } from "./AccountSummary";
 import { BrandLogo } from "./BrandLogo";
 import { StageBadge } from "./StageBadge";
 import { ThemeToggle } from "./ThemeToggle";
@@ -11,9 +13,8 @@ type NavigationShellProps = {
   stage: StudyStage;
   preference: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
-  onStartFreshSession: () => Promise<void>;
-  isCreatingSession: boolean;
-  onSignOut: () => void;
+  examTitle: string;
+  onSignOut: () => Promise<void>;
   isSigningOut: boolean;
   children: ReactNode;
 };
@@ -23,8 +24,7 @@ export function NavigationShell({
   stage,
   preference,
   setPreference,
-  onStartFreshSession,
-  isCreatingSession,
+  examTitle,
   onSignOut,
   isSigningOut,
   children,
@@ -43,14 +43,9 @@ export function NavigationShell({
     };
   }, [isMobileMenuOpen]);
 
-  const handleStartFreshSession = async () => {
-    setIsMobileMenuOpen(false);
-    await onStartFreshSession();
-  };
-
   const handleSignOut = () => {
     setIsMobileMenuOpen(false);
-    onSignOut();
+    void onSignOut();
   };
 
   return (
@@ -70,6 +65,7 @@ export function NavigationShell({
       {isMobileMenuOpen && (
         <div className="bg-cream/95 animate-in fade-in slide-in-from-top fixed inset-0 z-40 duration-300 md:hidden">
           <div className="flex h-full flex-col px-6 pt-20 pb-10">
+            <ExamTitle title={examTitle} />
             <nav className="mb-8 space-y-4">
               <StageBadge
                 label="1. Hochladen"
@@ -89,25 +85,21 @@ export function NavigationShell({
             </nav>
 
             <div className="mt-auto space-y-3">
+              <AccountSummary />
               <div className="flex justify-center pb-2">
                 <ThemeToggle
                   preference={preference}
                   setPreference={setPreference}
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => void handleStartFreshSession()}
-                disabled={isCreatingSession}
+              <Link
+                to="/"
+                onClick={() => setIsMobileMenuOpen(false)}
                 className="pill-button pill-button--quiet text-ink w-full justify-center gap-2"
               >
-                {isCreatingSession ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <RefreshCcw size={14} />
-                )}
-                Neue Sitzung
-              </button>
+                <LayoutGrid size={14} />
+                Alle Prüfungen
+              </Link>
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -131,6 +123,7 @@ export function NavigationShell({
           <BrandLogo logoImage={logoImage} />
         </div>
 
+        <ExamTitle title={examTitle} />
         <nav className="space-y-3">
           <StageBadge
             label="1. Hochladen"
@@ -150,25 +143,20 @@ export function NavigationShell({
         </nav>
 
         <div className="mt-auto space-y-2 pt-6">
+          <AccountSummary />
           <div className="flex justify-center pb-2">
             <ThemeToggle
               preference={preference}
               setPreference={setPreference}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => void handleStartFreshSession()}
-            disabled={isCreatingSession}
+          <Link
+            to="/"
             className="pill-button pill-button--quiet text-ink w-full justify-center gap-2"
           >
-            {isCreatingSession ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <RefreshCcw size={14} />
-            )}
-            Neue Sitzung
-          </button>
+            <LayoutGrid size={14} />
+            Alle Prüfungen
+          </Link>
           <button
             type="button"
             onClick={handleSignOut}
@@ -188,6 +176,15 @@ export function NavigationShell({
       <main className="flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:p-8 md:pb-8 lg:p-12 lg:pb-12">
         <div className="mx-auto h-full min-h-full max-w-5xl">{children}</div>
       </main>
+    </div>
+  );
+}
+
+function ExamTitle({ title }: { title: string }) {
+  return (
+    <div className="mb-6 px-2">
+      <p className="text-ink-muted mb-1 text-xs font-medium">Prüfung</p>
+      <p className="text-ink line-clamp-2 text-sm font-semibold">{title}</p>
     </div>
   );
 }

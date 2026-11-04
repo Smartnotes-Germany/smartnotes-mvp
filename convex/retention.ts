@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation } from "./errorTracking";
 import { readIntegerEnv } from "./env";
 import { components } from "./_generated/api";
-import { deleteManagedFile } from "./fileStorage";
+import { releaseDocumentFile } from "./fileStorage";
 
 const DEFAULT_RAW_RETENTION_DAYS = 14;
 const DEFAULT_ANALYTICS_RETENTION_DAYS = 180;
@@ -186,10 +186,7 @@ export const cleanupOrphanedDocuments = internalMutation({
       let storageFileDeleted = false;
 
       try {
-        const deleteResult = await deleteManagedFile(ctx, {
-          storageId: document.storageId,
-          storageProvider: document.storageProvider,
-        });
+        const deleteResult = await releaseDocumentFile(ctx, document);
         storageFileDeleted = deleteResult.deleted;
       } catch (error) {
         console.warn("Orphan-Cleanup: Datei konnte nicht entfernt werden.", {

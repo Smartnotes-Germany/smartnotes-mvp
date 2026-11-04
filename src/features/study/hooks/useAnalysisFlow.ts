@@ -19,7 +19,6 @@ import {
 } from "../analytics";
 
 type UseAnalysisFlowArgs = {
-  grantToken: string | null;
   sessionId: StudySessionId | null;
   documents: StudyDocument[];
   quizQuestions: QuizQuestion[];
@@ -30,7 +29,6 @@ type UseAnalysisFlowArgs = {
 };
 
 export function useAnalysisFlow({
-  grantToken,
   sessionId,
   documents,
   quizQuestions,
@@ -47,7 +45,7 @@ export function useAnalysisFlow({
   const generateFocusedQuiz = useAction(generateFocusedQuizRef);
 
   const analyzeSession = useCallback(async () => {
-    if (!grantToken || !sessionId) {
+    if (!sessionId) {
       return;
     }
 
@@ -73,7 +71,6 @@ export function useAnalysisFlow({
 
     try {
       await analyzePerformance({
-        grantToken,
         sessionId,
         mode: shouldRunFocusAnalysis ? "focus" : "full",
         ...(shouldRunFocusAnalysis ? { focusTopic: normalizedFocusTopic } : {}),
@@ -102,7 +99,6 @@ export function useAnalysisFlow({
     analyzePerformance,
     currentFocusTopic,
     answeredQuestions,
-    grantToken,
     hasExistingAnalysis,
     quizQuestions,
     sessionId,
@@ -111,7 +107,7 @@ export function useAnalysisFlow({
 
   const deepDiveTopic = useCallback(
     async (topic: string) => {
-      if (!grantToken || !sessionId) {
+      if (!sessionId) {
         return;
       }
 
@@ -143,7 +139,6 @@ export function useAnalysisFlow({
 
       try {
         const result = (await generateFocusedQuiz({
-          grantToken,
           sessionId,
           focusTopics: [topic],
           questionsPerTopic: 5,
@@ -164,7 +159,7 @@ export function useAnalysisFlow({
         setTopicLoading(null);
       }
     },
-    [documents, generateFocusedQuiz, grantToken, sessionId],
+    [documents, generateFocusedQuiz, sessionId],
   );
 
   return {

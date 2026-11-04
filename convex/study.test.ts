@@ -1,10 +1,25 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
 const createTestHarness = () => convexTest(schema, modules);
+
+const insertUser = (
+  ctx: MutationCtx,
+  subject: string,
+  options?: { activated?: boolean },
+) => {
+  const now = Date.now();
+  return ctx.db.insert("users", {
+    tokenIdentifier: `https://convex.test|${subject}`,
+    ...(options?.activated === false ? {} : { activatedAt: now }),
+    createdAt: now,
+    updatedAt: now,
+  });
+};
 
 const buildQuizQuestion = (
   overrides?: Partial<{
@@ -62,16 +77,12 @@ const createOwnedSession = async (
 ) => {
   const now = Date.now();
 
-  return t.run(async (ctx) => {
-    const grantToken = `grant-${Math.random().toString(36).slice(2)}`;
-    const grantId = await ctx.db.insert("accessGrants", {
-      token: grantToken,
-      createdAt: now,
-      identityLabel: "Testnutzer",
-    });
+  const subject = `user_${Math.random().toString(36).slice(2)}`;
+  const ids = await t.run(async (ctx) => {
+    const userId = await insertUser(ctx, subject);
 
     const sessionId = await ctx.db.insert("studySessions", {
-      grantId,
+      userId,
       title: overrides?.title ?? "Studientest",
       stage: overrides?.stage ?? "quiz",
       round: overrides?.round ?? 2,
@@ -86,25 +97,95 @@ const createOwnedSession = async (
       updatedAt: overrides?.updatedAt ?? now - 1_000,
     });
 
-    return { grantToken, grantId, sessionId };
+    return { userId, sessionId };
   });
+
+  return { ...ids, asUser: t.withIdentity({ subject }) };
 };
 
 describe("convex/study", () => {
+  it("zeigt Sitzungen nur dem eigenen Konto", async () => {
+    const t = createTestHarness();
+    const { asUser, sessionId } = await createOwnedSession(t);
+    await t.run(async (ctx) => insertUser(ctx, "user_fremd"));
+    const otherUser = t.withIdentity({ subject: "user_fremd" });
+
+    expect(
+      await asUser.query(api.study.getSessionSnapshot, { sessionId }),
+    ).not.toBeNull();
+    expect(
+      await otherUser.query(api.study.getSessionSnapshot, { sessionId }),
+    ).toBeNull();
+    expect(await otherUser.query(api.study.getLatestSessionId, {})).toBeNull();
+    await expect(
+      otherUser.mutation(api.study.setFocusTopics, {
+        sessionId,
+        focusTopics: ["Zellatmung"],
+      }),
+    ).rejects.toThrowError("Du darfst auf diese Sitzung nicht zugreifen.");
+  });
+
+  it("legt Prüfungen mit Namen und Termin an und listet nur die eigenen", async () => {
+    const t = createTestHarness();
+    await t.run(async (ctx) => {
+      await insertUser(ctx, "user_pruefungen");
+      await insertUser(ctx, "user_andere");
+    });
+    const asUser = t.withIdentity({ subject: "user_pruefungen" });
+    const otherUser = t.withIdentity({ subject: "user_andere" });
+
+    await asUser.mutation(api.study.startSession, {
+      title: " Abschlussprüfung Teil 1 ",
+      examDate: "2027-05-04",
+    });
+    await asUser.mutation(api.study.startSession, { title: "Zwischenprüfung" });
+
+    const exams = await asUser.query(api.study.listSessions, {});
+    expect(exams.map((exam) => exam.title)).toEqual([
+      "Zwischenprüfung",
+      "Abschlussprüfung Teil 1",
+    ]);
+    expect(exams[1]).toMatchObject({
+      examDate: "2027-05-04",
+      stage: "upload",
+      topicCount: 0,
+      hasAnalysis: false,
+    });
+    expect(await otherUser.query(api.study.listSessions, {})).toEqual([]);
+
+    await expect(
+      asUser.mutation(api.study.startSession, {
+        title: "Prüfung",
+        examDate: "4. Mai",
+      }),
+    ).rejects.toThrowError("Das Prüfungsdatum ist ungültig.");
+  });
+
+  it("verlangt eine Anmeldung und ein freigeschaltetes Konto", async () => {
+    const t = createTestHarness();
+    await t.run(async (ctx) =>
+      insertUser(ctx, "user_gesperrt", { activated: false }),
+    );
+
+    await expect(t.mutation(api.study.startSession, {})).rejects.toThrowError(
+      "Bitte melde dich an.",
+    );
+    await expect(
+      t
+        .withIdentity({ subject: "user_gesperrt" })
+        .mutation(api.study.startSession, {}),
+    ).rejects.toThrowError("Dein Konto ist noch nicht freigeschaltet.");
+  });
+
   it("liefert im Session-Snapshot nur die für die UI benötigten Felder", async () => {
     const t = createTestHarness();
     const now = Date.now();
 
-    const { grantToken, sessionId } = await t.run(async (ctx) => {
-      const grantToken = "snapshot-grant-token";
-      const grantId = await ctx.db.insert("accessGrants", {
-        token: grantToken,
-        createdAt: now,
-        identityLabel: "Testnutzer",
-      });
+    const { sessionId } = await t.run(async (ctx) => {
+      const userId = await insertUser(ctx, "user_snapshot");
 
       const sessionId = await ctx.db.insert("studySessions", {
-        grantId,
+        userId,
         title: "Snapshot-Test",
         stage: "quiz",
         round: 2,
@@ -154,13 +235,14 @@ describe("convex/study", () => {
         updatedAt: now,
       });
 
-      return { grantToken, sessionId };
+      return { sessionId };
     });
 
-    const snapshot = await t.query(api.study.getSessionSnapshot, {
-      grantToken,
-      sessionId,
-    });
+    const snapshot = await t
+      .withIdentity({ subject: "user_snapshot" })
+      .query(api.study.getSessionSnapshot, {
+        sessionId,
+      });
 
     expect(snapshot).not.toBeNull();
     expect(snapshot?.session).toMatchObject({
@@ -172,7 +254,8 @@ describe("convex/study", () => {
         overallReadiness: 78,
       },
     });
-    expect(snapshot?.session).not.toHaveProperty("title");
+    // Der Titel steht in der Seitenleiste der Prüfung.
+    expect(snapshot?.session).toHaveProperty("title");
     expect(snapshot?.session).not.toHaveProperty("sourceSummary");
     expect(snapshot?.session.quizQuestions[0]).toEqual({
       id: "frage-1",
@@ -199,13 +282,12 @@ describe("convex/study", () => {
   it("überspringt unveränderte focusTopics und schreibt bei einer Themenänderung", async () => {
     const t = createTestHarness();
     const initialUpdatedAt = Date.now() - 5_000;
-    const { grantToken, sessionId } = await createOwnedSession(t, {
+    const { asUser, sessionId } = await createOwnedSession(t, {
       focusTopics: ["Photosynthese"],
       updatedAt: initialUpdatedAt,
     });
 
-    await t.mutation(api.study.setFocusTopics, {
-      grantToken,
+    await asUser.mutation(api.study.setFocusTopics, {
       sessionId,
       focusTopics: ["Photosynthese"],
     });
@@ -216,8 +298,7 @@ describe("convex/study", () => {
     expect(unchangedSession?.updatedAt).toBe(initialUpdatedAt);
     expect(unchangedSession?.focusTopics).toEqual(["Photosynthese"]);
 
-    await t.mutation(api.study.setFocusTopics, {
-      grantToken,
+    await asUser.mutation(api.study.setFocusTopics, {
       sessionId,
       focusTopics: ["Photosynthese", "Zellatmung"],
     });

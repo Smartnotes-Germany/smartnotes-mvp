@@ -22,6 +22,8 @@
   },
   "dependencies": {
     "@ai-sdk/google-vertex": "^4.0.58",
+    "@clerk/localizations": "4.24.5",
+    "@clerk/react": "6.18.5",
     "@gilhrpenner/convex-files-control": "^0.5.1",
     "@langfuse/otel": "^4.6.1",
     "@opentelemetry/sdk-node": "^0.212.0",

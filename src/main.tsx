@@ -1,23 +1,21 @@
 /**
  * @file main.tsx
  * @description Application entry point.
- * Configures the Convex client and renders the React application.
+ * Configures Clerk and the Convex client and renders the React application.
  */
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { PostHogErrorBoundary, PostHogProvider } from "@posthog/react";
 import "./index.css";
 import App from "./App.tsx";
-import { resolvedFrontendEnv } from "./env";
+import { AuthProvider } from "./AuthProvider";
 import { initializePostHog, posthogClient } from "./features/study/analytics";
-
-/** Initialization of the Convex React client */
-const convex = new ConvexReactClient(resolvedFrontendEnv.convexUrl);
+import { capturePendingAccessCode } from "./features/study/pendingAccessCode";
 
 initializePostHog();
+capturePendingAccessCode();
 
 const analyticsErrorFallback = (
   <div className="app-glow text-ink flex min-h-screen items-center justify-center px-6 text-center">
@@ -34,17 +32,17 @@ const analyticsErrorFallback = (
   </div>
 );
 
-/** Render the app within the ConvexProvider for backend interactions */
+/** Render the app within Clerk and Convex for authenticated backend calls */
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <PostHogProvider client={posthogClient}>
-      <ConvexProvider client={convex}>
-        <PostHogErrorBoundary fallback={analyticsErrorFallback}>
-          <BrowserRouter>
+      <PostHogErrorBoundary fallback={analyticsErrorFallback}>
+        <BrowserRouter>
+          <AuthProvider>
             <App />
-          </BrowserRouter>
-        </PostHogErrorBoundary>
-      </ConvexProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </PostHogErrorBoundary>
     </PostHogProvider>
   </StrictMode>,
 );

@@ -27,7 +27,7 @@ type InitialAnalyticsContext = {
 
 type AnalyticsIdentity = {
   analyticsDistinctId: string;
-  analyticsGrantId: string;
+  analyticsUserId: string;
   identityLabel: string;
   identityQuality: Exclude<PostHogIdentityQuality, "anonymous">;
   identityEmail?: string;
@@ -35,7 +35,7 @@ type AnalyticsIdentity = {
 };
 
 type AnalyticsContext = {
-  analyticsGrantId?: string | null;
+  analyticsUserId?: string | null;
   sessionId?: string | null;
 };
 
@@ -202,7 +202,7 @@ export const identifyPostHogUser = (
 
   posthogClient.identify(identity.analyticsDistinctId, {
     ...getBaseAnalyticsProperties(),
-    analyticsGrantId: identity.analyticsGrantId,
+    analyticsUserId: identity.analyticsUserId,
     identityLabel: identity.identityLabel,
     ...(identity.identityEmail
       ? {
@@ -218,15 +218,15 @@ export const identifyPostHogUser = (
 
   posthogClient.register({
     ...getBaseAnalyticsProperties(),
-    analyticsGrantId: identity.analyticsGrantId,
+    analyticsUserId: identity.analyticsUserId,
     identityLabel: identity.identityLabel,
     ...(identity.identityEmail
       ? { identityEmail: identity.identityEmail }
       : {}),
     ...(identity.note ? { note: identity.note } : {}),
     identity_quality: identity.identityQuality,
-    ...(context?.analyticsGrantId
-      ? { analyticsGrantId: context.analyticsGrantId }
+    ...(context?.analyticsUserId
+      ? { analyticsUserId: context.analyticsUserId }
       : {}),
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
   });
@@ -239,8 +239,8 @@ export const registerPostHogContext = (context: AnalyticsContext) => {
 
   posthogClient.register({
     ...getBaseAnalyticsProperties(),
-    ...(context.analyticsGrantId
-      ? { analyticsGrantId: context.analyticsGrantId }
+    ...(context.analyticsUserId
+      ? { analyticsUserId: context.analyticsUserId }
       : {}),
     ...(context.sessionId ? { sessionId: context.sessionId } : {}),
   });

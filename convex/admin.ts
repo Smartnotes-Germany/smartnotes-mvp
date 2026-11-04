@@ -8,7 +8,7 @@ import {
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { assertAdminSecret } from "./adminAuth";
-import { deleteManagedFile } from "./fileStorage";
+import { releaseDocumentFile } from "./fileStorage";
 import {
   assertMeaningfulIdentityLabel,
   hasMeaningfulIdentityLabel,
@@ -94,7 +94,9 @@ const resolveTarget = async (
     throw new Error("Lernsitzung wurde nicht gefunden.");
   }
 
-  const grant = await ctx.db.get("accessGrants", session.grantId);
+  const grant = session.grantId
+    ? await ctx.db.get("accessGrants", session.grantId)
+    : null;
 
   return {
     grant,
@@ -194,10 +196,7 @@ export const deleteData = mutation({
         let storageFileDeleted = false;
 
         try {
-          const deleteResult = await deleteManagedFile(ctx, {
-            storageId: document.storageId,
-            storageProvider: document.storageProvider,
-          });
+          const deleteResult = await releaseDocumentFile(ctx, document);
           storageFileDeleted = deleteResult.deleted;
         } catch (error) {
           console.warn("Admin-Löschung: Datei konnte nicht entfernt werden.", {

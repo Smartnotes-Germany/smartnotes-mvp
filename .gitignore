@@ -27,3 +27,4 @@ dist-ssr
 /.gemini/skills/frontend-design/SKILL.md
 
 *.tsbuildinfo
+.env*

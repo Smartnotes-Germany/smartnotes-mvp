@@ -13,15 +13,25 @@ import {
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { validateUploadFile } from "../shared/uploadPolicy";
-import { buildAnalyticsDistinctId } from "../shared/identity";
-import { getIdentityQuality } from "../shared/posthogRuntime";
+import {
+  buildUserAccessKey,
+  buildUserAnalyticsIdentity,
+  requireActiveUser,
+} from "./users";
 import {
   createManagedReadUrl,
   deleteManagedFile,
   getConfiguredStorageProvider,
+  grantFileAccess,
+  releaseDocumentFile,
   getR2ConfigOrThrow,
 } from "./fileStorage";
 import { topicsMatchForFocusMode } from "../shared/topicMatching";
+import {
+  toTopicSummarySectionSnapshot,
+  topicSummaryContentValidator,
+  type StoredTopicSummary,
+} from "./topicSummaryValidators";
 import {
   buildLinkFileName,
   extractHtmlTitle,
@@ -97,22 +107,13 @@ const aiAnalyticsErrorCategoryValidator = v.union(
   v.literal("unknown"),
 );
 
-type GrantDoc = {
-  _id: Id<"accessGrants">;
-  identityLabel?: string;
-  identityEmail?: string;
-  note?: string;
-  revokedAt?: number;
-};
-
 const getUploadRegistrationContextRef = makeFunctionReference<
   "query",
   {
-    grantToken: string;
     sessionId: Id<"studySessions">;
   },
   {
-    grantId: Id<"accessGrants">;
+    accessKey: string;
   }
 >("study:getUploadRegistrationContext");
 
@@ -128,26 +129,6 @@ const storeUploadedDocumentRef = makeFunctionReference<
   },
   Id<"sessionDocuments">
 >("study:storeUploadedDocument");
-
-const buildGrantAccessKey = (grantId: Id<"accessGrants">) => `grant:${grantId}`;
-
-const buildGrantAnalyticsIdentity = (grant: GrantDoc) => {
-  const identityEmail = grant.identityEmail;
-
-  return {
-    identityLabel: grant.identityLabel,
-    ...(identityEmail ? { identityEmail } : {}),
-    ...(grant.note ? { note: grant.note } : {}),
-    identityQuality: getIdentityQuality({
-      identityEmail,
-    }),
-    analyticsDistinctId: buildAnalyticsDistinctId({
-      grantId: grant._id,
-      identityEmail,
-    }),
-    analyticsGrantId: grant._id,
-  };
-};
 
 const parseMetadataJson = (
   raw: string | undefined,
@@ -232,6 +213,7 @@ const areQuizQuestionsEqual = (
 
 const buildSessionSnapshot = (session: {
   _id: Id<"studySessions">;
+  title: string;
   stage: "upload" | "quiz" | "analysis";
   focusTopics?: string[];
   sourceTopics: string[];
@@ -255,8 +237,10 @@ const buildSessionSnapshot = (session: {
     }>;
     recommendedNextStep: string;
   };
+  topicSummary?: StoredTopicSummary;
 }) => ({
   _id: session._id,
+  title: session.title,
   stage: session.stage,
   ...(session.focusTopics ? { focusTopics: session.focusTopics } : {}),
   sourceTopics: session.sourceTopics,
@@ -267,6 +251,21 @@ const buildSessionSnapshot = (session: {
     ...(question.glossary?.length ? { glossary: question.glossary } : {}),
   })),
   ...(session.analysis ? { analysis: session.analysis } : {}),
+  ...(session.topicSummary
+    ? {
+        topicSummary: {
+          status: session.topicSummary.status,
+          focusTopics: session.topicSummary.focusTopics,
+          dismissed: session.topicSummary.dismissed,
+          sections: (session.topicSummary.sections ?? []).map(
+            toTopicSummarySectionSnapshot,
+          ),
+          ...(session.topicSummary.error
+            ? { error: session.topicSummary.error }
+            : {}),
+        },
+      }
+    : {}),
 });
 
 const buildSessionDocumentSnapshot = (document: {
@@ -287,41 +286,16 @@ const buildSessionDocumentSnapshot = (document: {
     : {}),
 });
 
-const ensureGrant = async (
-  ctx: QueryCtx | MutationCtx,
-  grantToken: string,
-): Promise<GrantDoc> => {
-  const grant = await ctx.db
-    .query("accessGrants")
-    .withIndex("by_token", (q) => q.eq("token", grantToken))
-    .first();
-
-  if (!grant) {
-    throw new Error("Zugangsfreigabe nicht gefunden.");
-  }
-  if (grant.revokedAt) {
-    throw new Error("Zugangsfreigabe wurde widerrufen.");
-  }
-
-  return {
-    _id: grant._id,
-    identityLabel: grant.identityLabel,
-    identityEmail: grant.identityEmail,
-    note: grant.note,
-    revokedAt: grant.revokedAt,
-  };
-};
-
 const ensureSessionOwnership = async (
   ctx: QueryCtx | MutationCtx,
   sessionId: Id<"studySessions">,
-  grantId: Id<"accessGrants">,
+  userId: Id<"users">,
 ) => {
   const session = await ctx.db.get("studySessions", sessionId);
   if (!session) {
     throw new Error("Lernsitzung nicht gefunden.");
   }
-  if (session.grantId !== grantId) {
+  if (session.userId !== userId) {
     throw new Error("Du darfst auf diese Sitzung nicht zugreifen.");
   }
   return session;
@@ -484,15 +458,14 @@ const loadLinkAsMarkdown = async (rawUrl: string) => {
 
 export const getUploadRegistrationContext = internalQuery({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     return {
-      grantId: grant._id,
+      accessKey: buildUserAccessKey(user),
     };
   },
 });
@@ -523,21 +496,37 @@ export const storeUploadedDocument = internalMutation({
   },
 });
 
+const MAX_EXAM_TITLE_LENGTH = 80;
+const EXAM_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_LISTED_EXAMS = 50;
+
+/** Legt eine neue Prüfung an. Name und Termin kommen von der Startseite. */
 export const startSession = mutation({
   args: {
-    grantToken: v.string(),
     title: v.optional(v.string()),
+    examDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
+    const user = await requireActiveUser(ctx);
     const now = Date.now();
     const title =
       args.title?.trim() ||
       `Lernsitzung ${new Date(now).toLocaleString("de-DE")}`;
+    const examDate = args.examDate?.trim() || undefined;
+
+    if (title.length > MAX_EXAM_TITLE_LENGTH) {
+      throw new Error(
+        `Der Name darf höchstens ${MAX_EXAM_TITLE_LENGTH} Zeichen lang sein.`,
+      );
+    }
+    if (examDate && !EXAM_DATE_PATTERN.test(examDate)) {
+      throw new Error("Das Prüfungsdatum ist ungültig.");
+    }
 
     const sessionId = await ctx.db.insert("studySessions", {
-      grantId: grant._id,
+      userId: user._id,
       title,
+      ...(examDate ? { examDate } : {}),
       stage: "upload",
       round: 1,
       sourceTopics: [],
@@ -550,15 +539,250 @@ export const startSession = mutation({
   },
 });
 
-export const getLatestSessionId = query({
+/** Prüfungen des Kontos für die Startseite, die neueste zuerst. */
+export const listSessions = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireActiveUser(ctx);
+    const sessions = await ctx.db
+      .query("studySessions")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(MAX_LISTED_EXAMS);
+
+    return sessions.map((session) => ({
+      _id: session._id,
+      title: session.title,
+      stage: session.stage,
+      ...(session.examDate ? { examDate: session.examDate } : {}),
+      topicCount: session.sourceTopics.length,
+      hasAnalysis: Boolean(session.analysis),
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    }));
+  },
+});
+
+const findShareByToken = (ctx: QueryCtx | MutationCtx, token: string) =>
+  ctx.db
+    .query("examShares")
+    .withIndex("by_token", (q) => q.eq("token", token))
+    .unique();
+
+const findImportedCopy = (
+  ctx: QueryCtx | MutationCtx,
+  userId: Id<"users">,
+  shareId: Id<"examShares">,
+) =>
+  ctx.db
+    .query("studySessions")
+    .withIndex("by_userId_importedFromShareId", (q) =>
+      q.eq("userId", userId).eq("importedFromShareId", shareId),
+    )
+    .first();
+
+/** Link zum Teilen einer Prüfung. Pro Prüfung gibt es genau einen. */
+export const createShareLink = mutation({
   args: {
-    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
+
+    const existing = await ctx.db
+      .query("examShares")
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
+      .first();
+    if (existing) {
+      return existing.token;
+    }
+
+    const token = crypto.randomUUID().replaceAll("-", "");
+    await ctx.db.insert("examShares", {
+      sessionId: args.sessionId,
+      token,
+      createdByUserId: user._id,
+      createdAt: Date.now(),
+    });
+    return token;
+  },
+});
+
+/** Vorschau eines geteilten Links, bevor die Kopie angelegt wird. */
+export const getSharedExam = query({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireActiveUser(ctx);
+    const share = await findShareByToken(ctx, args.token);
+    const session = share
+      ? await ctx.db.get("studySessions", share.sessionId)
+      : null;
+    if (!share || !session) {
+      return null;
+    }
+
+    const isOwner = session.userId === user._id;
+    const ownSessionId = isOwner
+      ? session._id
+      : (await findImportedCopy(ctx, user._id, share._id))?._id;
+    const documents = await ctx.db
+      .query("sessionDocuments")
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", session._id))
+      .collect();
+
+    return {
+      title: session.title,
+      ...(session.examDate ? { examDate: session.examDate } : {}),
+      documentCount: documents.filter(
+        (document) => document.extractionStatus === "ready",
+      ).length,
+      topicCount: session.sourceTopics.length,
+      isOwner,
+      ...(ownSessionId ? { ownSessionId } : {}),
+    };
+  },
+});
+
+/**
+ * Legt eine eigene Kopie der geteilten Prüfung an: Unterlagen, Themen und
+ * Fragen, aber keine Antworten und keine Analyse. Die Dateien selbst werden
+ * nicht kopiert, das neue Konto bekommt nur Zugriff darauf.
+ */
+export const importSharedExam = mutation({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireActiveUser(ctx);
+    const share = await findShareByToken(ctx, args.token);
+    const source = share
+      ? await ctx.db.get("studySessions", share.sessionId)
+      : null;
+    if (!share || !source) {
+      throw new Error(
+        "Dieser Link ist ungültig oder die Prüfung wurde gelöscht.",
+      );
+    }
+    if (source.userId === user._id) {
+      return source._id;
+    }
+
+    const existingCopy = await findImportedCopy(ctx, user._id, share._id);
+    if (existingCopy) {
+      return existingCopy._id;
+    }
+
+    const now = Date.now();
+    const copyId = await ctx.db.insert("studySessions", {
+      userId: user._id,
+      title: source.title,
+      ...(source.examDate ? { examDate: source.examDate } : {}),
+      // Die Themenwahl trifft jedes Konto selbst.
+      stage: source.stage === "upload" ? "upload" : "quiz",
+      round: 1,
+      ...(source.sourceSummary ? { sourceSummary: source.sourceSummary } : {}),
+      sourceTopics: source.sourceTopics,
+      quizQuestions: source.quizQuestions,
+      importedFromShareId: share._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const documents = await ctx.db
+      .query("sessionDocuments")
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", source._id))
+      .collect();
+    const accessKey = buildUserAccessKey(user);
+    for (const document of documents) {
+      if (
+        document.extractionStatus !== "ready" ||
+        document.storageState === "orphaned"
+      ) {
+        continue;
+      }
+
+      await grantFileAccess(ctx, document.storageId, accessKey);
+      await ctx.db.insert("sessionDocuments", {
+        sessionId: copyId,
+        storageId: document.storageId,
+        storageProvider: document.storageProvider,
+        fileName: document.fileName,
+        fileType: document.fileType,
+        fileSizeBytes: document.fileSizeBytes,
+        extractionStatus: "ready",
+        ...(document.extractedText
+          ? { extractedText: document.extractedText }
+          : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return copyId;
+  },
+});
+
+/**
+ * Löscht die Prüfung aus diesem Konto, mit Unterlagen und Fortschritt.
+ * Kopien in anderen Konten bleiben erhalten, ihre Dateien ebenfalls.
+ */
+export const deleteSession = mutation({
+  args: {
+    sessionId: v.id("studySessions"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
+    const now = Date.now();
+
+    const documents = await ctx.db
+      .query("sessionDocuments")
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+    for (const document of documents) {
+      const { deleted } = await releaseDocumentFile(ctx, document);
+      if (!deleted) {
+        // Die tägliche Aufräumroutine versucht es später noch einmal.
+        await ctx.db.patch("sessionDocuments", document._id, {
+          extractedText: undefined,
+          storageState: "orphaned",
+          updatedAt: now,
+        });
+        continue;
+      }
+      await ctx.db.delete("sessionDocuments", document._id);
+    }
+
+    const responses = await ctx.db
+      .query("quizResponses")
+      .withIndex("by_session_round", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+    for (const response of responses) {
+      await ctx.db.delete("quizResponses", response._id);
+    }
+
+    const shares = await ctx.db
+      .query("examShares")
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
+      .collect();
+    for (const share of shares) {
+      await ctx.db.delete("examShares", share._id);
+    }
+
+    await ctx.db.delete("studySessions", args.sessionId);
+  },
+});
+
+export const getLatestSessionId = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireActiveUser(ctx);
     const latestSession = await ctx.db
       .query("studySessions")
-      .withIndex("by_grantId", (q) => q.eq("grantId", grant._id))
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .order("desc")
       .first();
 
@@ -566,40 +790,41 @@ export const getLatestSessionId = query({
   },
 });
 
-export const getGrantAnalyticsIdentity = internalQuery({
-  args: {
-    grantToken: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
+export const getViewerAnalyticsIdentity = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireActiveUser(ctx);
 
-    return buildGrantAnalyticsIdentity(grant);
+    return buildUserAnalyticsIdentity(user);
   },
 });
 
 export const getSessionSnapshot = query({
   args: {
-    grantToken: v.string(),
-    sessionId: v.id("studySessions"),
+    // Kommt aus der Adresse /pruefung/:id und kann deshalb beliebiger Text sein.
+    sessionId: v.string(),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ctx.db.get("studySessions", args.sessionId);
+    const user = await requireActiveUser(ctx);
+    const sessionId = ctx.db.normalizeId("studySessions", args.sessionId);
+    const session = sessionId
+      ? await ctx.db.get("studySessions", sessionId)
+      : null;
 
-    if (!session || session.grantId !== grant._id) {
+    if (!sessionId || !session || session.userId !== user._id) {
       return null;
     }
 
     const documents = await ctx.db
       .query("sessionDocuments")
-      .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", sessionId))
       .order("asc")
       .collect();
 
     const responses = await ctx.db
       .query("quizResponses")
       .withIndex("by_session_round", (q) =>
-        q.eq("sessionId", args.sessionId).eq("round", session.round),
+        q.eq("sessionId", sessionId).eq("round", session.round),
       )
       .collect();
 
@@ -625,12 +850,11 @@ export const getSessionSnapshot = query({
 
 export const generateUploadUrl = mutation({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
     const storageProvider = getConfiguredStorageProvider();
 
     return ctx.runMutation(
@@ -645,7 +869,6 @@ export const generateUploadUrl = mutation({
 
 export const registerUploadedDocument = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     uploadToken: v.string(),
     storageId: v.string(),
@@ -654,8 +877,7 @@ export const registerUploadedDocument = action({
     fileSizeBytes: v.number(),
   },
   handler: async (ctx, args) => {
-    const { grantId } = await ctx.runQuery(getUploadRegistrationContextRef, {
-      grantToken: args.grantToken,
+    const { accessKey } = await ctx.runQuery(getUploadRegistrationContextRef, {
       sessionId: args.sessionId,
     });
 
@@ -664,7 +886,7 @@ export const registerUploadedDocument = action({
       {
         uploadToken: args.uploadToken,
         storageId: args.storageId,
-        accessKeys: [buildGrantAccessKey(grantId)],
+        accessKeys: [accessKey],
       },
     );
 
@@ -778,13 +1000,11 @@ export const registerUploadedDocument = action({
  */
 export const fetchLinkContent = action({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     url: v.string(),
   },
   handler: async (ctx, args) => {
     await ctx.runQuery(getUploadRegistrationContextRef, {
-      grantToken: args.grantToken,
       sessionId: args.sessionId,
     });
 
@@ -806,23 +1026,19 @@ export const fetchLinkContent = action({
 
 export const removeDocument = mutation({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     documentId: v.id("sessionDocuments"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const document = await ctx.db.get("sessionDocuments", args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
-    const deleteResult = await deleteManagedFile(ctx, {
-      storageId: document.storageId,
-      storageProvider: document.storageProvider,
-    });
+    const deleteResult = await releaseDocumentFile(ctx, document);
 
     if (!deleteResult.deleted) {
       throw new Error(
@@ -836,17 +1052,12 @@ export const removeDocument = mutation({
 
 export const setFocusTopics = mutation({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     focusTopics: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(
-      ctx,
-      args.sessionId,
-      grant._id,
-    );
+    const user = await requireActiveUser(ctx);
+    const session = await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     if (areStringArraysEqual(session.focusTopics, args.focusTopics)) {
       return;
@@ -859,24 +1070,128 @@ export const setFocusTopics = mutation({
   },
 });
 
-export const createDocumentDownloadUrl = mutation({
-  // Not wired in the current UI yet; kept as the download endpoint for planned
-  // document preview/export actions without exposing raw storage IDs.
+/** Startet eine neue Themen-Zusammenfassung und verwirft die vorherige. */
+export const startTopicSummary = internalMutation({
   args: {
-    grantToken: v.string(),
+    sessionId: v.id("studySessions"),
+    requestId: v.string(),
+    focusTopics: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    await ctx.db.patch("studySessions", args.sessionId, {
+      topicSummary: {
+        requestId: args.requestId,
+        status: "generating",
+        focusTopics: args.focusTopics,
+        dismissed: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      updatedAt: now,
+    });
+  },
+});
+
+/** Zwischenstand beim Schreiben, damit die Seite den Text live zeigen kann. */
+export const updateTopicSummaryProgress = internalMutation({
+  args: {
+    sessionId: v.id("studySessions"),
+    requestId: v.string(),
+    content: topicSummaryContentValidator,
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("studySessions", args.sessionId);
+    const current = session?.topicSummary;
+    if (
+      !current ||
+      current.requestId !== args.requestId ||
+      current.status !== "generating"
+    ) {
+      return;
+    }
+
+    await ctx.db.patch("studySessions", args.sessionId, {
+      topicSummary: {
+        ...current,
+        sections: args.content.sections,
+        updatedAt: Date.now(),
+      },
+    });
+  },
+});
+
+/** Speichert das Ergebnis, sofern seitdem keine neuere Themenauswahl gestartet wurde. */
+export const storeTopicSummary = internalMutation({
+  args: {
+    sessionId: v.id("studySessions"),
+    requestId: v.string(),
+    content: v.optional(topicSummaryContentValidator),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get("studySessions", args.sessionId);
+    const current = session?.topicSummary;
+    if (!current || current.requestId !== args.requestId) {
+      return;
+    }
+
+    const now = Date.now();
+    await ctx.db.patch("studySessions", args.sessionId, {
+      topicSummary: {
+        ...current,
+        ...(args.content
+          ? {
+              status: "ready" as const,
+              sections: args.content.sections,
+            }
+          : { status: "failed" as const, error: args.error }),
+        updatedAt: now,
+      },
+      updatedAt: now,
+    });
+  },
+});
+
+/** Blendet die Zusammenfassung aus, danach geht es mit dem Quiz weiter. */
+export const dismissTopicSummary = mutation({
+  args: {
+    sessionId: v.id("studySessions"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireActiveUser(ctx);
+    const session = await ensureSessionOwnership(ctx, args.sessionId, user._id);
+    if (!session.topicSummary || session.topicSummary.dismissed) {
+      return;
+    }
+
+    await ctx.db.patch("studySessions", args.sessionId, {
+      topicSummary: {
+        ...session.topicSummary,
+        dismissed: true,
+        updatedAt: Date.now(),
+      },
+    });
+  },
+});
+
+export const createDocumentDownloadUrl = mutation({
+  // Liefert die Bilder für die Themen-Zusammenfassung, ohne Storage-IDs
+  // an den Browser zu geben.
+  args: {
     sessionId: v.id("studySessions"),
     documentId: v.id("sessionDocuments"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const document = await ctx.db.get("sessionDocuments", args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
       throw new Error("Dokument wurde in dieser Sitzung nicht gefunden.");
     }
 
-    const accessKey = buildGrantAccessKey(grant._id);
+    const accessKey = buildUserAccessKey(user);
     const consumeResult = await createManagedReadUrl(
       ctx,
       {
@@ -898,13 +1213,12 @@ export const createDocumentDownloadUrl = mutation({
 
 export const getDocumentExtractionContext = internalQuery({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     documentId: v.id("sessionDocuments"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const document = await ctx.db.get("sessionDocuments", args.documentId);
     if (!document || document.sessionId !== args.sessionId) {
@@ -913,7 +1227,7 @@ export const getDocumentExtractionContext = internalQuery({
 
     return {
       document,
-      accessKey: buildGrantAccessKey(grant._id),
+      accessKey: buildUserAccessKey(user),
     };
   },
 });
@@ -981,16 +1295,11 @@ export const setDocumentExtractionResult = internalMutation({
 
 export const getQuizGenerationContext = internalQuery({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(
-      ctx,
-      args.sessionId,
-      grant._id,
-    );
+    const user = await requireActiveUser(ctx);
+    const session = await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const documents = await ctx.db
       .query("sessionDocuments")
@@ -1007,7 +1316,7 @@ export const getQuizGenerationContext = internalQuery({
       session,
       documents,
       responses,
-      accessKey: buildGrantAccessKey(grant._id),
+      accessKey: buildUserAccessKey(user),
     };
   },
 });
@@ -1099,17 +1408,12 @@ export const storeGeneratedQuiz = internalMutation({
 
 export const getQuestionForEvaluation = internalQuery({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     questionId: v.string(),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(
-      ctx,
-      args.sessionId,
-      grant._id,
-    );
+    const user = await requireActiveUser(ctx);
+    const session = await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const question = session.quizQuestions.find(
       (item) => item.id === args.questionId,
@@ -1214,19 +1518,14 @@ export const storeQuizResponse = internalMutation({
 
 export const getAnalysisContext = internalQuery({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     mode: v.optional(v.union(v.literal("full"), v.literal("focus"))),
     focusTopic: v.optional(v.string()),
     maxResponses: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    const session = await ensureSessionOwnership(
-      ctx,
-      args.sessionId,
-      grant._id,
-    );
+    const user = await requireActiveUser(ctx);
+    const session = await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const mode = args.mode ?? "full";
     const resolvedFocusTopic =
@@ -1344,13 +1643,12 @@ export const storeAiAnalyticsEvent = internalMutation({
 
 export const getAiAnalyticsForSession = query({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const limit = Math.max(1, Math.min(200, Math.round(args.limit ?? 50)));
 
@@ -1366,13 +1664,12 @@ export const getAiAnalyticsForSession = query({
 
 export const getLatestAiFailureByClientRequestId = query({
   args: {
-    grantToken: v.string(),
     sessionId: v.id("studySessions"),
     clientRequestId: v.string(),
   },
   handler: async (ctx, args) => {
-    const grant = await ensureGrant(ctx, args.grantToken);
-    await ensureSessionOwnership(ctx, args.sessionId, grant._id);
+    const user = await requireActiveUser(ctx);
+    await ensureSessionOwnership(ctx, args.sessionId, user._id);
 
     const candidates = await ctx.db
       .query("aiAnalyticsEvents")
